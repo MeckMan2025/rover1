@@ -16,7 +16,7 @@ def generate_launch_description():
         # Publishes RTCM corrections to /rtcm
         Node(
             package='ntrip_client',
-            executable='ntrip_client',
+            executable='ntrip_ros.py',
             name='ntrip_client',
             output='screen',
             parameters=[{
