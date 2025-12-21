@@ -19,7 +19,12 @@ def generate_launch_description():
             executable='hiwonder_driver',
             name='motor_driver',
             output='screen',
-            parameters=[{'i2c_bus': 1, 'i2c_address': 0x34, 'invert_fl': True}]
+            parameters=[{
+                'i2c_bus': 1, 
+                'i2c_address': 0x34, 
+                'invert_fl': True,
+                'invert_rr': True
+            }]
         ),
         Node(
             package='rover1_hardware',

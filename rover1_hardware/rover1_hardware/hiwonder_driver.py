@@ -53,24 +53,27 @@ class HiwonderDriver(Node):
             self.get_logger().warn('Watchdog: No command received, stopping motors.')
             self.stop_motors()
 
+    def write_motor(self, register, speed):
+        # Protocol: write_byte_data(addr, register, signed_byte_speed)
+        if speed < 0:
+            val = 256 + speed
+        else:
+            val = speed
+        
+        try:
+            self.bus.write_byte_data(self.address, register, val)
+        except Exception as e:
+            self.get_logger().error(f'I2C Write Error (Reg {register}): {e}')
+
     def stop_motors(self):
         if self.bus is not None:
-            try:
-                # Stop all
-                for i in range(4):
-                    self.write_motor(i + 1, 0)
-                self.motors_active = False
-            except Exception as e:
-                self.get_logger().error(f'Stop Error: {e}')
-
-    def write_motor(self, motor_id, speed):
-        # Send to hardware
-        if speed < 0:
-            speed_packed = 256 + speed
-        else:
-            speed_packed = speed
-            
-        self.bus.write_i2c_block_data(self.address, 51, [motor_id, speed_packed])
+            # Stop all mapped registers
+            # Mapped: 51=RL, 52=FL, 53=RR, 54=FR
+            self.write_motor(51, 0)
+            self.write_motor(52, 0)
+            self.write_motor(53, 0)
+            self.write_motor(54, 0)
+            self.motors_active = False
 
     def listener_callback(self, msg):
         if self.bus is None:
@@ -85,25 +88,32 @@ class HiwonderDriver(Node):
         
         speeds = msg.data
         
-        # Apply Polarity
+        # Polarity
         fl_sign = -1 if self.get_parameter('invert_fl').value else 1
         fr_sign = -1 if self.get_parameter('invert_fr').value else 1
         rl_sign = -1 if self.get_parameter('invert_rl').value else 1
         rr_sign = -1 if self.get_parameter('invert_rr').value else 1
         
-        signs = [fl_sign, fr_sign, rl_sign, rr_sign]
+        # Constrain and Sign
+        def process(idx, sign):
+            raw = int(speeds[idx]) * sign
+            return max(min(raw, 100), -100)
+
+        speed_fl = process(0, fl_sign)
+        speed_fr = process(1, fr_sign)
+        speed_rl = process(2, rl_sign)
+        speed_rr = process(3, rr_sign)
+
+        # Mapping to Registers:
+        # FL (Input 0) -> Reg 52
+        # FR (Input 1) -> Reg 54
+        # RL (Input 2) -> Reg 51
+        # RR (Input 3) -> Reg 53
         
-        for i in range(4):
-            motor_id = i + 1
-            raw_speed = int(speeds[i]) * signs[i]
-            
-            # Constrain -100 to 100
-            constrained_speed = max(min(raw_speed, 100), -100)
-            
-            try:
-                self.write_motor(motor_id, constrained_speed)
-            except Exception as e:
-                self.get_logger().error(f'I2C Write Error: {e}')
+        self.write_motor(52, speed_fl)
+        self.write_motor(54, speed_fr)
+        self.write_motor(51, speed_rl)
+        self.write_motor(53, speed_rr)
 
 def main(args=None):
     rclpy.init(args=args)
