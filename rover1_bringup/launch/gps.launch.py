@@ -23,9 +23,10 @@ def generate_launch_description():
                 'host': ntrip_host,
                 'port': ntrip_port,
                 'mountpoint': ntrip_mountpoint,
+                'authenticate': True,
                 'username': ntrip_user,
                 'password': ntrip_pass,
-                'rtcm_topic': '/rtcm' 
+                'rtcm_topic': '/rtcm'
             }]
         ),
 
