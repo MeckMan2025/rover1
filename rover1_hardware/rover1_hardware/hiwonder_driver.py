@@ -32,52 +32,76 @@ class HiwonderDriver(Node):
             self.get_logger().error(f'Failed to open I2C bus: {e}')
             self.bus = None
 
+
+        # Safety Features
+        self.last_msg_time = self.get_clock().now()
+        self.create_timer(0.1, self.watchdog_callback)
+        self.motors_active = False
+        
+        # Polarity (1 or -1)
+        self.declare_parameter('invert_fl', False)
+        self.declare_parameter('invert_fr', False)
+        self.declare_parameter('invert_rl', False)
+        self.declare_parameter('invert_rr', False)
+
+    def watchdog_callback(self):
+        # If no message for 0.5s, stop motors
+        safety_timeout = 0.5 # seconds
+        time_diff = (self.get_clock().now() - self.last_msg_time).nanoseconds / 1e9
+        
+        if time_diff > safety_timeout and self.motors_active:
+            self.get_logger().warn('Watchdog: No command received, stopping motors.')
+            self.stop_motors()
+
+    def stop_motors(self):
+        if self.bus is not None:
+            try:
+                # Stop all
+                for i in range(4):
+                    self.write_motor(i + 1, 0)
+                self.motors_active = False
+            except Exception as e:
+                self.get_logger().error(f'Stop Error: {e}')
+
+    def write_motor(self, motor_id, speed):
+        # Send to hardware
+        if speed < 0:
+            speed_packed = 256 + speed
+        else:
+            speed_packed = speed
+            
+        self.bus.write_i2c_block_data(self.address, 51, [motor_id, speed_packed])
+
     def listener_callback(self, msg):
         if self.bus is None:
             return
 
+        self.last_msg_time = self.get_clock().now()
+        self.motors_active = True
+
         if len(msg.data) != 4:
             self.get_logger().warn('Invalid wheel speed array length')
             return
-
-        # Motors map: 1=M1, 2=M2, 3=M3, 4=M4
-        # Assuming typical Mecanum layout input: FL, FR, RL, RR
-        # Hiwonder usually marks M1..M4 on board. 
-        # We'll map Input[0]->M1, Input[1]->M2, etc. and let calibration fix direction.
         
-        speeds = msg.data # Expected values approx -100 to 100
+        speeds = msg.data
+        
+        # Apply Polarity
+        fl_sign = -1 if self.get_parameter('invert_fl').value else 1
+        fr_sign = -1 if self.get_parameter('invert_fr').value else 1
+        rl_sign = -1 if self.get_parameter('invert_rl').value else 1
+        rr_sign = -1 if self.get_parameter('invert_rr').value else 1
+        
+        signs = [fl_sign, fr_sign, rl_sign, rr_sign]
         
         for i in range(4):
             motor_id = i + 1
-            handlers_speed = int(speeds[i])
+            raw_speed = int(speeds[i]) * signs[i]
             
-            # Constrain speed to typical byte range if needed, 
-            # though this specific register likely takes a signed 16-bit or 8-bit value.
-            # Based on search, register 51 takes speed. 
-            # Protocol usually: [Register, MotorID, Speed_Low, Speed_High] or similar.
-            # Without exact datasheet, we assume a common Hiwonder protocol:
-            # write_i2c_block_data(addr, register, [motor_id, speed])
+            # Constrain -100 to 100
+            constrained_speed = max(min(raw_speed, 100), -100)
             
             try:
-                # Based on common Hiwonder I2C robot protocol found in searches:
-                # Reg 51 (Fixed Speed): [MotorID, Speed(Signed 16-bit?)]
-                # If just speed, checking if we write 4 bytes in one go or 1 by 1.
-                # Heuristic: Write individual motor speed.
-                
-                # Handling signed integer packing
-                # If the register expects 1 byte speed (-100 to 100)
-                if handlers_speed > 100: handlers_speed = 100
-                if handlers_speed < -100: handlers_speed = -100
-                
-                if handlers_speed < 0:
-                    speed_packed = 256 + handlers_speed # 2's complement for 8-bit
-                else:
-                    speed_packed = handlers_speed
-                    
-                # The search result said "Register 51".
-                # Often: bus.write_i2c_block_data(0x34, 51, [motor_id, speed_packed])
-                self.bus.write_i2c_block_data(self.address, 51, [motor_id, speed_packed])
-                
+                self.write_motor(motor_id, constrained_speed)
             except Exception as e:
                 self.get_logger().error(f'I2C Write Error: {e}')
 
