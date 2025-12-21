@@ -13,8 +13,8 @@ run_sudo() {
 echo ">>> Installing System Dependencies..."
 export DEBIAN_FRONTEND=noninteractive
 run_sudo apt update
-# Added python3-colcon-common-extensions
-run_sudo apt install -y ros-jazzy-ublox-dgnss ros-jazzy-ntrip-client python3-smbus2 i2c-tools git python3-colcon-common-extensions
+# Added python3-colcon-common-extensions and mavros-msgs
+run_sudo apt install -y ros-jazzy-ublox-dgnss ros-jazzy-ntrip-client python3-smbus2 i2c-tools git python3-colcon-common-extensions ros-jazzy-mavros-msgs
 
 # 2. Setup Workspace
 echo ">>> Setting up ROS 2 Workspace..."
@@ -46,8 +46,11 @@ run_sudo systemctl daemon-reload
 run_sudo systemctl enable rover1-updater.timer
 run_sudo systemctl start rover1-updater.timer
 
-# 5. I2C Permission
+# 5. I2C Permission & Udev Rules
 run_sudo usermod -aG i2c $USER
+echo ">>> Setting up U-Blox Udev Rules..."
+echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="1546", ATTRS{idProduct}=="01a9", MODE="0666"' | run_sudo tee /etc/udev/rules.d/99-ublox.rules
+run_sudo udevadm control --reload-rules && run_sudo udevadm trigger
 
-echo ">>> Setup Complete! Please reboot the Pi or log out/in to apply I2C permissions."
+echo ">>> Setup Complete! Please reboot the Pi or log out/in to apply permissions."
 echo ">>> To launch: ros2 launch rover1_bringup rover.launch.py"
