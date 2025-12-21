@@ -9,7 +9,7 @@ def generate_launch_description():
     ntrip_pass = LaunchConfiguration('ntrip_pass', default='nacceb-xekva6-cuTbux')
     ntrip_host = LaunchConfiguration('ntrip_host', default='165.206.203.10')
     ntrip_port = LaunchConfiguration('ntrip_port', default='10000')
-    ntrip_mountpoint = LaunchConfiguration('ntrip_mountpoint', default='RTCM3_MAX')
+    ntrip_mountpoint = LaunchConfiguration('ntrip_mountpoint', default='RTCM3_IMAX')
 
     return LaunchDescription([
         # NTRIP Client
