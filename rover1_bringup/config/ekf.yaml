@@ -1,0 +1,97 @@
+### ekf_node config file ###
+ekf_filter_node:
+  ros__parameters:
+    # The frequency, in Hz, at which the filter will output a position estimate.
+    # Note that the filter will not begin computation until it receives at least one message from
+    # one of the inputs. It will then wait continuously for at least one message from one of
+    # the inputs for the duration of the timeout parameter.
+    frequency: 30.0
+
+    # The period, in seconds, after which we consider a sensor to have timed out.
+    # In this event, we carry out a predict cycle on the EKF without correcting it.
+    # This parameter can be thought of as the minimum frequency with which the filter will generate
+    # new output.
+    sensor_timeout: 0.1
+
+    # ekf_localization_node and ukf_localization_node both use a 3D omnidirectional motion model.
+    # If this parameter is set to true, we will operate as a 2D vehicle.
+    two_d_mode: true
+
+    # Use standard ROS REP-105 frames
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_link
+    world_frame: odom
+
+    # Odom0: Wheel Odometry (Twist)
+    # The order of the values is x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az.
+    odom0: odom/wheel_odom
+    # Fusing only velocities (vx, vy, vyaw)
+    odom0_config: [false, false, false,
+                   false, false, false,
+                   true,  true,  false,
+                   false, false, true,
+                   false, false, false]
+    odom0_queue_size: 10
+    odom0_differential: false
+    odom0_relative: false
+
+    # Imu0: BerryIMU (Orientation + Angular Velocity)
+    imu0: imu/data
+    # Fusing Orientation (Roll, Pitch, Yaw) and Angular Rates (VRoll, VPitch, VYaw)
+    # Note: Since two_d_mode is true, Roll/Pitch are ignored internally, but good to have inputs enabled?
+    # Actually for 2D mode, we usually only care about Yaw and VYaw.
+    # But adhering to plan: "Enable Roll, Pitch, Yaw... + VRoll, VPitch, VYaw"
+    imu0_config: [false, false, false,
+                  true,  true,  true,
+                  false, false, false,
+                  true,  true,  true,
+                  true,  true,  true]
+    # NOTE: Added linears accel (true, true, true) at end because plan said "Enable ... VYaw (Velocity)" but usually we want Accel to help with gravity/orientation
+    # Re-reading plan: "Enable Roll, Pitch, Yaw (Orientation) + VRoll, VPitch, VYaw (Velocity)."
+    # It does NOT mention linear acceleration. So I will set last 3 to false.
+    # And actually, if I fuse absolute orientation (RPY), I must be careful about drift/magnetometer. 
+    # For now, let's stick to the plan strictly.
+    
+    # Corrected config based on strict plan:
+    # Orientation (RPY): T, T, T
+    # Linear Vel: F, F, F
+    # Angular Vel: T, T, T
+    # Linear Accel: F, F, F
+    
+    # Wait, if I supply absolute orientation from IMU, I usually need 'imu0_differential: false'.
+    # If I only supply rates, I need 'imu0_differential: true' (or just use rates).
+    # Since we don't have a magnetometer fused in the IMU driver heavily yet (it's just a raw driver or basic),
+    # verifying the IMU driver output is 'absolute' from power-up or relative?
+    # The driver just outputs raw gyro integration likely or just raw values?
+    # Checking berry_imu_driver.py: it outputs raw angular velocity and linear acceleration.
+    # It sets orientation w=1.0 (identity) or similar if not fused.
+    # Wait, I updated the driver in step 62.
+    # In step 62 replacement:
+    # "msg.orientation_covariance[0] = -1.0 # Indicate no orientation estimate"
+    # So the driver DOES NOT provide orientation.
+    # Therefore, I CANNOT fuse Orientation (Indices 3,4,5).
+    # I MUST only fuse Angular Velocity (Indices 9,10,11) and Linear Acceleration (Indices 12,13,14) if I want.
+    # But EKF needs orientation.
+    # The EKF can integrate angular velocity to get orientation (relative).
+    # So I will disable RPY in config and enable VRPY.
+    
+    # Revised config for IMU0 (Driver provides NO orientation):
+    # [F, F, F, 
+    #  F, F, F,  <-- Orientation Ignored (Driver doesn't provide it)
+    #  F, F, F, 
+    #  T, T, T,  <-- Angular Velocity Fused
+    #  T, T, T]  <-- Linear Acceleration Fused (helps estimate gravity vector/attitude)
+    
+    imu0_config: [false, false, false,
+                  false, false, false,
+                  false, false, false,
+                  true,  true,  true,
+                  true,  true,  true]
+                  
+    imu0_differential: false
+    imu0_relative: true # Since we are integrating rates, relative is safer? Actually if no orientation is provided, this flag doesn't affect orientation direct fusion.
+    imu0_queue_size: 10
+    imu0_remove_gravitational_acceleration: true
+
+    use_control: false

@@ -31,8 +31,14 @@ Standard Hiwonder protocols (broadcast speed) failed. Direct register addressing
 | **Rear Right** | **53** | `0x35` | 3 | **YES** |
 | **Front Right** | **54** | `0x36` | 1 | NO |
 
-- **Safety Mechanism:** Driver implements a **0.5s Watchdog**. If no `wheel_speeds_raw` message is received, it writes `0` to all registers (51-54).
-- **Physical Motors:** 12V Encoder DC Motors (Specific model pending).
+- **Safety Mechanism:** Driver implements a **0.5s Watchdog**.
+- **Physical Motors:** 12V Encoder DC Motors.
+- **Encoder Mapping (Confirmed Dec 21, 2025):**
+  - **Register:** `0x3C` (4x 32-bit Signed Ints).
+  - **Front Left**: Index 1 (Motor 2) | Fwd = Decrease
+  - **Front Right**: Index 3 (Motor 4) | Fwd = Increase
+  - **Rear Left**: Index 0 (Motor 1) | Fwd = Increase
+  - **Rear Right**: Index 2 (Motor 3) | Fwd = Decrease
 
 ### 1.3 Navigation & Orientation
 - **IMU:** OzzMaker BerryIMU v3 (Stackable header on GPIO)
@@ -46,7 +52,11 @@ Standard Hiwonder protocols (broadcast speed) failed. Direct register addressing
     - **Correction Source:** NTRIP Client (Iowa RTN)
 
 ### 1.4 Power System
-- **Power Source:** 3S or 4S LiPo (Voltage to be confirmed) -> Providing 12V to Hiwonder HAT.
+- **Power Source:** 3S or 4S LiPo (~12-16V).
+- **Voltage Monitoring:**
+  - **Register:** `0x00` (2-byte unsigned int).
+  - **Unit:** Millivolts (mV).
+  - **Note:** Register values confirm ~14.5V readings for 4S battery.
 - **Regulation:** Hiwonder HAT provides 5V to Raspberry Pi via Pins.
 
 ---
@@ -85,10 +95,16 @@ Standard Hiwonder protocols (broadcast speed) failed. Direct register addressing
 ### 2.3 Known Issues & Fixes
 - **GPS USB Busy:** `LIBUSB_ERROR_BUSY`.
     - *Cause:* Linux kernel driver `cdc_acm` grabs the USB device before ROS `ublox_dgnss` can claim it via `libusb`.
-    - *Fix:* Create udev rule to detach `cdc_acm` or use serial-based driver config.
+    - *Fix:* [SOLVED] Created `/etc/udev/rules.d/99-ublox-gnss.rules` to detach `cdc_acm`.
 - **Motor Runaway:**
     - *Cause:* I2C latching on Hiwonder board.
     - *Fix:* Implemented software watchdog in `hiwonder_driver.py`.
+- **NTRIP / RTK Topic Mismatch (Ghost Network Issue):**
+    - *Symptoms:* NTRIP client connects successfully (log shows connection), but GPS remains in Float/Single mode.
+    - *False Lead:* Suspected Ubuntu 24.04 firewall/network stack dropping packets (Ping failed due to wrong IP, actual internet was fine).
+    - *Root Cause:* Topic namespace mismatch. `ntrip_client` publishes to `/rtcm`. Standard U-Blox launch file (`ublox_rover_hpposllh_navsatfix.launch.py`) expects `/ntrip_client/rtcm`.
+    - *Fix:* Added `GroupAction` and `SetRemap` in `gps.launch.py` to bridge `/ntrip_client/rtcm` -> `/rtcm`.
+    - *Lesson:* Always verify `ros2 topic info` subscribers before debugging network layers.
 
 ---
 
@@ -122,3 +138,10 @@ Standard Hiwonder protocols (broadcast speed) failed. Direct register addressing
     - Reverse-engineered Hiwonder Motor Protocol (Registers 51-54).
     - Verified IMU connectivity.
     - Configured NTRIP client for RTK corrections.
+- **Phase 2 (Dec 21, 2025):** Sensor Fusion Setup.
+    - Resolved GPS USB conflict (`LIBUSB_ERROR_BUSY`).
+    - Established static TF tree (`base_link` -> `imu_link`/`gps_link`).
+    - **Bench Test (Network):** Confirmed connectivity (Ping 8.8.8.8 OK, Port 10000 OK). "Ubuntu Connectivity Regression" was a false alarm.
+    - **Bench Test (GPS):** Identified topic mismatch (`/rtcm` vs `/ntrip_client/rtcm`).
+    - **Action:** Remapped NTRIP client in `gps.launch.py` to feed U-Blox driver.
+

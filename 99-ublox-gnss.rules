@@ -1,0 +1,2 @@
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1546", ATTRS{idProduct}=="01a9", MODE="0666", GROUP="plugdev"
+DRIVERS=="cdc_acm", ATTRS{idVendor}=="1546", ATTRS{idProduct}=="01a9", RUN+="/bin/sh -c 'echo $kernel > /sys/bus/usb/drivers/cdc_acm/unbind'"

@@ -1,7 +1,9 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
-from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, GroupAction, SetRemap
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch_ros.substitutions import FindPackageShare
 
 def generate_launch_description():
     # Credentials from IARTN-Credentials.md
@@ -12,6 +14,8 @@ def generate_launch_description():
     ntrip_mountpoint = LaunchConfiguration('ntrip_mountpoint', default='RTCM3_IMAX')
 
     return LaunchDescription([
+        # NTRIP Client
+        # Publishes RTCM corrections to /rtcm
         # NTRIP Client
         # Publishes RTCM corrections to /rtcm
         Node(
@@ -30,22 +34,26 @@ def generate_launch_description():
             }]
         ),
 
-        # U-Blox Driver
-        # Consumes RTCM from /rtcm (via internally remapped topic if needed, usually 'rtcm')
-        # ZED-F9R default baud 38400 works via USB, but often 460800 or 115200 is negotiated
-        Node(
-            package='ublox_dgnss_node',
-            executable='ublox_dgnss_node',
-            name='ublox_dgnss',
-            output='screen',
-            parameters=[{
-                'device_serial_string': '', # Auto-detect or specify if multiple are present
-                'frame_id': 'gps_link',
-                # Config to accept RTCM integration
-            }],
-            # Remap to ensure the driver hears the corrections
-            remappings=[
-                ('rtcm', '/rtcm')
+        # U-Blox Driver & Converter (Standard Mode)
+        # Includes both the driver (for raw UBX) and the converter (UBX -> NavSatFix).
+        # Usage: Host internal topic is /ntrip_client/rtcm, we remap it to /rtcm
+        GroupAction(
+            actions=[
+                SetRemap(src='/ntrip_client/rtcm', dst='/rtcm'),
+                IncludeLaunchDescription(
+                    PythonLaunchDescriptionSource([
+                        PathJoinSubstitution([
+                            FindPackageShare('ublox_dgnss'),
+                            'launch',
+                            'ublox_rover_hpposllh_navsatfix.launch.py'
+                        ])
+                    ]),
+                    launch_arguments={
+                        'device_family': 'F9R',
+                        'frame_id': 'gps_link',
+                        # 'log_level': 'DEBUG' # Uncomment for troubleshooting
+                    }.items()
+                )
             ]
         )
     ])

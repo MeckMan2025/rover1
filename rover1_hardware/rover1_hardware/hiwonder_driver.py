@@ -44,6 +44,49 @@ class HiwonderDriver(Node):
         self.declare_parameter('invert_rl', False)
         self.declare_parameter('invert_rr', False)
 
+        # Encoder Reader
+        self.create_timer(0.05, self.encoder_callback) # 20Hz
+        self.encoder_pub = self.create_publisher(Int32MultiArray, 'wheel_encoders', 10)
+        
+    def encoder_callback(self):
+        if self.bus is None: return
+        
+        try:
+            # Read 16 bytes starting at 0x3C
+            # MOTOR_ENCODER_TOTAL_ADDR = 0x3C
+            data = self.bus.read_i2c_block_data(self.address, 0x3C, 16)
+            vals = struct.unpack('<iiii', bytes(data))
+            
+            # Mapping based on User Verification:
+            # Index 0: Rear Left  (Motor 1) -> Fwd=Inc
+            # Index 1: Front Left (Motor 2) -> Fwd=Dec
+            # Index 2: Rear Right (Motor 3) -> Fwd=Dec
+            # Index 3: Front Right(Motor 4) -> Fwd=Inc
+            
+            raw_rl = vals[0]
+            raw_fl = vals[1]
+            raw_rr = vals[2]
+            raw_fr = vals[3]
+            
+            # Apply Polarity to match ROS Standard (Forward = Positive)
+            # Rear Left: Inc -> Positive (No change)
+            # Front Left: Dec -> Negative (Invert)
+            # Rear Right: Dec -> Negative (Invert)
+            # Front Right: Inc -> Positive (No change)
+            
+            enc_fl = raw_fl * -1
+            enc_fr = raw_fr
+            enc_rl = raw_rl
+            enc_rr = raw_rr * -1
+            
+            msg = Int32MultiArray()
+            msg.data = [enc_fl, enc_fr, enc_rl, enc_rr]
+            self.encoder_pub.publish(msg)
+            
+        except Exception as e:
+            # self.get_logger().warn(f'Encoder Read Error: {e}')
+            pass
+
     def watchdog_callback(self):
         # If no message for 0.5s, stop motors
         safety_timeout = 0.5 # seconds
