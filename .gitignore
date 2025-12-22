@@ -13,6 +13,9 @@ __pycache__/
 # User Request: Ignore Documents
 *.pdf
 
+# Markdown files
+*.md
+
 # Exceptions (Files we want to track)
 !README.md
 # If you want to track the source code licenses or packages

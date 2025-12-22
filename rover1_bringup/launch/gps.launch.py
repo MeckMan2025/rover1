@@ -30,30 +30,26 @@ def generate_launch_description():
                 'authenticate': True,
                 'username': ntrip_user,
                 'password': ntrip_pass,
-                'rtcm_topic': '/rtcm'
+                'rtcm_topic': '/ntrip_client/rtcm',
+                'rtcm_message_package': 'rtcm_msgs'
             }]
         ),
 
         # U-Blox Driver & Converter (Standard Mode)
         # Includes both the driver (for raw UBX) and the converter (UBX -> NavSatFix).
-        # Usage: Host internal topic is /ntrip_client/rtcm, we remap it to /rtcm
-        GroupAction(
-            actions=[
-                SetRemap(src='/ntrip_client/rtcm', dst='/rtcm'),
-                IncludeLaunchDescription(
-                    PythonLaunchDescriptionSource([
-                        PathJoinSubstitution([
-                            FindPackageShare('ublox_dgnss'),
-                            'launch',
-                            'ublox_rover_hpposllh_navsatfix.launch.py'
-                        ])
-                    ]),
-                    launch_arguments={
-                        'device_family': 'F9R',
-                        'frame_id': 'gps_link',
-                        # 'log_level': 'DEBUG' # Uncomment for troubleshooting
-                    }.items()
-                )
-            ]
+        # Usage: Host internal topic is /ntrip_client/rtcm, so we match that.
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource([
+                PathJoinSubstitution([
+                    FindPackageShare('ublox_dgnss'),
+                    'launch',
+                    'ublox_rover_hpposllh_navsatfix.launch.py'
+                ])
+            ]),
+            launch_arguments={
+                'device_family': 'F9R',
+                'frame_id': 'gps_link',
+                # 'log_level': 'DEBUG' # Uncomment for troubleshooting
+            }.items()
         )
     ])
