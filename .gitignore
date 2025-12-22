@@ -16,6 +16,9 @@ __pycache__/
 # Markdown files
 *.md
 
+# Environment files (contain secrets)
+.env
+
 # Exceptions (Files we want to track)
 !README.md
 # If you want to track the source code licenses or packages

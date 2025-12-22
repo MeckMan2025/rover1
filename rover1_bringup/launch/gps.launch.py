@@ -6,10 +6,12 @@ from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
 
 def generate_launch_description():
-    # Credentials from IARTN-Credentials.md
-    ntrip_user = LaunchConfiguration('ntrip_user', default='grease454')
-    ntrip_pass = LaunchConfiguration('ntrip_pass', default='nacceb-xekva6-cuTbux')
-    ntrip_host = LaunchConfiguration('ntrip_host', default='165.206.203.10')
+    # NTRIP credentials are loaded from environment variables
+    # Set these before running: export NTRIP_USER=your_username
+    import os
+    ntrip_user = LaunchConfiguration('ntrip_user', default=os.getenv('NTRIP_USER', ''))
+    ntrip_pass = LaunchConfiguration('ntrip_pass', default=os.getenv('NTRIP_PASS', ''))
+    ntrip_host = LaunchConfiguration('ntrip_host', default=os.getenv('NTRIP_HOST', '165.206.203.10'))
     ntrip_port = LaunchConfiguration('ntrip_port', default='10000')
     ntrip_mountpoint = LaunchConfiguration('ntrip_mountpoint', default='RTCM3_IMAX')
 
