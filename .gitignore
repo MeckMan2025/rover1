@@ -11,15 +11,14 @@ __pycache__/
 .DS_Store
 
 # User Request: Ignore Documents
-*.pdf
+# *.pdf (Unlocked by user request)
 
-# Markdown files
-*.md
-
-# Environment files (contain secrets)
+# Secrets
 .env
+.env.*
+**/secrets/
+**/*credentials*
 
-# Exceptions (Files we want to track)
-!README.md
-# If you want to track the source code licenses or packages
-!package.xml
+# Personal scratch notes only
+notes_private.md
+journal_private.md
