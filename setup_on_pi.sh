@@ -14,7 +14,7 @@ echo ">>> Installing System Dependencies..."
 export DEBIAN_FRONTEND=noninteractive
 run_sudo apt update
 # Added python3-colcon-common-extensions and mavros-msgs
-run_sudo apt install -y ros-jazzy-ublox-dgnss ros-jazzy-ntrip-client python3-smbus2 i2c-tools git python3-colcon-common-extensions ros-jazzy-mavros-msgs
+run_sudo apt install -y ros-jazzy-ublox-dgnss ros-jazzy-ntrip-client python3-smbus2 i2c-tools git python3-colcon-common-extensions ros-jazzy-mavros-msgs ros-jazzy-xacro ros-jazzy-robot-state-publisher
 
 # 2. Setup Workspace
 echo ">>> Setting up ROS 2 Workspace..."
