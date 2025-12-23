@@ -16,6 +16,7 @@ class MecanumKinematics(Node):
         self.declare_parameter('wheel_radius', 0.04)           # meters
         self.declare_parameter('max_rpm', 200)                 # Motor max RPM
         self.declare_parameter('pwm_limit', 100)               # Max PWM/Speed value for driver
+        self.declare_parameter('rotation_scale', 5.0)          # Boost rotation power to match strafe/forward
         
         # Topics
         self.subscription = self.create_subscription(
@@ -130,7 +131,7 @@ class MecanumKinematics(Node):
         
         vx = msg.linear.x
         vy = msg.linear.y
-        wz = msg.angular.z
+        wz = msg.angular.z * self.get_parameter('rotation_scale').value
         
         k = Lx + Ly
         
