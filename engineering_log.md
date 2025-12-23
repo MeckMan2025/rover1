@@ -227,11 +227,23 @@ Standard Hiwonder protocols (broadcast speed) failed. Direct register addressing
     *   **Missing Dependencies:** Added `robot_localization`, `xacro`, and `robot_state_publisher` to `setup_on_pi.sh`.
     *   **Code Bugs:** Resolved `NameError: Odometry` and `SetRemap` import errors.
 
-**Verified "Golden" Operating Commands:**
-```bash
-# Smooth keyboard driving
-ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -p repeat_rate:=20.0
-```
+### 4.5 Battery Monitoring & I2C Synchronization Challenges (Dec 22, 2025)
+**Status:** Hardware verified; ROS integration pending (low priority).
+
+**What was Tried:**
+1.  **ROS Implementation:** Added `sensor_msgs/BatteryState` support to `hiwonder_driver.py` using Register `0x00`.
+2.  **Concurrency Fix:** Implemented `threading.Lock()` to prevent I2C bus collisions between encoder reads (20Hz) and battery reads (2Hz).
+3.  **Ghost Process Mitigation:** Attempted `ros2 daemon stop/start` and `pkill` to clear persistent node states.
+
+**Lessons Learned:**
+1.  **Hardware is Golden:** Direct Python probing (`check_battery_raw.py`) confirmed the hardware returns accurate data (~13.23V).
+2.  **Deployment Friction:** Discovered a stubborn discrepancy between local code and the ROS graph on the Pi. Even with successful builds, the `/battery_state` topic failed to appear in `ros2 node info`.
+3.  **Library Sensitivity:** Suspicion remains that the `sensor_msgs` Python indexing on the Pi 5 may have a local path conflict not caught by `apt install`.
+
+**Next Best Steps:**
+1.  **Standalone Monitor:** Move battery logic out of the motor driver into its own lightweight "Telemeter" node to isolate I2C traffic.
+2.  **Custom Message:** Try a simple `Float32` instead of the complex `BatteryState` message to rule out library serialization issues.
+3.  **Deferred Task:** Pivoting to Web UI foundation (`rosbridge`) to gain better visual debugging tools before returning to hardware telemetry.
 
 ## 5. Additional Hardware Capabilities (Extracted from Documentation)
 The following capabilities were discovered during PDF audit on Dec 22, 2025:
