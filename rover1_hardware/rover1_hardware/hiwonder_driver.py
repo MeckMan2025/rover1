@@ -88,8 +88,8 @@ class HiwonderDriver(Node):
             pass
 
     def watchdog_callback(self):
-        # If no message for 0.3s, stop motors
-        safety_timeout = 0.3 # seconds
+        # If no message for 0.5s, stop motors
+        safety_timeout = 0.5 # seconds
         time_diff = (self.get_clock().now() - self.last_msg_time).nanoseconds / 1e9
         
         if time_diff > safety_timeout and self.motors_active:
