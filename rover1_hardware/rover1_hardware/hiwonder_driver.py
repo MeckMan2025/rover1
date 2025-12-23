@@ -162,20 +162,24 @@ class HiwonderDriver(Node):
         try:
             # Register 0x00: Battery voltage in mV (2 bytes, little endian)
             data = self.bus.read_i2c_block_data(self.addr, 0x00, 2)
+            if not data or len(data) < 2:
+                return
+                
             voltage_mv = data[0] + (data[1] << 8)
             voltage = voltage_mv / 1000.0
             
             # Publish standard battery message
             msg = BatteryState()
             msg.header.stamp = self.get_clock().now().to_msg()
-            msg.voltage = voltage
+            msg.header.frame_id = "base_link"
+            msg.voltage = float(voltage)
             # 12.6V is full for 3S, 10.5V is empty
-            msg.percentage = max(0.0, min(1.0, (voltage - 10.5) / (12.6 - 10.5)))
+            msg.percentage = float(max(0.0, min(1.0, (voltage - 10.5) / (12.6 - 10.5))))
             self.battery_pub.publish(msg)
             
             # Low Battery Alert
             threshold = self.get_parameter('low_battery_threshold').value
-            if voltage < threshold:
+            if voltage < threshold and voltage > 1.0: # Ignore zero-readings
                 if not self.low_battery_warned:
                     self.get_logger().error(f"!!! LOW BATTERY ALERT: {voltage:.2f}V !!!")
                     self.low_battery_warned = True
@@ -183,7 +187,10 @@ class HiwonderDriver(Node):
                 self.low_battery_warned = False
                 
         except Exception as e:
-            self.get_logger().warn(f"Failed to read battery: {e}")
+            # Only log once to avoid spamming I2C errors
+            if not hasattr(self, '_bat_error_shown'):
+                self.get_logger().warn(f"Battery read error: {e}")
+                self._bat_error_shown = True
 
 def main(args=None):
     rclpy.init(args=args)
