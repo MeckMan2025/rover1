@@ -177,6 +177,13 @@ class HiwonderDriver(Node):
             msg.percentage = float(max(0.0, min(1.0, (voltage - 10.5) / (12.6 - 10.5))))
             self.battery_pub.publish(msg)
             
+            # Diagnostic Log (Every ~10 seconds)
+            if not hasattr(self, '_bat_log_count'): self._bat_log_count = 0
+            self._bat_log_count += 1
+            if self._bat_log_count >= 20: # 20 * 0.5s = 10s
+                self.get_logger().info(f"Battery: {voltage:.2f}V ({msg.percentage*100:.0f}%)")
+                self._bat_log_count = 0
+            
             # Low Battery Alert
             threshold = self.get_parameter('low_battery_threshold').value
             if voltage < threshold and voltage > 1.0: # Ignore zero-readings
