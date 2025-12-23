@@ -161,7 +161,9 @@ class HiwonderDriver(Node):
     def battery_callback(self):
         try:
             # Register 0x00: Battery voltage in mV (2 bytes, little endian)
-            data = self.bus.read_i2c_block_data(self.addr, 0x00, 2)
+            with self.i2c_lock:
+                data = self.bus.read_i2c_block_data(self.addr, 0x00, 2)
+            
             if not data or len(data) < 2:
                 return
                 

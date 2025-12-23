@@ -32,19 +32,26 @@ else
 fi
 
 echo "--- 4. Testing Motor Driver & Battery ---"
-# Run for 5 seconds to ensure timer fires
-timeout 5s ros2 run rover1_hardware hiwonder_driver > /tmp/driver_log.txt 2>&1 &
-PID=$!
-sleep 4
-ros2 topic list | grep battery_state > /tmp/topic_check.txt
+# Check if hardware node is already running in background
+RUNNING_NODES=$(ros2 node list)
+if echo "$RUNNING_NODES" | grep -q 'motor_driver\|hiwonder_driver'; then
+    echo "[PASS] Motor driver node is running."
+else
+    echo "[INFO] Running hiwonder_driver manually to test..."
+    timeout 5s ros2 run rover1_hardware hiwonder_driver > /tmp/driver_log.txt 2>&1 &
+    PID=$!
+    sleep 4
+    kill $PID 2>/dev/null
+fi
+
+ros2 topic list | grep -i "battery" > /tmp/topic_check.txt
 if [ -s /tmp/topic_check.txt ]; then
-    echo "[PASS] battery_state topic found in live graph."
+    echo "[PASS] battery_state topic found."
     timeout 2s ros2 topic echo /battery_state --once
 else
-    echo "[FAIL] battery_state topic NOT FOUND in live graph."
-    echo "[INFO] Driver Logs:"
-    cat /tmp/driver_log.txt
+    echo "[FAIL] battery_state topic NOT FOUND."
+    echo "[INFO] Last 20 lines of driver logs:"
+    cat /tmp/driver_log.txt | tail -n 20
 fi
-kill $PID 2>/dev/null
 
 echo ">>> Debug Complete"
