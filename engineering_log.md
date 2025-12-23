@@ -213,19 +213,19 @@ Standard Hiwonder protocols (broadcast speed) failed. Direct register addressing
     *   Created `rover1_description/urdf/rover.urdf.xacro`.
     *   Replaced static transform publishers in `rover.launch.py` with `robot_state_publisher`.
     *   **Baseline:** `base_link` -> `imu_link` / `gps_link` / `wheel links` are now geometrically correct.
+    *   **Wheel Spec:** Verified 97mm (0.0485m radius) from official chassis documentation.
 2.  **Physical Odometry Calibration:**
     *   **Test:** 1.0 meter forward drive (human-verified measurement).
     *   **Discovery:** `Average Delta Ticks for 1.0m = 12618.75`.
-    *   **Calculated Constant:** `ticks_per_rev = 3171.44` (Corrected from the previous guess of 1500).
-    *   **Action:** Updated `mecanum_kinematics.py` with this physical constant.
+    *   **Calculated Constant (Updated):** `ticks_per_rev = 3845.33` (Based on 97mm wheel circumference).
+    *   **Action:** Updated `mecanum_kinematics.py` and URDF with official 97mm dimensions.
 3.  **Kinematics & Control Tuning:**
-    *   **Rotation Power:** Added `rotation_scale = 2.0` to compensate for Mecanum friction. Rotation now matches forward/strafe speed feel.
-    *   **Watchdog Timing:** Settled on **0.5s** timeout in `hiwonder_driver.py`. (0.2s and 0.3s tests failed due to OS/Zsh key-repeat latency causing stutter).
-    *   **Strafing:** Confirmed full 4-axis Mecanum support (including sideways sliding via Shift+J/L).
+    *   **Rotation Power:** Added `rotation_scale = 2.0` to compensate for Mecanum friction.
+    *   **Watchdog Timing:** Settled on **0.5s** timeout in `hiwonder_driver.py` for snappy but stable control.
+    *   **Strafing:** Confirmed full 4-axis Mecanum support.
 4.  **Infrastructure Robustness:**
-    *   **Missing Dependencies:** Updated `setup_on_pi.sh` with `robot_localization`, `xacro`, and `robot_state_publisher`.
-    *   **Package Fixes:** Created missing `package.xml` and `setup.py` for `rover1_description`.
-    *   **Code Bugs:** Resolved `NameError: Odometry` in kinematics and invalid `SetRemap` imports in GPS launch.
+    *   **Missing Dependencies:** Added `robot_localization`, `xacro`, and `robot_state_publisher` to `setup_on_pi.sh`.
+    *   **Code Bugs:** Resolved `NameError: Odometry` and `SetRemap` import errors.
 
 **Verified "Golden" Operating Commands:**
 ```bash
