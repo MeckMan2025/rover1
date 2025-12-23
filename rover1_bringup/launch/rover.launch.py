@@ -50,6 +50,15 @@ def generate_launch_description():
             output='screen'
         ),
         
+        # Isolated Battery Monitor (Decoupled per Engineering Strategy)
+        Node(
+            package='rover1_hardware',
+            executable='battery_monitor',
+            name='battery_monitor',
+            parameters=[{'i2c_bus': 1, 'i2c_address': 0x34, 'publish_rate': 1.0}],
+            output='screen'
+        ),
+        
         # EKF Sensor Fusion (Local: Odom -> Base_Link)
         Node(
             package='robot_localization',
