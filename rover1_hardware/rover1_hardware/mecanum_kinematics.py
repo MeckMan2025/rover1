@@ -3,6 +3,7 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from std_msgs.msg import Int32MultiArray
+from nav_msgs.msg import Odometry
 import math
 
 class MecanumKinematics(Node):
@@ -33,7 +34,6 @@ class MecanumKinematics(Node):
             10)
             
         # Odometry Publisher
-        from nav_msgs.msg import Odometry
         self.odom_pub_ = self.create_publisher(Odometry, 'odom/wheel_odom', 10)
         
         # State
