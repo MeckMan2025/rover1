@@ -47,7 +47,7 @@ class MecanumKinematics(Node):
         # But we need to calibrate this. For now, estimate based on 110RPM spec.
         # If 110 RPM max speed, and ticks are raw Hall sensor?
         # Let's declare a parameter ticks_per_rev.
-        self.declare_parameter('ticks_per_rev', 1500.0) # Tune this!
+        self.declare_parameter('ticks_per_rev', 3171.44) # Calibrated on 2025-12-22
         
         self.get_logger().info('Mecanum Kinematics Node Started')
 
