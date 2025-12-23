@@ -29,7 +29,16 @@ echo "--- 3. Testing EKF Node ---"
 if [ -f ~/ros2_ws/install/rover1_bringup/share/rover1_bringup/config/ekf.yaml ]; then
     echo "[PASS] ekf.yaml found."
 else
-    echo "[FAIL] ekf.yaml MISING in install directory!"
+    echo "[FAIL] ekf.yaml MISSING in install directory!"
+fi
+
+echo "--- 4. Testing Battery Monitoring ---"
+ros2 topic list | grep battery_state > /dev/null
+if [ $? -eq 0 ]; then
+    echo "[PASS] battery_state topic found."
+    timeout 3s ros2 topic echo /battery_state --once
+else
+    echo "[FAIL] battery_state topic MISSING! Node might be crashing on sensor_msgs import."
 fi
 
 echo ">>> Debug Complete"
