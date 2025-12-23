@@ -31,7 +31,7 @@ Standard Hiwonder protocols (broadcast speed) failed. Direct register addressing
 | **Rear Right** | **53** | `0x35` | 3 | **YES** |
 | **Front Right** | **54** | `0x36` | 1 | NO |
 
-- **Safety Mechanism:** Driver implements a **0.5s Watchdog**.
+- **Safety Mechanism:** Driver implements a **0.5s Watchdog** (Fine-tuned on Dec 22, 2025 to balance responsiveness vs OS key-repeat delay).
 - **Physical Motors:** 12V Encoder DC Motors.
 - **Encoder Mapping (Confirmed Dec 21, 2025):**
   - **Register:** `0x3C` (4x 32-bit Signed Ints).
@@ -204,3 +204,37 @@ Standard Hiwonder protocols (broadcast speed) failed. Direct register addressing
 - **Pre-commit Hook:** Consider implementing credential scanning in git hooks
 - **Template Pattern:** Always create `.env.example` files to document required environment variables
 - **Security Checklist:** Audit all configuration files before committing to public repos
+
+### 4.4 Hardware-in-the-Loop Validation & Calibration (Dec 22, 2025)
+**Status:** System is now fully localized and calibrated for physical movement.
+
+**Key Achievements:**
+1.  **URDF & TF Tree Standardization:**
+    *   Created `rover1_description/urdf/rover.urdf.xacro`.
+    *   Replaced static transform publishers in `rover.launch.py` with `robot_state_publisher`.
+    *   **Baseline:** `base_link` -> `imu_link` / `gps_link` / `wheel links` are now geometrically correct.
+2.  **Physical Odometry Calibration:**
+    *   **Test:** 1.0 meter forward drive (human-verified measurement).
+    *   **Discovery:** `Average Delta Ticks for 1.0m = 12618.75`.
+    *   **Calculated Constant:** `ticks_per_rev = 3171.44` (Corrected from the previous guess of 1500).
+    *   **Action:** Updated `mecanum_kinematics.py` with this physical constant.
+3.  **Kinematics & Control Tuning:**
+    *   **Rotation Power:** Added `rotation_scale = 2.0` to compensate for Mecanum friction. Rotation now matches forward/strafe speed feel.
+    *   **Watchdog Timing:** Settled on **0.5s** timeout in `hiwonder_driver.py`. (0.2s and 0.3s tests failed due to OS/Zsh key-repeat latency causing stutter).
+    *   **Strafing:** Confirmed full 4-axis Mecanum support (including sideways sliding via Shift+J/L).
+4.  **Infrastructure Robustness:**
+    *   **Missing Dependencies:** Updated `setup_on_pi.sh` with `robot_localization`, `xacro`, and `robot_state_publisher`.
+    *   **Package Fixes:** Created missing `package.xml` and `setup.py` for `rover1_description`.
+    *   **Code Bugs:** Resolved `NameError: Odometry` in kinematics and invalid `SetRemap` imports in GPS launch.
+
+**Verified "Golden" Operating Commands:**
+```bash
+# Smooth keyboard driving
+ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -p repeat_rate:=20.0
+```
+
+**Diagnostic Tools:**
+*   `scripts/rover_interactive_check.py`: Full system health check (I2C, Nodes, Topics).
+*   `scripts/calibrate_odometry.py`: Re-run if changing wheel sizes or gearboxes.
+*   `scripts/debug_nodes.sh`: Individual node startup testing.
+

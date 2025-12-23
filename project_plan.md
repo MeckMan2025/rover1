@@ -10,7 +10,7 @@
 ---
 
 ## Phase 1: Core Platform (Hardware & Drivers)
-*Status: 90% Complete (Verifying on Device)*
+*Status: 100% Complete*
 
 The foundation of the robot. If this fails, nothing else works.
 
@@ -28,9 +28,12 @@ The foundation of the robot. If this fails, nothing else works.
 Establishing the critical `map` -> `odom` -> `base_link` transform tree.
 
 ### 2.1 Transform Hierarchy (TF Tree)
-*Status: In Progress - Fixing Static Transforms with URDF*
+*Status: Complete*
 - **Structure**: `map` (GPS) -> `odom` (EKF) -> `base_link` (Robot) -> `imu_link`/`gps_link`.
-- **Implementation**: ~Static transforms defined in `rover.launch.py`.~ **Needs URDF.**
+- **Implementation**: Managed by `rover1_description/urdf/rover.urdf.xacro` and `robot_state_publisher`.
+- [x] Create URDF model.
+- [x] Replace static transforms in launch file.
+- [x] **Calibration**: Physical `ticks_per_rev` calibrated (3171.44).
 
 ### 2.2 IMU Implementation
 *Status: Complete*
@@ -150,7 +153,8 @@ Phase 4 focuses on delivering a polished, customer-facing Web UI, built only aft
 
 ---
 
-## Immediate Next Steps (Phase 2 Continued)
-1.  **URDF**: Implement `rover.urdf.xacro` to replace hacky static transforms.
-2.  **Odometry Tuning**: Create helper script to calibrate `ticks_per_rev`.
-3.  **EKF Validation**: Verify fusion in Foxglove.
+## Immediate Next Steps (Updated 2025-12-23)
+1. **EKF Validation**: Verify sensor fusion accuracy in Foxglove (Visual check of TF `map` -> `odom` drift).
+2. **Path Planning (Nav2)**: Configure basic Navigation2 stack for autonomous waypoint following.
+3. **UX Foundation**: Setup `rosbridge_suite` for the future Web UI.
+
