@@ -233,6 +233,26 @@ Standard Hiwonder protocols (broadcast speed) failed. Direct register addressing
 ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -p repeat_rate:=20.0
 ```
 
+## 5. Additional Hardware Capabilities (Extracted from Documentation)
+The following capabilities were discovered during PDF audit on Dec 22, 2025:
+
+### 5.1 Motor Driver Board (0x34)
+- **Battery Monitoring:** Register `0x00` returns the battery voltage in millivolts.
+- **Fixed Speed Mode:** Register `0x33` allows for closed-loop speed control (using internal PID) rather than raw PWM.
+- **Total Encoder Ticks:** Register `0x3C` provides total pulse values for all four encoders at once.
+
+### 5.2 IMU (LSM6DSL)
+- **Advanced Motion Sensing:** Hardware support for:
+    - Free-fall detection.
+    - Single/Double tap detection.
+    - Built-in pedometer/step counter.
+    - Tilt detection (6D/4D orientation).
+
+### 5.3 Physical Limits
+- **Payload:** 5.0 kg maximum.
+- **Current Load:** Motors draws up to 3.0A at stall (requires robust watchdog for safety).
+- **Wheels:** 97mm Diameter, Mecanum type.
+
 **Diagnostic Tools:**
 *   `scripts/rover_interactive_check.py`: Full system health check (I2C, Nodes, Topics).
 *   `scripts/calibrate_odometry.py`: Re-run if changing wheel sizes or gearboxes.

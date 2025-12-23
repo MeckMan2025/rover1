@@ -158,6 +158,33 @@ class HiwonderDriver(Node):
         self.write_motor(51, speed_rl)
         self.write_motor(53, speed_rr)
 
+    def battery_callback(self):
+        try:
+            # Register 0x00: Battery voltage in mV (2 bytes, little endian)
+            data = self.bus.read_i2c_block_data(self.addr, 0x00, 2)
+            voltage_mv = data[0] + (data[1] << 8)
+            voltage = voltage_mv / 1000.0
+            
+            # Publish standard battery message
+            msg = BatteryState()
+            msg.header.stamp = self.get_clock().now().to_msg()
+            msg.voltage = voltage
+            # 12.6V is full for 3S, 10.5V is empty
+            msg.percentage = max(0.0, min(1.0, (voltage - 10.5) / (12.6 - 10.5)))
+            self.battery_pub.publish(msg)
+            
+            # Low Battery Alert
+            threshold = self.get_parameter('low_battery_threshold').value
+            if voltage < threshold:
+                if not self.low_battery_warned:
+                    self.get_logger().error(f"!!! LOW BATTERY ALERT: {voltage:.2f}V !!!")
+                    self.low_battery_warned = True
+            else:
+                self.low_battery_warned = False
+                
+        except Exception as e:
+            self.get_logger().warn(f"Failed to read battery: {e}")
+
 def main(args=None):
     rclpy.init(args=args)
     node = HiwonderDriver()
