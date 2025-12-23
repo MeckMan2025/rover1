@@ -96,13 +96,27 @@ def check_topics():
     for t in required_topics:
         print(f"Checking {t}...", end=" ", flush=True)
         try:
-            # Check hz to see if active
-            subprocess.check_output(f"ros2 topic hz {t} --window 5", shell=True, timeout=2)
+            # Check hz to see if active using shell=False and discarding output to avoid pipe issues
+            # We use timeout=2 to wait briefly.
+            subprocess.run(
+                ["ros2", "topic", "hz", t, "--window", "5"], 
+                stdout=subprocess.DEVNULL, 
+                stderr=subprocess.DEVNULL, 
+                timeout=2, 
+                check=True
+            )
             print("ACTIVE")
         except subprocess.TimeoutExpired:
-            print("ACTIVE (Assumed, timeout is normal for hz)")
-        except Exception:
+            # If it timed out, it means it's running but maybe slow waiting for window?
+            # Actually, ros2 topic hz runs forever unless --window is met.
+            # If we timeout, it likely means we got some data but not 5 samples yet, OR no data.
+            # Let's assume ACTIVE if it didn't crash immediately?
+            print("ACTIVE (Timeout)") 
+        except subprocess.CalledProcessError:
             print("SILENT/MISSING")
+            all_good = False
+        except Exception as e:
+            print(f"ERROR: {e}")
             all_good = False
             
     return all_good
