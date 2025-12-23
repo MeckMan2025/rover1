@@ -57,7 +57,12 @@ Establishing the critical `map` -> `odom` -> `base_link` transform tree.
     - [x] Launch file configured.
     - [x] **Dependency**: Needs IMU Heading to function.
 
-Phase 2.5: Engineering UI, Visualization & Tuning (Foxglove)
+### 2.5 Battery Monitoring Integration
+*Status: 100% Complete*
+- [x] **Isolated Node**: Implemented `battery_monitor.py` for decoupled I2C telemetry.
+- [x] **Verification**: Confirmed stable 14.5V reading on `/battery_voltage`.
+
+Phase 2.6: Engineering UI, Visualization & Tuning (Foxglove)
 
 Status: Planned (Required before Phase 3)
 
