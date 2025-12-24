@@ -27,6 +27,7 @@ setup(
             'mecanum_kinematics = rover1_hardware.mecanum_kinematics:main',
             'battery_monitor = rover1_hardware.battery_monitor:main',
             'stadia_teleop = rover1_hardware.stadia_teleop:main',
+            'fix_to_nmea = rover1_hardware.fix_to_nmea:main',
         ],
     },
 )

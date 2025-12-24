@@ -37,6 +37,15 @@ def generate_launch_description():
             }]
         ),
 
+        # NMEA Bridge (VRS Handshake)
+        # Converts /fix -> /nmea so the NTRIP caster knows where the rover is.
+        Node(
+            package='rover1_hardware',
+            executable='fix_to_nmea',
+            name='fix_to_nmea',
+            output='screen'
+        ),
+
         # U-Blox Driver & Converter (Standard Mode)
         # Includes both the driver (for raw UBX) and the converter (UBX -> NavSatFix).
         # Usage: Host internal topic is /ntrip_client/rtcm, so we match that.
