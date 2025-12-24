@@ -1,6 +1,9 @@
 #!/bin/bash
-# Rover1 "Cockpit" Monitoring Dashboard v2.3 (Unbreakable Edition)
-# Backgrounded GPS checks to prevent stalling.
+# Rover1 "Cockpit" Monitoring Dashboard v2.4 (Self-Sourcing Edition)
+
+# Source ROS 2 environment
+source /opt/ros/jazzy/setup.bash
+source ~/ros2_ws/install/setup.bash
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -32,7 +35,6 @@ while true; do
     echo -e "${CYAN}CORE NODE HEALTH:${NC}"
     NODES=("imu_driver" "motor_driver" "kinematics" "ekf_filter_node" "ekf_global_node" "navsat_transform" "foxglove_bridge" "stadia_teleop" "ublox_dgnss" "ntrip_client")
     
-    # Batch grab node list once to save time
     ACTIVE_NODES=$(ros2 node list 2>/dev/null)
     for node in "${NODES[@]}"; do
         if echo "$ACTIVE_NODES" | grep -q "$node"; then
@@ -44,12 +46,11 @@ while true; do
 
     echo -e "${CYAN}----------------------------------------------------------------${NC}"
 
-    # 4. GPS QUALITY (Using a background poll to prevent stalls)
+    # 4. GPS QUALITY
     echo -en "${CYAN}GPS QUALITY:    ${NC}"
-    # This non-blocking check prevents the dashboard from hanging
     FIX_TYPE=$(timeout 0.1 ros2 topic echo /ublox/nav_pvt --count 1 --field fix_type 2>/dev/null)
     if [ -z "$FIX_TYPE" ]; then
-        echo -e "[ ${RED}SEARCHING / NO DATA${NC} ]"
+        echo -e "[ ${RED}SEARCHING...${NC} ]"
     else
         case "$FIX_TYPE" in
             "3") echo -e "[ ${YELLOW}3 - STANDARD 3D${NC} ]" ;;
@@ -61,12 +62,10 @@ while true; do
 
     # 5. TOPIC HEARTBEATS
     echo -e "${CYAN}TOPIC HEARTBEETS (Last 0.2s):${NC}"
-    
-    # Fast timeouts
     timeout 0.2 ros2 topic hz /imu/data --window 1 2>/dev/null | grep "average rate" | awk '{print "  IMU DATA:       [ " $4 " Hz ]"}' || echo -e "  IMU DATA:       [ ${RED}STALLED${NC} ]"
     timeout 0.2 ros2 topic hz /fix --window 1 2>/dev/null | grep "average rate" | awk '{print "  GPS FIX:        [ " $4 " Hz ]"}' || echo -e "  GPS FIX:        [ ${RED}STALLED${NC} ]"
     
-    # Catching RTCM data in the net
+    # RTCM CHECK
     timeout 0.2 ros2 topic hz /ntrip_client/rtcm --window 1 2>/dev/null | grep "average rate" | awk '{print "  RTCM (NET):     [ " $4 " Hz ]"}' || \
     timeout 0.2 ros2 topic hz /rtcm --window 1 2>/dev/null | grep "average rate" | awk '{print "  RTCM (NET):     [ " $4 " Hz ]"}' || \
     echo -e "  RTCM (NET):     [ ${RED}IDLE${NC} ]"
