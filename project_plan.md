@@ -3,9 +3,9 @@
 **Goal**: Deliver a "Zero-Experience to Autonomy" kit with a professional-grade User Interface and reliable "Teach & Repeat" navigation.
 
 **Timeline Strategy**:
-- **Today**: 2025-12-22 ~15:55 - Update Project Plan & Address Code Cautions
-- **Next**: Autonomous Navigation Stack (EKF, Nav2).
-- **Final**: Web UI & "Patrol Mode" Logic.
+- **Last Session**: 2025-12-23 - Stadia Controller + Network Failover
+- **Next**: Foxglove Engineering UI, then EKF Validation.
+- **Final**: Nav2 Autonomy + Web UI & "Patrol Mode" Logic.
 
 ---
 
@@ -42,7 +42,26 @@ Custom `stadia_teleop.py` node with Stadia-specific layout:
 
 ### 1.5.3 Verification
 - [x] **Calibration**: joy_node configured with 0.1 deadzone to prevent drift.
-- [x] **Field Test**: Pending on-rover verification.
+- [x] **Field Test**: Verified working Dec 23, 2025 - full Mecanum control operational.
+
+## Phase 1.6: Field Networking & Failover
+*Status: Complete*
+
+Reliable connectivity across all environments for field demos and development.
+
+### 1.6.1 Network Priority Chain
+- [x] **Home WiFi**: "Lake Wifi" (priority 100) - auto-connects when in range.
+- [x] **Phone Hotspot**: "AJM17ProMax" (priority 50) - fallback for field demos.
+- [x] **Ethernet Tether**: Static IP 10.42.0.1 - emergency/direct laptop connection.
+
+### 1.6.2 Implementation
+- [x] **NetworkManager**: Installed and configured with `autoconnect-priority`.
+- [x] **Setup Script**: `scripts/setup_network_failover.sh` (run once on Pi).
+- [x] **Credentials**: Stored in `.env` file (gitignored).
+
+### 1.6.3 Mac Development Setup
+- [x] **Smart SSH**: `~/.zshrc` function auto-selects ethernet vs WiFi.
+- [x] **Ethernet Config**: Manual IP 10.42.0.2 for direct tether.
 
 ## Phase 2: Sensor Fusion & Localization
 *Status: In Progress*
@@ -182,6 +201,8 @@ Phase 4 focuses on delivering a polished, customer-facing Web UI, built only aft
 
 ## Immediate Next Steps (Updated 2025-12-23)
 1. ~~**Bluetooth Controller**: Pair Stadia controller and implement the X/Y/Z mapping (Phase 1.5).~~ ✓ Complete
-2. **EKF Validation**: Verify sensor fusion accuracy in Foxglove (Visual check of TF `map` -> `odom` drift).
-3. **Path Planning (Nav2)**: Configure basic Navigation2 stack for autonomous waypoint following.
+2. ~~**Network Failover**: WiFi priority chain + ethernet tether (Phase 1.6).~~ ✓ Complete
+3. **Foxglove Bridge**: Install and integrate into rover.launch.py (Phase 2.6).
+4. **EKF Validation**: Verify sensor fusion accuracy in Foxglove (Visual check of TF `map` -> `odom` drift).
+5. **Path Planning (Nav2)**: Configure basic Navigation2 stack for autonomous waypoint following.
 
