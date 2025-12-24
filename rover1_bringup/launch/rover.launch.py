@@ -142,8 +142,8 @@ def generate_launch_description():
             name='stadia_teleop',
             output='screen',
             parameters=[{
-                'max_linear_speed': 0.4,
-                'max_angular_speed': 0.8,
+                'max_linear_speed': 2.0,
+                'max_angular_speed': 4.0,
                 'deadman_threshold': 0.0,
                 'debug_axes': False  # Set True to log raw axis values for tuning
             }]

@@ -29,8 +29,9 @@ class StadiaTeleop(Node):
         self.subscription = self.create_subscription(Joy, '/joy', self.joy_callback, 10)
         self.publisher = self.create_publisher(Twist, '/cmd_vel', 10)
 
-        # State tracking for logging
+        # State tracking for safety
         self.deadman_active = False
+        self.is_initialized = False # Stadia triggers start at 1.0; ignore until we see that.
         self.msg_count = 0
 
         self.get_logger().info('=== Stadia Teleop Node Started ===')
@@ -51,6 +52,17 @@ class StadiaTeleop(Node):
             return
 
         l2_value = msg.axes[self.AXIS_L2]
+        
+        # Initialization Logic: Stadia controllers send 0.0 on all axes until first input.
+        # L2 is actually 1.0 when released. We MUST see it hit 1.0 before we trust it.
+        if not self.is_initialized:
+            if l2_value == 1.0:
+                self.is_initialized = True
+                self.get_logger().info('Controller Initialized (L2 identity seen at 1.0)')
+            else:
+                # Still waiting for a valid identity packet
+                return
+
         deadman_pressed = l2_value < self.deadman_thresh
 
         # Debug logging (throttled to every 20 messages ~1Hz at 20Hz rate)
