@@ -111,27 +111,27 @@ while true; do
 
     echo -e "${CYAN}----------------------------------------------------------------${NC}"
 
-    # 5. TOPIC HEARTBEATS (increased timeouts for Pi 5 performance)
+    # 5. TOPIC HEARTBEATS (longer timeouts needed for ros2 topic hz to collect samples)
     echo -e "${CYAN}TOPIC HEARTBEATS (Hz):${NC}"
 
-    # IMU (reliable QoS)
-    IMU_HZ=$(timeout 2 ros2 topic hz /imu/data --window 5 2>/dev/null | grep "average rate" | awk '{printf "%.1f", $4}')
+    # IMU (reliable QoS) - runs at ~100Hz so window 10 = 0.1s of data
+    IMU_HZ=$(timeout 4 ros2 topic hz /imu/data --window 10 2>/dev/null | grep "average rate" | awk '{printf "%.0f", $4}')
     if [ -n "$IMU_HZ" ]; then
         echo -e "  IMU DATA:       [ ${GREEN}${IMU_HZ} Hz${NC} ]"
     else
         echo -e "  IMU DATA:       [ ${RED}STALLED${NC} ]"
     fi
 
-    # GPS (best_effort QoS required)
-    GPS_HZ=$(timeout 2 ros2 topic hz /fix --qos-reliability best_effort --window 5 2>/dev/null | grep "average rate" | awk '{printf "%.1f", $4}')
+    # GPS (best_effort QoS required) - runs at ~4Hz so window 4 = 1s of data
+    GPS_HZ=$(timeout 4 ros2 topic hz /fix --qos-reliability best_effort --window 4 2>/dev/null | grep "average rate" | awk '{printf "%.1f", $4}')
     if [ -n "$GPS_HZ" ]; then
         echo -e "  GPS FIX:        [ ${GREEN}${GPS_HZ} Hz${NC} ]"
     else
         echo -e "  GPS FIX:        [ ${RED}STALLED${NC} ]"
     fi
 
-    # RTCM
-    RTCM_HZ=$(timeout 2 ros2 topic hz /ntrip_client/rtcm --window 5 2>/dev/null | grep "average rate" | awk '{printf "%.1f", $4}')
+    # RTCM - variable rate, check if any data in last 3s
+    RTCM_HZ=$(timeout 3 ros2 topic hz /ntrip_client/rtcm --window 3 2>/dev/null | grep "average rate" | awk '{printf "%.1f", $4}')
     if [ -n "$RTCM_HZ" ]; then
         echo -e "  RTCM (NTRIP):   [ ${GREEN}${RTCM_HZ} Hz${NC} ]"
     else
@@ -139,7 +139,7 @@ while true; do
     fi
 
     # CMD_VEL (only active when controller used)
-    CMD_HZ=$(timeout 1 ros2 topic hz /cmd_vel --window 3 2>/dev/null | grep "average rate" | awk '{printf "%.1f", $4}')
+    CMD_HZ=$(timeout 2 ros2 topic hz /cmd_vel --window 3 2>/dev/null | grep "average rate" | awk '{printf "%.1f", $4}')
     if [ -n "$CMD_HZ" ]; then
         echo -e "  CMD_VEL:        [ ${GREEN}${CMD_HZ} Hz${NC} ]"
     else
