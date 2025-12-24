@@ -21,6 +21,28 @@ The foundation of the robot. If this fails, nothing else works.
   - `berry_imu_driver` (Orientation).
   - `ublox_dgnss` + `ntrip_client` (RTK GPS).
 - [x] **Verification**: User confirms wheels spin and GPS gets Fix.
+- [x] **Verification**: User confirms wheels spin and GPS gets Fix.
+
+## Phase 1.5: Manual Control Expansion (Bluetooth Controller)
+*Status: Complete*
+
+Adding professional-grade physical control for precise field maneuvers and demos.
+
+### 1.5.1 Driver & Pairing
+- [x] **Bluetooth Setup**: Pair Google Stadia controller via `bluetoothctl` (MAC: D1:71:42:54:CB:0F).
+- [x] **Controller Mode**: Stadia controller in Bluetooth mode (unlocked after Stadia shutdown).
+- [x] **ROS Integration**: Using `ros-jazzy-joy` with custom `stadia_teleop.py` node.
+
+### 1.5.2 Mapping Configuration
+Custom `stadia_teleop.py` node with Stadia-specific layout:
+- **Left Stick Y (Axis 1)**: Forward/Backward (linear.x).
+- **Left Stick X (Axis 0)**: Turn Left/Right (angular.z).
+- **Right Stick X (Axis 2)**: Strafe Left/Right (linear.y).
+- **L2 Trigger (Axis 5)**: Dead Man's Switch (must hold to enable movement).
+
+### 1.5.3 Verification
+- [x] **Calibration**: joy_node configured with 0.1 deadzone to prevent drift.
+- [x] **Field Test**: Pending on-rover verification.
 
 ## Phase 2: Sensor Fusion & Localization
 *Status: In Progress*
@@ -159,7 +181,7 @@ Phase 4 focuses on delivering a polished, customer-facing Web UI, built only aft
 ---
 
 ## Immediate Next Steps (Updated 2025-12-23)
-1. **EKF Validation**: Verify sensor fusion accuracy in Foxglove (Visual check of TF `map` -> `odom` drift).
-2. **Path Planning (Nav2)**: Configure basic Navigation2 stack for autonomous waypoint following.
-3. **UX Foundation**: Setup `rosbridge_suite` for the future Web UI.
+1. ~~**Bluetooth Controller**: Pair Stadia controller and implement the X/Y/Z mapping (Phase 1.5).~~ ✓ Complete
+2. **EKF Validation**: Verify sensor fusion accuracy in Foxglove (Visual check of TF `map` -> `odom` drift).
+3. **Path Planning (Nav2)**: Configure basic Navigation2 stack for autonomous waypoint following.
 

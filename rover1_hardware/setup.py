@@ -26,6 +26,7 @@ setup(
             'hiwonder_driver = rover1_hardware.hiwonder_driver:main',
             'mecanum_kinematics = rover1_hardware.mecanum_kinematics:main',
             'battery_monitor = rover1_hardware.battery_monitor:main',
+            'stadia_teleop = rover1_hardware.stadia_teleop:main',
         ],
     },
 )

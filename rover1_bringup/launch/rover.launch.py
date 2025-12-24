@@ -1,6 +1,7 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
 from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import PathJoinSubstitution, Command, LaunchConfiguration
 from launch_ros.substitutions import FindPackageShare
@@ -9,11 +10,20 @@ def generate_launch_description():
     pkg_share = FindPackageShare('rover1_bringup')
     desc_share = FindPackageShare('rover1_description')
     
+    # Launch Arguments
+    use_joy = LaunchConfiguration('use_joy', default='true')
+
     # Process URDF
     urdf_file = PathJoinSubstitution([desc_share, 'urdf', 'rover.urdf.xacro'])
     robot_description = Command(['xacro ', urdf_file])
     
     return LaunchDescription([
+        DeclareLaunchArgument(
+            'use_joy',
+            default_value='true',
+            description='Whether to start the joystick/teleop nodes'
+        ),
+
         # Robot State Publisher (TF Tree)
         Node(
             package='robot_state_publisher',
@@ -92,6 +102,31 @@ def generate_launch_description():
                 ('odometry/filtered', 'odometry/local'),
                 ('odometry/gps', 'odometry/gps')
             ]
+        ),
+        
+        # Joystick Driver
+        Node(
+            condition=IfCondition(use_joy),
+            package='joy',
+            executable='joy_node',
+            name='joy_node',
+            output='screen',
+            parameters=[{'deadzone': 0.1, 'autorepeat_rate': 20.0}]
+        ),
+
+        # Stadia Custom Teleop (Safe-Mecanum)
+        Node(
+            condition=IfCondition(use_joy),
+            package='rover1_hardware',
+            executable='stadia_teleop',
+            name='stadia_teleop',
+            output='screen',
+            parameters=[{
+                'max_linear_speed': 0.4,
+                'max_angular_speed': 0.8,
+                'deadman_threshold': 0.0,
+                'debug_axes': False  # Set True to log raw axis values for tuning
+            }]
         ),
         
         # Include GPS Launch

@@ -242,9 +242,48 @@ Standard Hiwonder protocols (broadcast speed) failed. Direct register addressing
 3.  **Clean Up:** Removed telemetry logic from `hiwonder_driver.py` to restore focused motor control.
 
 **Verification Status:**
-- **RESULT:** [PASS] Successfully verified on Dec 22, 23:11.
-- **READING:** ~14.5V (Standard 4S LiPo or charging profile verified).
 - **STABILITY:** Stable publication at 1Hz observed via `ros2 topic echo /battery_voltage`.
+
+### 4.6 Field Networking & Tethering Strategy (Dec 23, 2025)
+**Problem:** Direct Ethernet connection to laptop failed during high school demo due to Ubuntu 24.04 network timeouts (Netplan DHCP wait) and mDNS resolution issues.
+**Discovery:**
+1. **Boot Hang:** Ubuntu waits 120s for DHCP on Ethernet if no router is present, blocking SSH access.
+2. **IP Vagueness:** Without a DHCP server, the Pi and Mac drift to different subnets or fail to assign IPs entirely.
+**Solution (Static Tether Pattern):**
+1. **Static Fallback:** Configured `eth0` with static IP `10.42.0.1/24` (Robot) and `10.42.0.2` (Laptop) as a secondary "service lane".
+2. **Boot Optimization:** Set `optional: true` in Netplan to skip the 120s network wait.
+3. **Setup Script:** Created `scripts/setup_ethernet_tether.sh` to automate this on the Pi.
+**Instructions for Field Work:**
+- **On Pi:** Run `scripts/setup_ethernet_tether.sh`.
+- **On Mac:** Set Ethernet to "Manual" -> IP: `10.42.0.2`, Subnet: `255.255.255.0`.
+- **Connection:** Always use `ssh andrewmeckley@10.42.0.1`.
+
+### 4.7 Manual Control: Google Stadia Controller Integration (Dec 23, 2025)
+**Status:** Hardware paired, custom teleop node implemented.
+
+**Hardware Specs:**
+- **Device:** Google Stadia Controller (Unlocked Bluetooth Mode).
+- **MAC Address:** `D1:71:42:54:CB:0F`.
+- **System Service:** `bluez` (Bluetoothctl used for pairing/trusting/connecting).
+
+**Software Stack:**
+- **Driver:** `ros-jazzy-joy` (`joy_node`).
+- **Control Logic:** `rover1_hardware/stadia_teleop.py` (Subscribes to `/joy`, Publishes to `/cmd_vel`).
+
+**Controller Mapping (Observed Dec 23, 2025):**
+| Input | Axis Index | ROS Mapping | behavior |
+| :--- | :--- | :--- | :--- |
+| **Left Stick Y** | Axis 1 | `linear.x` | Forward (+), Backward (-) |
+| **Left Stick X** | Axis 0 | `angular.z` | Rotate Left (+), Rotate Right (-) |
+| **Right Stick X** | Axis 2 | `linear.y` | Strafe Left (+), Strafe Right (-) |
+| **L2 Trigger** | Axis 5 | Deadman Switch | Enabled while < 0.0; Stopped while > 0.0 |
+
+**Safety Mechanism:**
+- **Dead-Man Switch:** Motion is only permitted when the **L2 Trigger** is depressed.
+- **Auto-Stop:** Releasing L2 immediately publishes a zero-velocity `Twist` message to `/cmd_vel` to prevent runaway.
+
+**Usage:**
+- Launch via `ros2 launch rover1_bringup rover.launch.py use_joy:=true`.
 
 ## 5. Additional Hardware Capabilities (Extracted from Documentation)
 The following capabilities were discovered during PDF audit on Dec 22, 2025:
