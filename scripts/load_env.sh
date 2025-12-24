@@ -7,8 +7,12 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 ENV_FILE="$PROJECT_DIR/.env"
 
 if [ -f "$ENV_FILE" ]; then
-    echo "Loading environment variables from .env..."
-    export $(grep -v '^#' "$ENV_FILE" | grep -v '^$' | xargs)
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        # Skip comments and empty lines
+        if [[ ! "$line" =~ ^# && -n "$line" ]]; then
+            export "$line"
+        fi
+    done < "$ENV_FILE"
     echo "Environment variables loaded successfully!"
 else
     echo "Warning: .env file not found at $ENV_FILE"
