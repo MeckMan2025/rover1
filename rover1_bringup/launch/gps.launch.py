@@ -32,9 +32,11 @@ def generate_launch_description():
                 'authenticate': True,
                 'username': ntrip_user,
                 'password': ntrip_pass,
-                'rtcm_topic': '/ntrip_client/rtcm',
                 'rtcm_message_package': 'rtcm_msgs'
-            }]
+            }],
+            remappings=[
+                ('/rtcm', '/ntrip_client/rtcm')  # ublox_dgnss expects /ntrip_client/rtcm
+            ]
         ),
 
         # NMEA Bridge (VRS Handshake)
