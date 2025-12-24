@@ -12,6 +12,7 @@ def generate_launch_description():
     
     # Launch Arguments
     use_joy = LaunchConfiguration('use_joy', default='true')
+    use_foxglove = LaunchConfiguration('use_foxglove', default='true')
 
     # Process URDF
     urdf_file = PathJoinSubstitution([desc_share, 'urdf', 'rover.urdf.xacro'])
@@ -22,6 +23,11 @@ def generate_launch_description():
             'use_joy',
             default_value='true',
             description='Whether to start the joystick/teleop nodes'
+        ),
+        DeclareLaunchArgument(
+            'use_foxglove',
+            default_value='true',
+            description='Whether to start the Foxglove Bridge'
         ),
 
         # Robot State Publisher (TF Tree)
@@ -102,6 +108,20 @@ def generate_launch_description():
                 ('odometry/filtered', 'odometry/local'),
                 ('odometry/gps', 'odometry/gps')
             ]
+        ),
+        
+        # Foxglove Bridge (Web-based Viz)
+        Node(
+            condition=IfCondition(use_foxglove),
+            package='foxglove_bridge',
+            executable='foxglove_bridge',
+            name='foxglove_bridge',
+            parameters=[{
+                'port': 8765,
+                'address': '0.0.0.0',
+                'tls': False,
+                'use_compression': True
+            }]
         ),
         
         # Joystick Driver
