@@ -120,7 +120,8 @@ def generate_launch_description():
                 'port': 8765,
                 'address': '0.0.0.0',
                 'tls': False,
-                'use_compression': True
+                'use_compression': True,
+                'send_buffer_limit': 100000000  # Give it 100MB of breathing room
             }]
         ),
         
