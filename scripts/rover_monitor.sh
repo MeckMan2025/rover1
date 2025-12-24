@@ -111,37 +111,37 @@ while true; do
 
     echo -e "${CYAN}----------------------------------------------------------------${NC}"
 
-    # 5. TOPIC HEARTBEATS (longer timeouts needed for ros2 topic hz to collect samples)
-    echo -e "${CYAN}TOPIC HEARTBEATS (Hz):${NC}"
+    # 5. TOPIC HEARTBEATS (simple alive check - Hz measurement unreliable in bash)
+    echo -e "${CYAN}TOPIC HEARTBEATS:${NC}"
 
-    # IMU (reliable QoS) - runs at ~100Hz so window 10 = 0.1s of data
-    IMU_HZ=$(timeout 4 ros2 topic hz /imu/data --window 10 2>/dev/null | grep "average rate" | awk '{printf "%.0f", $4}')
-    if [ -n "$IMU_HZ" ]; then
-        echo -e "  IMU DATA:       [ ${GREEN}${IMU_HZ} Hz${NC} ]"
+    # IMU - check if publishing
+    IMU_CHECK=$(timeout 1 ros2 topic echo /imu/data --once 2>/dev/null | head -1)
+    if [ -n "$IMU_CHECK" ]; then
+        echo -e "  IMU DATA:       [ ${GREEN}ACTIVE${NC} ]"
     else
         echo -e "  IMU DATA:       [ ${RED}STALLED${NC} ]"
     fi
 
-    # GPS (best_effort QoS required) - runs at ~4Hz so window 4 = 1s of data
-    GPS_HZ=$(timeout 4 ros2 topic hz /fix --qos-reliability best_effort --window 4 2>/dev/null | grep "average rate" | awk '{printf "%.1f", $4}')
-    if [ -n "$GPS_HZ" ]; then
-        echo -e "  GPS FIX:        [ ${GREEN}${GPS_HZ} Hz${NC} ]"
+    # GPS - must use best_effort QoS
+    GPS_CHECK=$(timeout 2 ros2 topic echo /fix --qos-reliability best_effort --once 2>/dev/null | head -1)
+    if [ -n "$GPS_CHECK" ]; then
+        echo -e "  GPS FIX:        [ ${GREEN}ACTIVE${NC} ]"
     else
         echo -e "  GPS FIX:        [ ${RED}STALLED${NC} ]"
     fi
 
-    # RTCM - variable rate, check if any data in last 3s
-    RTCM_HZ=$(timeout 3 ros2 topic hz /ntrip_client/rtcm --window 3 2>/dev/null | grep "average rate" | awk '{printf "%.1f", $4}')
-    if [ -n "$RTCM_HZ" ]; then
-        echo -e "  RTCM (NTRIP):   [ ${GREEN}${RTCM_HZ} Hz${NC} ]"
+    # RTCM - check if corrections flowing
+    RTCM_CHECK=$(timeout 2 ros2 topic echo /ntrip_client/rtcm --once 2>/dev/null | head -1)
+    if [ -n "$RTCM_CHECK" ]; then
+        echo -e "  RTCM (NTRIP):   [ ${GREEN}ACTIVE${NC} ]"
     else
-        echo -e "  RTCM (NTRIP):   [ ${YELLOW}IDLE${NC} ]"
+        echo -e "  RTCM (NTRIP):   [ ${YELLOW}WAITING${NC} ]"
     fi
 
-    # CMD_VEL (only active when controller used)
-    CMD_HZ=$(timeout 2 ros2 topic hz /cmd_vel --window 3 2>/dev/null | grep "average rate" | awk '{printf "%.1f", $4}')
-    if [ -n "$CMD_HZ" ]; then
-        echo -e "  CMD_VEL:        [ ${GREEN}${CMD_HZ} Hz${NC} ]"
+    # CMD_VEL - only active when controller used
+    CMD_CHECK=$(timeout 1 ros2 topic echo /cmd_vel --once 2>/dev/null | head -1)
+    if [ -n "$CMD_CHECK" ]; then
+        echo -e "  CMD_VEL:        [ ${GREEN}ACTIVE${NC} ]"
     else
         echo -e "  CMD_VEL:        [ ${YELLOW}IDLE${NC} ]"
     fi
