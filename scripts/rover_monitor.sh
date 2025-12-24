@@ -1,5 +1,5 @@
 #!/bin/bash
-# Rover1 "Cockpit" Monitoring Dashboard v2.5 (High-Precision GPS Audit)
+# Rover1 "Cockpit" Monitoring Dashboard v2.6 (Hardware Audit Edition)
 
 # Source ROS 2 environment
 source /opt/ros/jazzy/setup.bash 2>/dev/null
@@ -8,7 +8,7 @@ source ~/ros2_ws/install/setup.bash 2>/dev/null
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
-CYAN='\033[1;36m'
+CYAN='\033[0;36m'
 NC='\033[0m'
 
 while true; do
@@ -47,41 +47,36 @@ while true; do
     echo -e "${CYAN}----------------------------------------------------------------${NC}"
 
     # 4. GPS QUALITY & SAT AUDIT
-    # Grabbing full NavPVT data at once for speed
-    GPS_DATA=$(timeout 0.2 ros2 topic echo /ublox/nav_pvt --count 1 2>/dev/null)
-    
-    FIX_TYPE=$(echo "$GPS_DATA" | grep "fix_type" | awk '{print $2}')
-    SATS=$(echo "$GPS_DATA" | grep "num_sv" | awk '{print $2}')
-    H_ACC=$(echo "$GPS_DATA" | grep "h_acc" | awk '{print $2}')
-    
     echo -en "${CYAN}GPS STATUS:     ${NC}"
-    if [ -z "$FIX_TYPE" ]; then
-        echo -e "[ ${RED}SEARCHING...${NC} ]"
+    # Grab NavSatFix status
+    FIX_DATA=$(timeout 0.5 ros2 topic echo /fix --count 1 2>/dev/null)
+    if [ -z "$FIX_DATA" ]; then
+        echo -e "[ ${RED}SEARCHING / NO ANTENNA LINK${NC} ]"
     else
-        case "$FIX_TYPE" in
-            "3") echo -ne "[ ${YELLOW}3D FIX${NC} ]" ;;
-            "4") echo -ne "[ ${GREEN}RTK FIXED${NC} ]" ;;
-            "5") echo -ne "[ ${CYAN}RTK FLOAT${NC} ]" ;;
-            *)   echo -ne "[ ${RED}NO FIX (${FIX_TYPE})${NC} ]" ;;
+        # Fix types are: -1=No, 0=Fix, 1=SBAS, 2=GBAS (RTK)
+        STATUS_VAL=$(echo "$FIX_DATA" | grep "status" | head -n 1 | awk '{print $2}')
+        case "$STATUS_VAL" in
+            "0") echo -e "[ ${YELLOW}STANDARD 3D FIX${NC} ]" ;;
+            "1") echo -e "[ ${CYAN}RTK FLOAT${NC} ]" ;;
+            "2") echo -e "[ ${GREEN}RTK FIXED (OPTIMAL)${NC} ]" ;;
+            *)   echo -e "[ ${RED}NO FIX (${STATUS_VAL})${NC} ]" ;;
         esac
-        # Add Satellite Count & Accuracy (H-Acc is in mm, converting to cm)
-        ACC_CM=$(awk "BEGIN {print $H_ACC / 10}")
-        echo -e " | ${YELLOW}SATS: ${SATS}${NC} | ${YELLOW}ACC: ${ACC_CM}cm${NC}"
     fi
 
     echo -e "${CYAN}----------------------------------------------------------------${NC}"
 
-    # 5. TOPIC HEARTBEATS
-    echo -e "${CYAN}TOPIC HEARTBEETS (Last 0.2s):${NC}"
-    timeout 0.2 ros2 topic hz /imu/data --window 1 2>/dev/null | grep "average rate" | awk '{print "  IMU DATA:       [ " $4 " Hz ]"}' || echo -e "  IMU DATA:       [ ${RED}STALLED${NC} ]"
-    timeout 0.2 ros2 topic hz /fix --window 1 2>/dev/null | grep "average rate" | awk '{print "  GPS FIX:        [ " $4 " Hz ]"}' || echo -e "  GPS FIX:        [ ${RED}STALLED${NC} ]"
+    # 5. TOPIC HEARTBEATS (Increased timeout to 0.8s for Pi performance)
+    echo -e "${CYAN}TOPIC HEARTBEETS (Hz):${NC}"
     
-    # RTCM CHECK
-    timeout 0.2 ros2 topic hz /ntrip_client/rtcm --window 1 2>/dev/null | grep "average rate" | awk '{print "  RTCM (NET):     [ " $4 " Hz ]"}' || \
-    timeout 0.2 ros2 topic hz /rtcm --window 1 2>/dev/null | grep "average rate" | awk '{print "  RTCM (NET):     [ " $4 " Hz ]"}' || \
+    timeout 0.8 ros2 topic hz /imu/data --window 2 2>/dev/null | grep "average rate" | awk '{print "  IMU DATA:       [ " $4 " Hz ]"}' || echo -e "  IMU DATA:       [ ${RED}STALLED${NC} ]"
+    timeout 0.8 ros2 topic hz /fix --window 2 2>/dev/null | grep "average rate" | awk '{print "  GPS FIX:        [ " $4 " Hz ]"}' || echo -e "  GPS FIX:        [ ${RED}STALLED${NC} ]"
+    
+    # Check both potential RTCM paths
+    timeout 0.8 ros2 topic hz /ntrip_client/rtcm --window 2 2>/dev/null | grep "average rate" | awk '{print "  RTCM (NET):     [ " $4 " Hz ]"}' || \
+    timeout 0.8 ros2 topic hz /rtcm --window 2 2>/dev/null | grep "average rate" | awk '{print "  RTCM (NET):     [ " $4 " Hz ]"}' || \
     echo -e "  RTCM (NET):     [ ${RED}IDLE${NC} ]"
     
-    timeout 0.2 ros2 topic hz /cmd_vel --window 1 2>/dev/null | grep "average rate" | awk '{print "  CMD_VEL:        [ " $4 " Hz ]"}' || echo -e "  CMD_VEL:        [ ${RED}IDLE${NC} ]"
+    timeout 0.8 ros2 topic hz /cmd_vel --window 2 2>/dev/null | grep "average rate" | awk '{print "  CMD_VEL:        [ " $4 " Hz ]"}' || echo -e "  CMD_VEL:        [ ${RED}IDLE${NC} ]"
 
     echo -e "${CYAN}================================================================${NC}"
     echo -e "Press Ctrl+C to exit monitor."
