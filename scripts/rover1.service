@@ -1,0 +1,19 @@
+[Unit]
+Description=Rover1 Autonomous Startup Service
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=andrewmeckley
+WorkingDirectory=/home/andrewmeckley/ros2_ws/src/rover1
+ExecStart=/bin/bash /home/andrewmeckley/ros2_ws/src/rover1/scripts/startup_launch.sh
+Restart=on-failure
+RestartSec=10
+StandardOutput=inherit
+StandardError=inherit
+
+[Install]
+WantedBy=multi-user.target
