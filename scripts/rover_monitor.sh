@@ -26,10 +26,26 @@ while true; do
         echo -e "SYSTEMD BRAIN:  [ ${RED}FAILED/STOPPED (${STATUS})${NC} ]"
     fi
 
-    # 2. NETWORK INFO
+    # 2. NETWORK & POWER INFO
     IP=$(hostname -I | awk '{print $1}' 2>/dev/null)
     TEMP=$(vcgencmd measure_temp 2>/dev/null | cut -d'=' -f2)
-    echo -e "NETWORK:        IP: ${YELLOW}${IP}${NC}  |  CPU TEMP: ${YELLOW}${TEMP}${NC}"
+
+    # Battery voltage from /battery_voltage topic
+    BATT_V=$(timeout 2 ros2 topic echo /battery_voltage --once 2>/dev/null | grep "data:" | awk '{printf "%.1f", $2}')
+    if [ -n "$BATT_V" ]; then
+        # Color code: green > 14V, yellow 12-14V, red < 12V
+        if (( $(echo "$BATT_V > 14.0" | bc -l) )); then
+            BATT_STATUS="${GREEN}${BATT_V}V${NC}"
+        elif (( $(echo "$BATT_V > 12.0" | bc -l) )); then
+            BATT_STATUS="${YELLOW}${BATT_V}V${NC}"
+        else
+            BATT_STATUS="${RED}${BATT_V}V LOW!${NC}"
+        fi
+    else
+        BATT_STATUS="${RED}--${NC}"
+    fi
+
+    echo -e "NETWORK:        IP: ${YELLOW}${IP}${NC}  |  CPU: ${YELLOW}${TEMP}${NC}  |  BATT: ${BATT_STATUS}"
     echo -e "${CYAN}----------------------------------------------------------------${NC}"
 
     # 3. NODE HEALTH
@@ -111,34 +127,34 @@ while true; do
 
     echo -e "${CYAN}----------------------------------------------------------------${NC}"
 
-    # 5. TOPIC HEARTBEATS (simple alive check - Hz measurement unreliable in bash)
+    # 5. TOPIC HEARTBEATS (simple alive check with generous timeouts)
     echo -e "${CYAN}TOPIC HEARTBEATS:${NC}"
 
-    # IMU - check if publishing
-    IMU_CHECK=$(timeout 1 ros2 topic echo /imu/data --once 2>/dev/null | head -1)
+    # IMU - check if publishing (3s timeout for DDS discovery)
+    IMU_CHECK=$(timeout 3 ros2 topic echo /imu/data --once 2>/dev/null | head -1)
     if [ -n "$IMU_CHECK" ]; then
         echo -e "  IMU DATA:       [ ${GREEN}ACTIVE${NC} ]"
     else
         echo -e "  IMU DATA:       [ ${RED}STALLED${NC} ]"
     fi
 
-    # GPS - must use best_effort QoS
-    GPS_CHECK=$(timeout 2 ros2 topic echo /fix --qos-reliability best_effort --once 2>/dev/null | head -1)
+    # GPS - must use best_effort QoS (3s timeout)
+    GPS_CHECK=$(timeout 3 ros2 topic echo /fix --qos-reliability best_effort --once 2>/dev/null | head -1)
     if [ -n "$GPS_CHECK" ]; then
         echo -e "  GPS FIX:        [ ${GREEN}ACTIVE${NC} ]"
     else
         echo -e "  GPS FIX:        [ ${RED}STALLED${NC} ]"
     fi
 
-    # RTCM - check if corrections flowing
-    RTCM_CHECK=$(timeout 2 ros2 topic echo /ntrip_client/rtcm --once 2>/dev/null | head -1)
+    # RTCM - check if corrections flowing (3s timeout)
+    RTCM_CHECK=$(timeout 3 ros2 topic echo /ntrip_client/rtcm --once 2>/dev/null | head -1)
     if [ -n "$RTCM_CHECK" ]; then
         echo -e "  RTCM (NTRIP):   [ ${GREEN}ACTIVE${NC} ]"
     else
         echo -e "  RTCM (NTRIP):   [ ${YELLOW}WAITING${NC} ]"
     fi
 
-    # CMD_VEL - only active when controller used
+    # CMD_VEL - only active when controller used (1s is fine, it's fast)
     CMD_CHECK=$(timeout 1 ros2 topic echo /cmd_vel --once 2>/dev/null | head -1)
     if [ -n "$CMD_CHECK" ]; then
         echo -e "  CMD_VEL:        [ ${GREEN}ACTIVE${NC} ]"
