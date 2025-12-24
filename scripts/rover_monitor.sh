@@ -1,5 +1,5 @@
 #!/bin/bash
-# Rover1 "Cockpit" Monitoring Dashboard v2.7 (QoS Fix Edition)
+# Rover1 "Cockpit" Monitoring Dashboard v2.8 (RTK Edition)
 
 # Source ROS 2 environment
 source /opt/ros/jazzy/setup.bash 2>/dev/null
@@ -9,6 +9,7 @@ GREEN='\033[0;32m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
 NC='\033[0m'
 
 while true; do
@@ -34,7 +35,7 @@ while true; do
     # 3. NODE HEALTH
     echo -e "${CYAN}CORE NODE HEALTH:${NC}"
     NODES=("imu_driver" "motor_driver" "kinematics" "ekf_filter_node" "ekf_global_node" "navsat_transform" "foxglove_bridge" "stadia_teleop" "ublox_dgnss" "ntrip_client" "fix_to_nmea")
-    
+
     ACTIVE_NODES=$(ros2 node list 2>/dev/null)
     for node in "${NODES[@]}"; do
         if echo "$ACTIVE_NODES" | grep -q "$node"; then
@@ -46,39 +47,106 @@ while true; do
 
     echo -e "${CYAN}----------------------------------------------------------------${NC}"
 
-    # 4. GPS QUALITY & SAT AUDIT
-    echo -en "${CYAN}GPS STATUS:     ${NC}"
-    # Grab NavSatFix status (MUST use best_effort QoS to match ublox_dgnss publisher)
-    FIX_DATA=$(timeout 1 ros2 topic echo /fix --qos-reliability best_effort --once 2>/dev/null)
-    if [ -z "$FIX_DATA" ]; then
-        echo -e "[ ${RED}SEARCHING / NO ANTENNA LINK${NC} ]"
+    # 4. GPS & RTK STATUS (using /ubx_nav_pvt for accurate RTK info)
+    echo -e "${CYAN}GPS & RTK STATUS:${NC}"
+    PVT_DATA=$(timeout 3 ros2 topic echo /ubx_nav_pvt --once 2>/dev/null)
+
+    if [ -z "$PVT_DATA" ]; then
+        echo -e "  FIX TYPE:       [ ${RED}NO GPS DATA${NC} ]"
+        echo -e "  RTK STATUS:     [ ${RED}OFFLINE${NC} ]"
+        echo -e "  SATELLITES:     [ ${RED}--${NC} ]"
+        echo -e "  ACCURACY:       [ ${RED}--${NC} ]"
     else
-        # Fix types are: -1=No, 0=Fix, 1=SBAS, 2=GBAS (RTK)
-        STATUS_VAL=$(echo "$FIX_DATA" | grep "status:" | head -n 1 | awk '{print $2}')
-        case "$STATUS_VAL" in
-            "0") echo -e "[ ${YELLOW}STANDARD 3D FIX${NC} ]" ;;
-            "1") echo -e "[ ${CYAN}RTK FLOAT${NC} ]" ;;
-            "2") echo -e "[ ${GREEN}RTK FIXED (OPTIMAL)${NC} ]" ;;
-            *)   echo -e "[ ${RED}NO FIX (${STATUS_VAL})${NC} ]" ;;
+        # Extract values
+        FIX_TYPE=$(echo "$PVT_DATA" | grep "fix_type:" | awk '{print $2}')
+        DIFF_SOLN=$(echo "$PVT_DATA" | grep "diff_soln:" | awk '{print $2}')
+        CARR_SOLN=$(echo "$PVT_DATA" | grep -A1 "carr_soln:" | grep "status:" | awk '{print $2}')
+        NUM_SV=$(echo "$PVT_DATA" | grep "num_sv:" | awk '{print $2}')
+        H_ACC=$(echo "$PVT_DATA" | grep "h_acc:" | awk '{print $2}')
+
+        # Fix Type
+        case "$FIX_TYPE" in
+            "0") echo -e "  FIX TYPE:       [ ${RED}NO FIX${NC} ]" ;;
+            "2") echo -e "  FIX TYPE:       [ ${YELLOW}2D FIX${NC} ]" ;;
+            "3") echo -e "  FIX TYPE:       [ ${GREEN}3D FIX${NC} ]" ;;
+            *)   echo -e "  FIX TYPE:       [ ${RED}UNKNOWN ($FIX_TYPE)${NC} ]" ;;
         esac
+
+        # RTK Status (the important one!)
+        if [ "$DIFF_SOLN" == "true" ]; then
+            case "$CARR_SOLN" in
+                "0") echo -e "  RTK STATUS:     [ ${YELLOW}DGPS${NC} ]" ;;
+                "1") echo -e "  RTK STATUS:     [ ${CYAN}RTK FLOAT${NC} ] (~5cm)" ;;
+                "2") echo -e "  RTK STATUS:     [ ${GREEN}RTK FIXED${NC} ] (~2cm)" ;;
+                *)   echo -e "  RTK STATUS:     [ ${YELLOW}DGPS${NC} ]" ;;
+            esac
+        else
+            echo -e "  RTK STATUS:     [ ${RED}NO CORRECTIONS${NC} ]"
+        fi
+
+        # Satellites
+        if [ -n "$NUM_SV" ]; then
+            if [ "$NUM_SV" -ge 20 ]; then
+                echo -e "  SATELLITES:     [ ${GREEN}${NUM_SV} SVs${NC} ]"
+            elif [ "$NUM_SV" -ge 10 ]; then
+                echo -e "  SATELLITES:     [ ${YELLOW}${NUM_SV} SVs${NC} ]"
+            else
+                echo -e "  SATELLITES:     [ ${RED}${NUM_SV} SVs${NC} ]"
+            fi
+        fi
+
+        # Accuracy (h_acc is in mm)
+        if [ -n "$H_ACC" ]; then
+            if [ "$H_ACC" -lt 50 ]; then
+                echo -e "  ACCURACY:       [ ${GREEN}${H_ACC}mm${NC} ] (RTK quality)"
+            elif [ "$H_ACC" -lt 500 ]; then
+                echo -e "  ACCURACY:       [ ${CYAN}${H_ACC}mm${NC} ] (sub-meter)"
+            elif [ "$H_ACC" -lt 2000 ]; then
+                echo -e "  ACCURACY:       [ ${YELLOW}${H_ACC}mm${NC} ] (meter-level)"
+            else
+                echo -e "  ACCURACY:       [ ${RED}${H_ACC}mm${NC} ] (poor)"
+            fi
+        fi
     fi
 
     echo -e "${CYAN}----------------------------------------------------------------${NC}"
 
-    # 5. TOPIC HEARTBEATS (Use best_effort QoS for sensor topics)
+    # 5. TOPIC HEARTBEATS (increased timeouts for Pi 5 performance)
     echo -e "${CYAN}TOPIC HEARTBEATS (Hz):${NC}"
 
-    timeout 1.5 ros2 topic hz /imu/data --window 3 2>/dev/null | grep "average rate" | awk '{print "  IMU DATA:       [ " $4 " Hz ]"}' || echo -e "  IMU DATA:       [ ${RED}STALLED${NC} ]"
-    timeout 1.5 ros2 topic hz /fix --qos-reliability best_effort --window 3 2>/dev/null | grep "average rate" | awk '{print "  GPS FIX:        [ " $4 " Hz ]"}' || echo -e "  GPS FIX:        [ ${RED}STALLED${NC} ]"
+    # IMU (reliable QoS)
+    IMU_HZ=$(timeout 2 ros2 topic hz /imu/data --window 5 2>/dev/null | grep "average rate" | awk '{printf "%.1f", $4}')
+    if [ -n "$IMU_HZ" ]; then
+        echo -e "  IMU DATA:       [ ${GREEN}${IMU_HZ} Hz${NC} ]"
+    else
+        echo -e "  IMU DATA:       [ ${RED}STALLED${NC} ]"
+    fi
 
-    # Check both potential RTCM paths (reliable QoS)
-    timeout 1.5 ros2 topic hz /ntrip_client/rtcm --window 3 2>/dev/null | grep "average rate" | awk '{print "  RTCM (NET):     [ " $4 " Hz ]"}' || \
-    timeout 1.5 ros2 topic hz /rtcm --window 3 2>/dev/null | grep "average rate" | awk '{print "  RTCM (NET):     [ " $4 " Hz ]"}' || \
-    echo -e "  RTCM (NET):     [ ${RED}IDLE${NC} ]"
+    # GPS (best_effort QoS required)
+    GPS_HZ=$(timeout 2 ros2 topic hz /fix --qos-reliability best_effort --window 5 2>/dev/null | grep "average rate" | awk '{printf "%.1f", $4}')
+    if [ -n "$GPS_HZ" ]; then
+        echo -e "  GPS FIX:        [ ${GREEN}${GPS_HZ} Hz${NC} ]"
+    else
+        echo -e "  GPS FIX:        [ ${RED}STALLED${NC} ]"
+    fi
 
-    timeout 1.5 ros2 topic hz /cmd_vel --window 3 2>/dev/null | grep "average rate" | awk '{print "  CMD_VEL:        [ " $4 " Hz ]"}' || echo -e "  CMD_VEL:        [ ${RED}IDLE${NC} ]"
+    # RTCM
+    RTCM_HZ=$(timeout 2 ros2 topic hz /ntrip_client/rtcm --window 5 2>/dev/null | grep "average rate" | awk '{printf "%.1f", $4}')
+    if [ -n "$RTCM_HZ" ]; then
+        echo -e "  RTCM (NTRIP):   [ ${GREEN}${RTCM_HZ} Hz${NC} ]"
+    else
+        echo -e "  RTCM (NTRIP):   [ ${YELLOW}IDLE${NC} ]"
+    fi
+
+    # CMD_VEL (only active when controller used)
+    CMD_HZ=$(timeout 1 ros2 topic hz /cmd_vel --window 3 2>/dev/null | grep "average rate" | awk '{printf "%.1f", $4}')
+    if [ -n "$CMD_HZ" ]; then
+        echo -e "  CMD_VEL:        [ ${GREEN}${CMD_HZ} Hz${NC} ]"
+    else
+        echo -e "  CMD_VEL:        [ ${YELLOW}IDLE${NC} ]"
+    fi
 
     echo -e "${CYAN}================================================================${NC}"
-    echo -e "Press Ctrl+C to exit monitor."
+    echo -e "Press Ctrl+C to exit monitor. Refresh: 5s"
     sleep 5
 done
