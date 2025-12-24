@@ -3,8 +3,8 @@
 **Goal**: Deliver a "Zero-Experience to Autonomy" kit with a professional-grade User Interface and reliable "Teach & Repeat" navigation.
 
 **Timeline Strategy**:
-- **Last Session**: 2025-12-24 - Observability + Autonomous Deployment
-- **Next**: EKF Square Drive Validation, then Nav2 Path Planning.
+- **Last Session**: 2025-12-24 - GPS/RTK Silent Fix Debugging & NTRIP Bridge Repair
+- **Next**: Rebuild on Pi, verify RTK corrections flowing, then EKF Square Drive Validation.
 - **Final**: Nav2 Autonomy + Web UI & "Patrol Mode" Logic.
 
 ---
@@ -91,12 +91,14 @@ Establishing the critical `map` -> `odom` -> `base_link` transform tree.
 - **Inputs**: Wheel Odometry (Twist) + IMU (Orientation/Angular Velocity) + GPS.
 
 ### 2.4 GPS Integration
-*Status: 100% Complete*
+*Status: 100% Complete (Debugged Dec 24, 2025)*
 - **Goal**: `navsat_transform_node` to anchor `odom` to `map`.
 - **Achievements**:
     - [x] RTK Float/Fixed state confirmed.
     - [x] `navsat_transform` linking GPS to TF tree.
     - [x] Heading correction from IMU verified.
+    - [x] **QoS Fix**: `/fix` topic requires BEST_EFFORT QoS to read.
+    - [x] **NMEA Bridge Fix**: `fix_to_nmea` now publishes `nmea_msgs/msg/Sentence` for NTRIP VRS handshake.
 
 ### 2.5 Battery Monitoring Integration
 *Status: 100% Complete*
@@ -199,8 +201,10 @@ Phase 4 focuses on delivering a polished, customer-facing Web UI, built only aft
 ---
 
 ## Immediate Next Steps (Updated 2025-12-24)
-1.  **EKF Square Drive Validation**: Perform the 5m square test and analyze the digital trail in Foxglove.
-2.  **Path Planning (Nav2)**: Configure Navigation2 stack for autonomous waypoint following.
-3.  **Mission Controller**: Implement the first "Patrol" state machine.
+1.  **Rebuild & Deploy**: Run `colcon build` on Pi to apply NMEA bridge fix, restart rover service.
+2.  **Verify RTK Flow**: Confirm `/ntrip_client/rtcm` is receiving data and GPS achieves RTK Float/Fixed.
+3.  **EKF Square Drive Validation**: Perform the 5m square test and analyze the digital trail in Foxglove.
+4.  **Path Planning (Nav2)**: Configure Navigation2 stack for autonomous waypoint following.
+5.  **Mission Controller**: Implement the first "Patrol" state machine.
 
 

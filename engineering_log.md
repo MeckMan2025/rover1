@@ -481,3 +481,95 @@ The following capabilities were discovered during PDF audit on Dec 22, 2025:
 *   `scripts/calibrate_odometry.py`: Re-run if changing wheel sizes or gearboxes.
 *   `scripts/debug_nodes.sh`: Individual node startup testing.
 
+### 4.9 GPS/RTK "Silent Fix" Debugging Session (Dec 24, 2025)
+**Status:** ROOT CAUSE IDENTIFIED & FIXED - GPS was working the whole time!
+
+**Initial Symptoms:**
+1. `ros2 topic echo /fix` returned nothing (appeared silent).
+2. Monitor dashboard hung when checking GPS Hz rates.
+3. NTRIP client remained IDLE (no RTCM corrections flowing).
+4. System appeared to have no GPS lock despite hardware being confirmed.
+
+**Diagnostic Process:**
+
+**Step 1: Hardware Layer Verification**
+```bash
+lsusb | grep -i u-blox
+# Result: Bus 002 Device 002: ID 1546:01a9 U-Blox AG u-blox GNSS receiver ✓
+
+sudo dmesg | grep cdc_acm
+# Result: "probe of 2-1:1.0 failed with error -16" (EBUSY)
+# Interpretation: cdc_acm tried but FAILED - something else has the device ✓
+
+sudo lsof /dev/bus/usb/002/002
+# Result: component PID 62728 has the device
+# Interpretation: ublox_dgnss driver successfully claimed USB via libusb ✓
+```
+
+**Step 2: ROS Topic Investigation**
+```bash
+ros2 node list | grep ublox
+# Result: /ublox_dgnss, /ublox_nav_sat_fix_hp both running ✓
+
+ros2 topic list | grep ubx
+# Result: 30+ ubx_ topics exist ✓
+
+timeout 3 ros2 topic echo /ubx_nav_pvt --once
+# Result: FULL GPS DATA! 28 satellites, 3D fix, valid coordinates ✓
+```
+
+**Critical Discovery:** The GPS was fully operational. The `/ubx_nav_pvt` topic showed:
+- `gps_fix.fix_type: 3` (3D fix)
+- `gnss_fix_ok: true`
+- `num_sv: 28` (28 satellites!)
+- Valid Iowa coordinates (41.59°N, -90.49°W)
+- Horizontal accuracy: 1.2 meters
+
+**Root Cause #1: QoS Mismatch on /fix Topic**
+```bash
+timeout 3 ros2 topic echo /fix --once
+# Result: SILENT (timeout)
+
+timeout 3 ros2 topic echo /fix --qos-reliability best_effort --once
+# Result: FULL DATA! NavSatFix with lat/lon/alt
+```
+
+The `ublox_dgnss` driver publishes `/fix` with **BEST_EFFORT** QoS (SensorData profile).
+Default `ros2 topic echo` uses **RELIABLE** QoS. These are incompatible in ROS 2 DDS.
+
+**Root Cause #2: Message Type Mismatch on /nmea Topic**
+```bash
+ros2 topic info /nmea -v
+# Publisher: fix_to_nmea → std_msgs/msg/String
+# Subscriber: ntrip_client → nmea_msgs/msg/Sentence
+```
+
+The NTRIP client expects `nmea_msgs/msg/Sentence` but `fix_to_nmea` was publishing `std_msgs/msg/String`.
+These types are incompatible - the messages were never delivered.
+
+**The Fix:**
+
+1. **fix_to_nmea.py v2.0:**
+   - Changed publisher from `std_msgs/msg/String` to `nmea_msgs/msg/Sentence`
+   - Subscriber QoS set to BEST_EFFORT (matches ublox_dgnss)
+   - Publisher QoS set to RELIABLE (matches ntrip_client)
+   - Added proper header with timestamp and frame_id
+
+2. **rover_monitor.sh v2.7:**
+   - Added `--qos-reliability best_effort` to `/fix` topic commands
+   - Increased timeouts from 0.8s to 1.5s for Pi 5 performance
+   - Fixed typo: "HEARTBEETS" → "HEARTBEATS"
+
+3. **package.xml:**
+   - Added `nmea_msgs` dependency to rover1_hardware
+
+**Lessons Learned:**
+- **QoS Matters:** Always check publisher QoS before assuming a topic is dead.
+- **Type Safety:** ROS 2 message types must match exactly between publisher/subscriber.
+- **Debug Command:** `ros2 topic info /topic_name -v` shows QoS and type for both ends.
+- **Diagnostic Sequence:**
+  1. Check hardware layer first (lsusb, dmesg, lsof)
+  2. Check node existence (ros2 node list)
+  3. Check raw driver topics before processed topics
+  4. Always specify QoS when echoing sensor topics
+
