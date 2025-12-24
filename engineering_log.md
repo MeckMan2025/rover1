@@ -481,6 +481,218 @@ The following capabilities were discovered during PDF audit on Dec 22, 2025:
 *   `scripts/calibrate_odometry.py`: Re-run if changing wheel sizes or gearboxes.
 *   `scripts/debug_nodes.sh`: Individual node startup testing.
 
+---
+
+## 6. RTK GPS Technical Specification (CRITICAL REFERENCE)
+
+**Last Verified:** December 24, 2025
+**Hardware:** u-blox ZED-F9R + Iowa DOT RTN (IaRTN)
+**Purpose:** This section exists because RTK integration has failed multiple times due to subtle misconfigurations. Follow this specification exactly.
+
+### 6.1 System Architecture (The RTK Data Flow)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         RTK CORRECTION FLOW                                 │
+│                                                                             │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐ │
+│  │  ZED-F9R    │───▶│ublox_dgnss │───▶│  /fix       │───▶│fix_to_nmea │ │
+│  │  (USB)      │    │  driver     │    │ (NavSatFix) │    │  bridge     │ │
+│  └─────────────┘    └─────────────┘    └─────────────┘    └──────┬──────┘ │
+│        ▲                                                          │        │
+│        │ RTCM                                                     ▼        │
+│        │ Corrections                                        ┌───────────┐  │
+│  ┌─────┴─────────┐                                          │  /nmea    │  │
+│  │/ntrip_client/ │◀───────────────────────────────────────  │ (Sentence)│  │
+│  │    rtcm       │         VRS Position Handshake           └─────┬─────┘  │
+│  └───────────────┘                                                │        │
+│        ▲                                                          ▼        │
+│        │                                                   ┌─────────────┐ │
+│  ┌─────┴─────────┐                                         │ntrip_client │ │
+│  │  Iowa DOT     │◀────────────────────────────────────────│  (VRS)      │ │
+│  │  RTN Caster   │         NMEA GPGGA Position             └─────────────┘ │
+│  │ 165.206.203.10│                                                         │
+│  └───────────────┘                                                         │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 6.2 Critical Topic Configuration
+
+| Topic | Publisher | Subscriber | Message Type | QoS Reliability |
+|-------|-----------|------------|--------------|-----------------|
+| `/fix` | ublox_nav_sat_fix_hp | fix_to_nmea, navsat_transform | `sensor_msgs/NavSatFix` | **BEST_EFFORT** |
+| `/nmea` | fix_to_nmea | ntrip_client | `nmea_msgs/Sentence` | RELIABLE |
+| `/ntrip_client/rtcm` | ntrip_client | ublox_dgnss | `rtcm_msgs/Message` | RELIABLE |
+
+### 6.3 The Three RTK Failure Modes (And How to Diagnose)
+
+#### Failure Mode 1: QoS Mismatch on /fix
+**Symptom:** `ros2 topic echo /fix` returns nothing (hangs or times out).
+**Root Cause:** The ublox_dgnss driver publishes with BEST_EFFORT QoS. Default subscribers use RELIABLE.
+**Diagnosis:**
+```bash
+# This will FAIL (hang/timeout):
+ros2 topic echo /fix --once
+
+# This will SUCCEED:
+ros2 topic echo /fix --qos-reliability best_effort --once
+```
+**Fix:** All subscribers to `/fix` must use BEST_EFFORT QoS:
+```python
+from rclpy.qos import QoSProfile, ReliabilityPolicy
+qos = QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT, depth=10)
+self.create_subscription(NavSatFix, '/fix', callback, qos)
+```
+
+#### Failure Mode 2: Message Type Mismatch on /nmea
+**Symptom:** NTRIP client stays IDLE, no RTCM corrections flow.
+**Root Cause:** `fix_to_nmea` publishes wrong message type.
+**Diagnosis:**
+```bash
+ros2 topic info /nmea -v
+# Check that BOTH publisher AND subscriber show: nmea_msgs/msg/Sentence
+# If publisher shows std_msgs/msg/String → MISMATCH
+```
+**Fix:** `fix_to_nmea.py` MUST publish `nmea_msgs/msg/Sentence`, NOT `std_msgs/msg/String`:
+```python
+from nmea_msgs.msg import Sentence
+nmea_msg = Sentence()
+nmea_msg.header.stamp = self.get_clock().now().to_msg()
+nmea_msg.header.frame_id = 'gps_link'
+nmea_msg.sentence = "$GPGGA,..."
+```
+
+#### Failure Mode 3: RTCM Topic Routing Mismatch
+**Symptom:** NTRIP receives RTCM but GPS stays in Standard 3D mode (no RTK).
+**Root Cause:** NTRIP publishes to `/rtcm`, but ublox subscribes to `/ntrip_client/rtcm`.
+**Diagnosis:**
+```bash
+# Check what ntrip_client publishes:
+ros2 node info /ntrip_client | grep Publishers
+# Check what ublox_dgnss subscribes to:
+ros2 node info /ublox_dgnss | grep -A3 Subscribers
+# If they don't match → no RTCM delivery
+```
+**Fix:** Add remapping in `gps.launch.py`:
+```python
+Node(
+    package='ntrip_client',
+    executable='ntrip_ros.py',
+    remappings=[('/rtcm', '/ntrip_client/rtcm')]
+)
+```
+
+### 6.4 Required Package Dependencies
+
+```bash
+# Install these on the Pi:
+sudo apt install -y ros-jazzy-nmea-msgs ros-jazzy-rtcm-msgs ros-jazzy-ntrip-client ros-jazzy-ublox-dgnss
+```
+
+In `rover1_hardware/package.xml`:
+```xml
+<depend>nmea_msgs</depend>
+```
+
+### 6.5 RTK Verification Checklist
+
+Run these commands IN ORDER after every software rebuild:
+
+```bash
+# 1. Source environment
+source /opt/ros/jazzy/setup.bash && source ~/ros2_ws/install/setup.bash
+
+# 2. Verify USB device is claimed by driver (not cdc_acm)
+lsusb | grep u-blox  # Should show device
+sudo lsof /dev/bus/usb/002/*  # Should show "component" process
+
+# 3. Verify raw GPS is working (28+ satellites expected outdoors)
+timeout 5 ros2 topic echo /ubx_nav_pvt --once | grep -E "num_sv|fix_type"
+# Expected: num_sv: 25+, fix_type: 3
+
+# 4. Verify /fix is publishing (MUST use best_effort QoS)
+timeout 5 ros2 topic echo /fix --qos-reliability best_effort --once
+# Expected: latitude/longitude values
+
+# 5. Verify NMEA bridge is working (correct message type)
+ros2 topic info /nmea -v | grep "Topic type"
+# Expected: nmea_msgs/msg/Sentence (BOTH publisher AND subscriber)
+
+timeout 3 ros2 topic echo /nmea --once
+# Expected: $GPGGA sentence
+
+# 6. Verify RTCM is flowing to correct topic
+timeout 5 ros2 topic echo /ntrip_client/rtcm --once
+# Expected: Binary RTCM data (not empty)
+
+# 7. Verify RTK status
+timeout 5 ros2 topic echo /ubx_nav_pvt --once | grep -E "diff_soln|carr_soln"
+# Expected: diff_soln: true, carr_soln.status: 1 (float) or 2 (fixed)
+
+# 8. Verify accuracy improvement
+timeout 5 ros2 topic echo /ubx_nav_pvt --once | grep h_acc
+# Expected: h_acc < 100 (sub-meter), ideally < 50 (RTK float) or < 20 (RTK fixed)
+```
+
+### 6.6 NTRIP Caster Configuration (Iowa DOT RTN)
+
+```yaml
+Host: 165.206.203.10
+Port: 10000
+Mountpoint: RTCM3_IMAX
+Authentication: Basic Auth (username/password in .env file)
+Protocol: NTRIP v1 with VRS
+```
+
+**VRS Requirement:** This is a Virtual Reference Station network. The caster REQUIRES the rover's position (NMEA GPGGA) to generate corrections. Without the `fix_to_nmea` bridge, NTRIP will connect but send no data.
+
+### 6.7 RTK Status Codes Reference
+
+| Field | Value | Meaning |
+|-------|-------|---------|
+| `gps_fix.fix_type` | 0 | No fix |
+| `gps_fix.fix_type` | 2 | 2D fix |
+| `gps_fix.fix_type` | 3 | 3D fix |
+| `diff_soln` | false | No differential corrections |
+| `diff_soln` | true | RTCM corrections being applied |
+| `carr_soln.status` | 0 | No carrier solution |
+| `carr_soln.status` | 1 | **RTK Float** (~5-50cm accuracy) |
+| `carr_soln.status` | 2 | **RTK Fixed** (~1-2cm accuracy) |
+
+### 6.8 Expected Accuracy by Mode
+
+| Mode | Horizontal Accuracy (h_acc) | Typical Value |
+|------|----------------------------|---------------|
+| Standard 3D Fix | 1000-5000 mm | ~1.2 meters |
+| RTK Float | 20-100 mm | ~5 cm |
+| RTK Fixed | 10-30 mm | ~2 cm |
+
+### 6.9 Troubleshooting Decision Tree
+
+```
+GPS not working?
+├── Is USB device visible? (lsusb | grep u-blox)
+│   └── NO → Check USB cable, power, physical connection
+│   └── YES → Continue
+├── Is /ubx_nav_pvt publishing? (ros2 topic echo /ubx_nav_pvt --once)
+│   └── NO → Driver issue. Check journalctl -u rover1.service
+│   └── YES → Continue
+├── Is /fix publishing? (ros2 topic echo /fix --qos-reliability best_effort --once)
+│   └── NO → QoS mismatch or ublox_nav_sat_fix_hp not running
+│   └── YES → Continue
+├── Is /nmea publishing correct type? (ros2 topic info /nmea -v)
+│   └── Wrong type → Fix fix_to_nmea.py to use nmea_msgs/Sentence
+│   └── Correct type → Continue
+├── Is /ntrip_client/rtcm receiving data? (ros2 topic echo /ntrip_client/rtcm --once)
+│   └── NO → Check NTRIP credentials, network, topic remapping
+│   └── YES → Continue
+├── Is diff_soln: true?
+│   └── NO → RTCM not reaching GPS. Check topic routing.
+│   └── YES → RTK is working! Check carr_soln.status for float/fixed.
+```
+
+---
+
 ### 4.9 GPS/RTK "Silent Fix" Debugging Session (Dec 24, 2025)
 **Status:** ROOT CAUSE IDENTIFIED & FIXED - GPS was working the whole time!
 
