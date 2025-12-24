@@ -22,7 +22,7 @@ class BerryIMUDriver(Node):
         self.publisher_ = self.create_publisher(Imu, 'imu/data', 10)
         self.declare_parameter('i2c_bus', 1)
         self.declare_parameter('frame_id', 'imu_link')
-        self.declare_parameter('calibrate_steps', 200)
+        self.declare_parameter('calibrate_steps', 1000)
 
         self.bus_num = self.get_parameter('i2c_bus').value
         self.frame_id = self.get_parameter('frame_id').value
@@ -163,7 +163,7 @@ class BerryIMUDriver(Node):
             msg.orientation_covariance = [
                 0.01, 0.0, 0.0,
                 0.0, 0.01, 0.0,
-                0.0, 0.0, 0.1  # Higher variance for Yaw
+                0.0, 0.0, 0.5  # Higher variance (Lower trust) for Yaw to mitigate drift
             ]
             
             msg.angular_velocity_covariance = [0.001, 0.0, 0.0, 0.0, 0.001, 0.0, 0.0, 0.0, 0.001]
