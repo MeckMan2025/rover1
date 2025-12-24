@@ -259,7 +259,7 @@ Standard Hiwonder protocols (broadcast speed) failed. Direct register addressing
 - **Connection:** Always use `ssh andrewmeckley@10.42.0.1`.
 
 ### 4.7 Manual Control: Google Stadia Controller Integration (Dec 23, 2025)
-**Status:** Hardware paired, custom teleop node implemented.
+**Status:** VERIFIED WORKING - Full Mecanum teleop operational.
 
 **Hardware Specs:**
 - **Device:** Google Stadia Controller (Unlocked Bluetooth Mode).
@@ -267,23 +267,57 @@ Standard Hiwonder protocols (broadcast speed) failed. Direct register addressing
 - **System Service:** `bluez` (Bluetoothctl used for pairing/trusting/connecting).
 
 **Software Stack:**
-- **Driver:** `ros-jazzy-joy` (`joy_node`).
+- **Driver:** `ros-jazzy-joy` (`joy_node`) with `deadzone: 0.1` and `autorepeat_rate: 20.0`.
 - **Control Logic:** `rover1_hardware/stadia_teleop.py` (Subscribes to `/joy`, Publishes to `/cmd_vel`).
 
-**Controller Mapping (Observed Dec 23, 2025):**
-| Input | Axis Index | ROS Mapping | behavior |
-| :--- | :--- | :--- | :--- |
-| **Left Stick Y** | Axis 1 | `linear.x` | Forward (+), Backward (-) |
-| **Left Stick X** | Axis 0 | `angular.z` | Rotate Left (+), Rotate Right (-) |
-| **Right Stick X** | Axis 2 | `linear.y` | Strafe Left (+), Strafe Right (-) |
-| **L2 Trigger** | Axis 5 | Deadman Switch | Enabled while < 0.0; Stopped while > 0.0 |
+**Controller Mapping (Verified Dec 23, 2025):**
+| Input | Axis Index | Range | ROS Mapping | Behavior |
+| :--- | :--- | :--- | :--- | :--- |
+| **Left Stick Y** | Axis 1 | -1.0 to +1.0 | `linear.x` | Forward (+), Backward (-) |
+| **Left Stick X** | Axis 0 | -1.0 to +1.0 | `angular.z` | Rotate Left (+), Rotate Right (-) |
+| **Right Stick X** | Axis 2 | -1.0 to +1.0 | `linear.y` | Strafe Left (+), Strafe Right (-) |
+| **L2 Trigger** | Axis 5 | +1.0 to -1.0 | Deadman Switch | Released = 1.0, Pressed = -1.0 |
+
+**Tuned Parameters (rover.launch.py):**
+- `max_linear_speed: 0.4` m/s
+- `max_angular_speed: 0.8` rad/s
+- `deadman_threshold: 0.0` (L2 must be pressed past halfway)
+- `debug_axes: False` (Set `True` to log raw axis values for recalibration)
 
 **Safety Mechanism:**
-- **Dead-Man Switch:** Motion is only permitted when the **L2 Trigger** is depressed.
+- **Dead-Man Switch:** Motion is only permitted when the **L2 Trigger** is depressed (axis < 0.0).
 - **Auto-Stop:** Releasing L2 immediately publishes a zero-velocity `Twist` message to `/cmd_vel` to prevent runaway.
+- **Axis Validation:** Node checks for sufficient axes before processing to prevent index errors.
 
 **Usage:**
-- Launch via `ros2 launch rover1_bringup rover.launch.py use_joy:=true`.
+```bash
+# Standard launch (joystick enabled by default)
+ros2 launch rover1_bringup rover.launch.py use_joy:=true
+
+# Disable joystick for autonomous-only mode
+ros2 launch rover1_bringup rover.launch.py use_joy:=false
+```
+
+**Bluetooth Reconnection (if controller disconnects):**
+```bash
+bluetoothctl connect D1:71:42:54:CB:0F
+```
+
+**Calibration/Debug Mode:**
+```bash
+# Verify controller is publishing
+ros2 topic echo /joy --field axes
+
+# Enable runtime axis logging
+ros2 param set /stadia_teleop debug_axes true
+```
+
+**Rebuild Instructions (if code changes):**
+```bash
+cd ~/ros2_ws
+colcon build --packages-select rover1_hardware rover1_bringup --symlink-install
+source install/setup.bash
+```
 
 ## 5. Additional Hardware Capabilities (Extracted from Documentation)
 The following capabilities were discovered during PDF audit on Dec 22, 2025:
