@@ -245,7 +245,7 @@ Standard Hiwonder protocols (broadcast speed) failed. Direct register addressing
 - **STABILITY:** Stable publication at 1Hz observed via `ros2 topic echo /battery_voltage`.
 
 ### 4.6 Field Networking & Failover Strategy (Dec 23, 2025)
-**Status:** CONFIGURED - Multi-tier network failover for field demos.
+**Status:** VERIFIED WORKING - Multi-tier network failover for field demos.
 
 **Problem:** Need reliable connectivity across multiple environments:
 - Home lab (WiFi)
@@ -261,23 +261,52 @@ NetworkManager handles WiFi with `autoconnect-priority`, Netplan handles Etherne
 | 2 | AJM17ProMax | Phone Hotspot | Fallback when home unavailable |
 | 3 (Always) | Ethernet Tether | Static 10.42.0.1 | Direct laptop connection |
 
-**Credentials:**
+**Prerequisites (Ubuntu 24.04 on Pi):**
+```bash
+sudo apt update && sudo apt install -y network-manager
+```
+
+**Credentials (.env file format):**
 - Stored in `.env` file (not tracked in git)
-- Variables: `WIFI_HOME_SSID`, `WIFI_HOME_PASS`, `WIFI_HOTSPOT_SSID`, `WIFI_HOTSPOT_PASS`
+- **IMPORTANT:** Values with spaces must be quoted
+```bash
+# WiFi Networks (Priority Order)
+WIFI_HOME_SSID="Lake Wifi"
+WIFI_HOME_PASS="your_password"
+WIFI_HOTSPOT_SSID="AJM17ProMax"
+WIFI_HOTSPOT_PASS="your_password"
+```
 
 **Setup (Run Once on Pi):**
 ```bash
 cd ~/ros2_ws/src/rover1
-# First, update .env with your WiFi credentials
+
+# Create .env with credentials (values with spaces need quotes!)
 nano .env
 
-# Then run the setup script
+# Run the setup script
 ./scripts/setup_network_failover.sh
+
+# Fix netplan permissions warning
+sudo chmod 600 /etc/netplan/*.yaml
+```
+
+**Verification:**
+```bash
+# Check configured connections
+nmcli connection show
+
+# Check current network status
+nmcli device status
+
+# Verify ethernet static IP
+ip addr show eth0 | grep inet
+# Should show: inet 10.42.0.1/24
 ```
 
 **Behavior:**
-- **At Home:** Connects to Lake Wifi automatically
-- **In Field:** When home network unavailable, connects to phone hotspot
+- **At Home:** Connects to Lake Wifi automatically (priority 100)
+- **In Field:** When home network unavailable, connects to phone hotspot (priority 50)
 - **Emergency:** Ethernet tether always works at `10.42.0.1`
 
 **Manual Network Switching:**
@@ -288,13 +317,51 @@ nmcli device status
 # Force switch to specific network
 nmcli connection up "Lake Wifi"
 nmcli connection up "AJM17ProMax"
+
+# Disconnect from WiFi to test failover
+nmcli connection down "Lake Wifi"
 ```
 
 **Laptop Ethernet Setup (Mac):**
-- Set Ethernet adapter to Manual
-- IP: `10.42.0.2`
-- Subnet: `255.255.255.0`
-- Connect via: `ssh andrewmeckley@10.42.0.1`
+1. System Settings → Network → Ethernet
+2. Configure IPv4: Manually
+3. IP Address: `10.42.0.2`
+4. Subnet Mask: `255.255.255.0`
+5. Apply
+
+**Mac Smart SSH (Auto-Selects Ethernet vs WiFi):**
+Added to `~/.zshrc` on Mac - automatically uses ethernet when available:
+```bash
+# Smart rover SSH - ethernet first, then WiFi
+ssh() {
+    if [[ "$1" == "andrewmeckley@rover1.local" || "$1" == "rover1.local" ]]; then
+        if ping -c1 -W1 10.42.0.1 &>/dev/null; then
+            echo "→ Using ethernet (10.42.0.1)"
+            command ssh andrewmeckley@10.42.0.1 "${@:2}"
+        else
+            echo "→ Using WiFi (rover1.local)"
+            command ssh andrewmeckley@rover1.local "${@:2}"
+        fi
+    else
+        command ssh "$@"
+    fi
+}
+```
+
+**Usage:** Just type `ssh andrewmeckley@rover1.local` - it auto-detects the best path.
+
+**Netplan Config Created (`/etc/netplan/99-rover-network.yaml`):**
+```yaml
+network:
+  version: 2
+  renderer: NetworkManager
+  ethernets:
+    eth0:
+      dhcp4: true
+      optional: true
+      addresses:
+        - 10.42.0.1/24
+```
 
 **Legacy Script:** `scripts/setup_ethernet_tether.sh` (ethernet-only, superseded by `setup_network_failover.sh`)
 
