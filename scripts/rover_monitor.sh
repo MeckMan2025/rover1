@@ -44,15 +44,24 @@ while true; do
 
     echo -e "${CYAN}----------------------------------------------------------------${NC}"
 
-    # 4. TOPIC HEARTBEAT (Hz Check)
+    # 4. GPS QUALITY CHECK (RTK Status)
+    echo -en "${CYAN}GPS QUALITY:    ${NC}"
+    FIX_TYPE=$(ros2 topic echo /ublox/nav_pvt --count 1 --field fix_type 2>/dev/null)
+    case "$FIX_TYPE" in
+        "3") echo -e "[ ${YELLOW}3 - STANDARD 3D${NC} ]" ;;
+        "4") echo -e "[ ${GREEN}4 - RTK FIXED (OPTIMAL)${NC} ]" ;;
+        "5") echo -e "[ ${CYAN}5 - RTK FLOAT (HIGH)${NC} ]" ;;
+        *)   echo -e "[ ${RED}NO FIX / SEARCHING...${NC} ]" ;;
+    esac
+
+    # 5. TOPIC HEARTBEET (Hz Check)
     echo -e "${CYAN}TOPIC HEARTBEETS (Last 1s):${NC}"
-    # Use a quick timeout for Hz checks
-    timeout 0.5 ros2 topic hz /imu/data --window 1 2>/dev/null | grep "average rate" | awk '{print "  IMU DATA:       [ " $4 " Hz ]"}' || echo -e "  IMU DATA:       [ ${RED}STALLED${NC} ]"
-    timeout 0.5 ros2 topic hz /fix --window 1 2>/dev/null | grep "average rate" | awk '{print "  GPS FIX:        [ " $4 " Hz ]"}' || echo -e "  GPS FIX:        [ ${RED}STALLED${NC} ]"
-    timeout 0.5 ros2 topic hz /battery_voltage --window 1 2>/dev/null | grep "average rate" | awk '{print "  BATTERY:        [ " $4 " Hz ]"}' || echo -e "  BATTERY:        [ ${RED}STALLED${NC} ]"
-    timeout 0.5 ros2 topic hz /cmd_vel --window 1 2>/dev/null | grep "average rate" | awk '{print "  CMD_VEL:        [ " $4 " Hz ]"}' || echo -e "  CMD_VEL:        [ ${RED}IDLE${NC} ]"
+    timeout 0.3 ros2 topic hz /imu/data --window 1 2>/dev/null | grep "average rate" | awk '{print "  IMU DATA:       [ " $4 " Hz ]"}' || echo -e "  IMU DATA:       [ ${RED}STALLED${NC} ]"
+    timeout 0.3 ros2 topic hz /fix --window 1 2>/dev/null | grep "average rate" | awk '{print "  GPS FIX:        [ " $4 " Hz ]"}' || echo -e "  GPS FIX:        [ ${RED}STALLED${NC} ]"
+    timeout 0.3 ros2 topic hz /battery_voltage --window 1 2>/dev/null | grep "average rate" | awk '{print "  BATTERY:        [ " $4 " Hz ]"}' || echo -e "  BATTERY:        [ ${RED}STALLED${NC} ]"
+    timeout 0.3 ros2 topic hz /cmd_vel --window 1 2>/dev/null | grep "average rate" | awk '{print "  CMD_VEL:        [ " $4 " Hz ]"}' || echo -e "  CMD_VEL:        [ ${RED}IDLE${NC} ]"
 
     echo -e "${CYAN}================================================================${NC}"
     echo -e "Press Ctrl+C to exit monitor."
-    sleep 2
+    sleep 1.5
 done
