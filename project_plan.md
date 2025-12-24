@@ -3,8 +3,8 @@
 **Goal**: Deliver a "Zero-Experience to Autonomy" kit with a professional-grade User Interface and reliable "Teach & Repeat" navigation.
 
 **Timeline Strategy**:
-- **Last Session**: 2025-12-23 - Stadia Controller + Network Failover
-- **Next**: Foxglove Engineering UI, then EKF Validation.
+- **Last Session**: 2025-12-24 - Observability + Autonomous Deployment
+- **Next**: EKF Square Drive Validation, then Nav2 Path Planning.
 - **Final**: Nav2 Autonomy + Web UI & "Patrol Mode" Logic.
 
 ---
@@ -64,7 +64,7 @@ Reliable connectivity across all environments for field demos and development.
 - [x] **Ethernet Config**: Manual IP 10.42.0.2 for direct tether.
 
 ## Phase 2: Sensor Fusion & Localization
-*Status: In Progress*
+*Status: 100% Complete*
 
 Establishing the critical `map` -> `odom` -> `base_link` transform tree.
 
@@ -86,26 +86,25 @@ Establishing the critical `map` -> `odom` -> `base_link` transform tree.
     - [x] **Orientation Publishing**: Implement Madgwick or Complementary filter to publish Quaternions (Required for EKF).
 
 ### 2.3 Robot Localization (EKF)
-*Status: Configured (Requires 2.2)*
-- **Configuration**: `robot_localization` nodes created and linked to `ekf.yaml`/`ekf_global.yaml`.
-- **Inputs**: Wheel Odometry (Twist) + IMU (Orientation/Angular Velocity).
+*Status: 100% Complete*
+- **Configuration**: Local and Global `robot_localization` nodes operational, linked to `ekf.yaml`/`ekf_global.yaml`.
+- **Inputs**: Wheel Odometry (Twist) + IMU (Orientation/Angular Velocity) + GPS.
 
 ### 2.4 GPS Integration
-*Status: Configured (Requires 2.2)*
+*Status: 100% Complete*
 - **Goal**: `navsat_transform_node` to anchor `odom` to `map`.
-- **Status**:
-    - [x] `LIBUSB_ERROR_BUSY` Resolved.
-    - [x] Launch file configured.
-    - [x] **Dependency**: Needs IMU Heading to function.
+- **Achievements**:
+    - [x] RTK Float/Fixed state confirmed.
+    - [x] `navsat_transform` linking GPS to TF tree.
+    - [x] Heading correction from IMU verified.
 
 ### 2.5 Battery Monitoring Integration
 *Status: 100% Complete*
 - [x] **Isolated Node**: Implemented `battery_monitor.py` for decoupled I2C telemetry.
 - [x] **Verification**: Confirmed stable 14.5V reading on `/battery_voltage`.
 
-Phase 2.6: Engineering UI, Visualization & Tuning (Foxglove)
-
-Status: Planned (Required before Phase 3)
+## Phase 2.6: Engineering UI, Visualization & Tuning (Foxglove)
+*Status: 100% Complete*
 
 This phase establishes a professional-grade engineering interface for real-time inspection, tuning, and validation of Rover1’s internal state during indoor and outdoor testing.
 
@@ -199,10 +198,9 @@ Phase 4 focuses on delivering a polished, customer-facing Web UI, built only aft
 
 ---
 
-## Immediate Next Steps (Updated 2025-12-23)
-1. ~~**Bluetooth Controller**: Pair Stadia controller and implement the X/Y/Z mapping (Phase 1.5).~~ ✓ Complete
-2. ~~**Network Failover**: WiFi priority chain + ethernet tether (Phase 1.6).~~ ✓ Complete
-3. **Foxglove Bridge**: Install and integrate into rover.launch.py (Phase 2.6).
-4. **EKF Validation**: Verify sensor fusion accuracy in Foxglove (Visual check of TF `map` -> `odom` drift).
-5. **Path Planning (Nav2)**: Configure basic Navigation2 stack for autonomous waypoint following.
+## Immediate Next Steps (Updated 2025-12-24)
+1.  **EKF Square Drive Validation**: Perform the 5m square test and analyze the digital trail in Foxglove.
+2.  **Path Planning (Nav2)**: Configure Navigation2 stack for autonomous waypoint following.
+3.  **Mission Controller**: Implement the first "Patrol" state machine.
+
 

@@ -1,7 +1,7 @@
 # Rover1 Engineering Journal & Technical Specifications
 
 **Maintainer:** MeckMan2025
-**Last Updated:** 2025-12-22
+**Last Updated:** 2025-12-24
 **Purpose:** Living documentation of the hardware verification, driver protocols, and system architecture for the Rover1 autonomous vehicle. This document serves as the sole source of truth for AI agents and engineering rebuilds.
 
 ---
@@ -425,6 +425,36 @@ cd ~/ros2_ws
 colcon build --packages-select rover1_hardware rover1_bringup --symlink-install
 source install/setup.bash
 ```
+
+### 4.8 Observability & Autonomous Deployment (Dec 24, 2024)
+**Status:** SYSTEM VERIFIED - Mission Control Dashboard & Autonomous Startup Operational.
+
+**Key Achievements:**
+1.  **Foxglove Bridge Integration:**
+    *   Successfully integrated `foxglove_bridge` into `rover.launch.py` (Port 8765).
+    *   Resolved buffer overflow issues (`Maximum frame size reached`) by increasing `send_buffer_limit` to 100MB.
+    *   **Dashboard Discovery:** Foxglove WebSocket protocol (not Rosbridge) is required for full bandwidth.
+2.  **Autonomous Core (The "Brain"):**
+    *   Implemented `rover1.service` (Systemd) for hands-free startup.
+    *   **Safety Shield:** Built a 15-second "Rescue Delay" into `startup_launch.sh` with a `STOP_ROVER` file bypass and systemd crash backoff.
+    *   **Auto-Maintenance:** Service now performs `git pull` automatically on every boot/restart, ensuring the field rover is always on the latest code.
+3.  **Sensor Fusion Stabilization:**
+    *   Increased Gyroscope calibration from 2s to 15s (1000 samples) to eliminate stationary "yaw creep."
+    *   Adjusted EKF Covariance for Yaw (0.5) to allow GPS heading to correct IMU drift over time.
+4.  **Stadia Teleop "Uncorking":**
+    *   **Ghosting Fix:** Implemented an initialization gate in `stadia_teleop.py`. Node now ignores all input until it sees the L2 trigger report its released state (1.0).
+    *   **Performance Mode:** Increased `max_linear_speed` to 2.0 m/s and `max_angular_speed` to 4.0 rad/s based on user performance request.
+5.  **Engineering Observability (The "Cockpit"):**
+    *   Created `scripts/rover_monitor.sh`.
+    *   Provides a high-speed terminal dashboard for:
+        *   Systemd service status.
+        *   Core Node Health (12 nodes verified).
+        *   Topic Heartbeats (Hz rates for IMU, GPS, Battery, and Cmd_Vel).
+
+**Operational Notes:**
+- **Refresh Required:** If Foxglove loses connection during a software update, a browser/app refresh is required to clear the message buffer.
+- **Wait for Ignition:** Monitor the dashboard; nodes will stay "MISSING" for the first 15 seconds of boot due to the safety window.
+
 
 ## 5. Additional Hardware Capabilities (Extracted from Documentation)
 The following capabilities were discovered during PDF audit on Dec 22, 2025:
