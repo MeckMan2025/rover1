@@ -85,5 +85,5 @@ while true; do
 
     echo -e "${CYAN}================================================================${NC}"
     echo -e "Press Ctrl+C to exit monitor."
-    sleep 0.5
+    sleep 5
 done
