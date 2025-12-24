@@ -4,6 +4,14 @@ If the rover is caught in a reboot/crash loop due to the autonomous startup serv
 
 ---
 
+## ⚡ Quick Log View
+**Watch the rover brain in real-time:**
+```bash
+journalctl -u rover1.service -f
+```
+
+---
+
 ## 1. Symptoms
 - The rover keeps restarting (logs show `Service restarted`).
 - Foxglove connects and then immediately disconnects.
