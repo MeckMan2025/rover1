@@ -1,9 +1,9 @@
 #!/bin/bash
-# Rover1 "Cockpit" Monitoring Dashboard v2.4 (Self-Sourcing Edition)
+# Rover1 "Cockpit" Monitoring Dashboard v2.5 (High-Precision GPS Audit)
 
 # Source ROS 2 environment
-source /opt/ros/jazzy/setup.bash
-source ~/ros2_ws/install/setup.bash
+source /opt/ros/jazzy/setup.bash 2>/dev/null
+source ~/ros2_ws/install/setup.bash 2>/dev/null
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -26,14 +26,14 @@ while true; do
     fi
 
     # 2. NETWORK INFO
-    IP=$(hostname -I | awk '{print $1}')
+    IP=$(hostname -I | awk '{print $1}' 2>/dev/null)
     TEMP=$(vcgencmd measure_temp 2>/dev/null | cut -d'=' -f2)
     echo -e "NETWORK:        IP: ${YELLOW}${IP}${NC}  |  CPU TEMP: ${YELLOW}${TEMP}${NC}"
     echo -e "${CYAN}----------------------------------------------------------------${NC}"
 
     # 3. NODE HEALTH
     echo -e "${CYAN}CORE NODE HEALTH:${NC}"
-    NODES=("imu_driver" "motor_driver" "kinematics" "ekf_filter_node" "ekf_global_node" "navsat_transform" "foxglove_bridge" "stadia_teleop" "ublox_dgnss" "ntrip_client")
+    NODES=("imu_driver" "motor_driver" "kinematics" "ekf_filter_node" "ekf_global_node" "navsat_transform" "foxglove_bridge" "stadia_teleop" "ublox_dgnss" "ntrip_client" "fix_to_nmea")
     
     ACTIVE_NODES=$(ros2 node list 2>/dev/null)
     for node in "${NODES[@]}"; do
@@ -46,19 +46,30 @@ while true; do
 
     echo -e "${CYAN}----------------------------------------------------------------${NC}"
 
-    # 4. GPS QUALITY
-    echo -en "${CYAN}GPS QUALITY:    ${NC}"
-    FIX_TYPE=$(timeout 0.1 ros2 topic echo /ublox/nav_pvt --count 1 --field fix_type 2>/dev/null)
+    # 4. GPS QUALITY & SAT AUDIT
+    # Grabbing full NavPVT data at once for speed
+    GPS_DATA=$(timeout 0.2 ros2 topic echo /ublox/nav_pvt --count 1 2>/dev/null)
+    
+    FIX_TYPE=$(echo "$GPS_DATA" | grep "fix_type" | awk '{print $2}')
+    SATS=$(echo "$GPS_DATA" | grep "num_sv" | awk '{print $2}')
+    H_ACC=$(echo "$GPS_DATA" | grep "h_acc" | awk '{print $2}')
+    
+    echo -en "${CYAN}GPS STATUS:     ${NC}"
     if [ -z "$FIX_TYPE" ]; then
         echo -e "[ ${RED}SEARCHING...${NC} ]"
     else
         case "$FIX_TYPE" in
-            "3") echo -e "[ ${YELLOW}3 - STANDARD 3D${NC} ]" ;;
-            "4") echo -e "[ ${GREEN}4 - RTK FIXED (OPTIMAL)${NC} ]" ;;
-            "5") echo -e "[ ${CYAN}5 - RTK FLOAT (HIGH)${NC} ]" ;;
-            *)   echo -e "[ ${RED}UNKNOWN (${FIX_TYPE})${NC} ]" ;;
+            "3") echo -ne "[ ${YELLOW}3D FIX${NC} ]" ;;
+            "4") echo -ne "[ ${GREEN}RTK FIXED${NC} ]" ;;
+            "5") echo -ne "[ ${CYAN}RTK FLOAT${NC} ]" ;;
+            *)   echo -ne "[ ${RED}NO FIX (${FIX_TYPE})${NC} ]" ;;
         esac
+        # Add Satellite Count & Accuracy (H-Acc is in mm, converting to cm)
+        ACC_CM=$(awk "BEGIN {print $H_ACC / 10}")
+        echo -e " | ${YELLOW}SATS: ${SATS}${NC} | ${YELLOW}ACC: ${ACC_CM}cm${NC}"
     fi
+
+    echo -e "${CYAN}----------------------------------------------------------------${NC}"
 
     # 5. TOPIC HEARTBEATS
     echo -e "${CYAN}TOPIC HEARTBEETS (Last 0.2s):${NC}"
