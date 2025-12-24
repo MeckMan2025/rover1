@@ -244,19 +244,59 @@ Standard Hiwonder protocols (broadcast speed) failed. Direct register addressing
 **Verification Status:**
 - **STABILITY:** Stable publication at 1Hz observed via `ros2 topic echo /battery_voltage`.
 
-### 4.6 Field Networking & Tethering Strategy (Dec 23, 2025)
-**Problem:** Direct Ethernet connection to laptop failed during high school demo due to Ubuntu 24.04 network timeouts (Netplan DHCP wait) and mDNS resolution issues.
-**Discovery:**
-1. **Boot Hang:** Ubuntu waits 120s for DHCP on Ethernet if no router is present, blocking SSH access.
-2. **IP Vagueness:** Without a DHCP server, the Pi and Mac drift to different subnets or fail to assign IPs entirely.
-**Solution (Static Tether Pattern):**
-1. **Static Fallback:** Configured `eth0` with static IP `10.42.0.1/24` (Robot) and `10.42.0.2` (Laptop) as a secondary "service lane".
-2. **Boot Optimization:** Set `optional: true` in Netplan to skip the 120s network wait.
-3. **Setup Script:** Created `scripts/setup_ethernet_tether.sh` to automate this on the Pi.
-**Instructions for Field Work:**
-- **On Pi:** Run `scripts/setup_ethernet_tether.sh`.
-- **On Mac:** Set Ethernet to "Manual" -> IP: `10.42.0.2`, Subnet: `255.255.255.0`.
-- **Connection:** Always use `ssh andrewmeckley@10.42.0.1`.
+### 4.6 Field Networking & Failover Strategy (Dec 23, 2025)
+**Status:** CONFIGURED - Multi-tier network failover for field demos.
+
+**Problem:** Need reliable connectivity across multiple environments:
+- Home lab (WiFi)
+- Field demos (phone hotspot)
+- Emergency access (direct Ethernet tether)
+
+**Solution (Priority-Based Failover):**
+NetworkManager handles WiFi with `autoconnect-priority`, Netplan handles Ethernet static fallback.
+
+| Priority | Network | Type | Connection |
+| :--- | :--- | :--- | :--- |
+| 1 (Highest) | Lake Wifi | Home WiFi | Auto-connect when in range |
+| 2 | AJM17ProMax | Phone Hotspot | Fallback when home unavailable |
+| 3 (Always) | Ethernet Tether | Static 10.42.0.1 | Direct laptop connection |
+
+**Credentials:**
+- Stored in `.env` file (not tracked in git)
+- Variables: `WIFI_HOME_SSID`, `WIFI_HOME_PASS`, `WIFI_HOTSPOT_SSID`, `WIFI_HOTSPOT_PASS`
+
+**Setup (Run Once on Pi):**
+```bash
+cd ~/ros2_ws/src/rover1
+# First, update .env with your WiFi credentials
+nano .env
+
+# Then run the setup script
+./scripts/setup_network_failover.sh
+```
+
+**Behavior:**
+- **At Home:** Connects to Lake Wifi automatically
+- **In Field:** When home network unavailable, connects to phone hotspot
+- **Emergency:** Ethernet tether always works at `10.42.0.1`
+
+**Manual Network Switching:**
+```bash
+# Check current connection
+nmcli device status
+
+# Force switch to specific network
+nmcli connection up "Lake Wifi"
+nmcli connection up "AJM17ProMax"
+```
+
+**Laptop Ethernet Setup (Mac):**
+- Set Ethernet adapter to Manual
+- IP: `10.42.0.2`
+- Subnet: `255.255.255.0`
+- Connect via: `ssh andrewmeckley@10.42.0.1`
+
+**Legacy Script:** `scripts/setup_ethernet_tether.sh` (ethernet-only, superseded by `setup_network_failover.sh`)
 
 ### 4.7 Manual Control: Google Stadia Controller Integration (Dec 23, 2025)
 **Status:** VERIFIED WORKING - Full Mecanum teleop operational.
