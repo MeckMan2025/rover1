@@ -8,9 +8,16 @@ ENV_FILE="$PROJECT_DIR/.env"
 
 if [ -f "$ENV_FILE" ]; then
     while IFS= read -r line || [[ -n "$line" ]]; do
-        # Skip comments and empty lines
-        if [[ ! "$line" =~ ^# && -n "$line" ]]; then
-            export "$line"
+        # Trim leading and trailing whitespace
+        trimmed=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        
+        # Skip empty lines and lines starting with #
+        if [[ -n "$trimmed" && ! "$trimmed" =~ ^# ]]; then
+            # Remove inline comments (part after #) and export
+            clean_line=$(echo "$trimmed" | cut -d'#' -f1 | sed 's/[[:space:]]*$//')
+            if [[ -n "$clean_line" ]]; then
+                export "$clean_line"
+            fi
         fi
     done < "$ENV_FILE"
     echo "Environment variables loaded successfully!"
