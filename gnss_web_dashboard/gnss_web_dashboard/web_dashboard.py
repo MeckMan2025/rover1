@@ -18,6 +18,7 @@ import os
 from pathlib import Path
 
 from gnss_health_monitor.msg import GnssHealth
+from ament_index_python.packages import get_package_share_directory
 
 
 class GnssWebDashboard(Node):
@@ -42,8 +43,13 @@ class GnssWebDashboard(Node):
         )
         
         # Get package directory for serving static files
-        self.package_dir = Path(__file__).parent.parent
-        self.static_dir = self.package_dir / 'static'
+        try:
+            self.package_dir = Path(get_package_share_directory('gnss_web_dashboard'))
+            self.static_dir = self.package_dir / 'static'
+        except Exception:
+            # Fallback for development
+            self.package_dir = Path(__file__).parent.parent
+            self.static_dir = self.package_dir / 'static'
         
         self.get_logger().info(f"GNSS Web Dashboard started. Package dir: {self.package_dir}")
         
