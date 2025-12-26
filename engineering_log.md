@@ -854,3 +854,53 @@ ros2 topic echo /gnss/health
 **Engineering Impact:**
 This implementation represents a significant quality-of-life improvement for rover operations. It transforms complex multi-topic GPS debugging into a streamlined, professional monitoring experience suitable for field demonstrations and development work.
 
+### 4.11 Foxglove Bridge Custom Message Integration (Dec 26, 2025)
+**Status:** COMPLETE - Critical Integration Pattern Documented
+
+**Problem:** After implementing custom ROS 2 message types (like `GnssHealth.msg`), the Foxglove bridge could not discover or advertise the custom topics, making them invisible in Foxglove Studio despite successful ROS publication.
+
+**Root Cause:** The Foxglove bridge was started before the workspace containing custom message definitions was sourced, causing a **message type visibility gap**. Custom message types require the bridge to be launched from a properly sourced environment.
+
+**Solution Pattern (Critical for Future Custom Messages):**
+
+**Diagnostic Commands:**
+```bash
+# 1. Verify topic exists in ROS
+ros2 topic list | grep <your_topic>
+ros2 topic echo <your_topic> --once
+
+# 2. Check topic details and message type
+ros2 topic info <your_topic> -v
+```
+
+**Bridge Restart Procedure:**
+```bash
+# 3. Kill existing bridge (may be in different environment)
+pkill -f foxglove_bridge
+
+# 4. Source workspace properly (CRITICAL ORDER)
+source /opt/ros/jazzy/setup.bash  
+source ~/ros2_ws/install/setup.bash
+
+# 5. Restart bridge with custom message visibility
+ros2 run foxglove_bridge foxglove_bridge --port 8765
+```
+
+**Verification:**
+- Bridge logs should show: `Advertising new channel X for topic "<your_topic>"`
+- Topic appears in Foxglove topic list after reconnection
+
+**Key Insights:**
+- **Environment Dependency:** Custom messages are invisible to improperly sourced bridges
+- **Not a Code Issue:** Publishing works in ROS; visibility to Foxglove requires bridge restart
+- **Sourcing Order:** ROS base environment first, then workspace with custom messages
+- **Bridge State:** Running bridges retain their initial message type knowledge
+
+**Prevention for Future Development:**
+1. Always source workspace before starting Foxglove bridge when using custom messages
+2. When adding new packages with custom messages, restart the bridge
+3. Check bridge logs for "Advertising" messages to confirm topic visibility
+4. Document message sourcing requirements in package README files
+
+**Applied to:** GNSS Health Monitor (`gnss_health_monitor/msg/GnssHealth`) - successfully resolved topic visibility and enabled professional GPS/RTK dashboard integration.
+
