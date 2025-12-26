@@ -259,10 +259,10 @@ class GnssHealthMonitorNode(Node):
         """u-blox UBXNavSat callback for satellite information"""
         try:
             # UBXNavSat message structure
-            if hasattr(msg, 'num_svs') and hasattr(msg, 'svs'):
-                # Use num_svs field for satellite count and svs array for satellite list
+            if hasattr(msg, 'num_svs') and hasattr(msg, 'sv_info'):
+                # Use num_svs field for satellite count and sv_info array for satellite list
                 self.sat_visible = msg.num_svs
-                satellites = msg.svs
+                satellites = msg.sv_info
             else:
                 # Fallback: detect message structure for other message types
                 if hasattr(msg, 'sv'):
@@ -282,16 +282,20 @@ class GnssHealthMonitorNode(Node):
             for sat in satellites:
                 used = False
                 
-                # Try different field names for "used in solution"
-                if hasattr(sat, 'used') and sat.used:
-                    used = True
-                elif hasattr(sat, 'usedInNav') and sat.usedInNav:
-                    used = True
-                elif hasattr(sat, 'flags'):
-                    # Check flags with mask
-                    used = (sat.flags & self.params['sat_used_flag_mask']) != 0
-                elif hasattr(sat, 'quality') and hasattr(sat, 'quality') and sat.quality > 0:
-                    used = True
+                # UBXNavSat uses sat.flags.sv_used for "used in solution"
+                if hasattr(sat, 'flags') and hasattr(sat.flags, 'sv_used'):
+                    used = sat.flags.sv_used
+                else:
+                    # Fallback: try different field names for other message types
+                    if hasattr(sat, 'used') and sat.used:
+                        used = True
+                    elif hasattr(sat, 'usedInNav') and sat.usedInNav:
+                        used = True
+                    elif hasattr(sat, 'flags'):
+                        # Check flags with mask
+                        used = (sat.flags & self.params['sat_used_flag_mask']) != 0
+                    elif hasattr(sat, 'quality') and hasattr(sat, 'quality') and sat.quality > 0:
+                        used = True
                     
                 if used:
                     self.sat_used += 1
@@ -318,7 +322,7 @@ class GnssHealthMonitorNode(Node):
     def compute_accuracy_from_covariance(self, covariance) -> tuple[float, float]:
         """Extract horizontal and vertical accuracy from NavSatFix covariance"""
         try:
-            if not covariance or len(covariance) < 9:
+            if covariance is None or len(covariance) < 9:
                 return float('nan'), float('nan')
                 
             # Check if covariance is all zeros (invalid) - handle numpy arrays safely
