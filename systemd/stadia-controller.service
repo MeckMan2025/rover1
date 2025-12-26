@@ -1,0 +1,41 @@
+[Unit]
+Description=Stadia Controller Auto-Connect Service
+Documentation=man:bluetoothctl(1)
+After=bluetooth.service
+Wants=bluetooth.service
+BindsTo=bluetooth.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/home/andrewmeckley/ros2_ws/src/rover1/scripts/connect_stadia_controller.sh
+User=andrewmeckley
+Group=andrewmeckley
+
+# Environment
+Environment=PATH=/usr/bin:/bin:/usr/sbin:/sbin
+
+# Restart policy
+RestartSec=10
+Restart=on-failure
+StartLimitBurst=3
+StartLimitIntervalSec=60
+
+# Timeout settings
+TimeoutStartSec=120
+TimeoutStopSec=30
+
+# Security settings
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/log
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=stadia-controller
+
+[Install]
+WantedBy=multi-user.target
