@@ -276,12 +276,9 @@ class GnssHealthMonitorNode(Node):
         self.last_navsat_time = self.get_clock().now()
         
     def navsat_fallback_callback(self, msg: NavSatFix):
-        """Fallback NavSat callback (only used if primary is stale)"""
-        if (self.last_navsat_time is None or 
-            (self.get_clock().now() - self.last_navsat_time).nanoseconds > 
-            self.params['navsat_timeout_s'] * 1e9):
-            self.last_navsat_msg = msg
-            self.last_navsat_time = self.get_clock().now()
+        """Fallback NavSat callback"""
+        self.last_navsat_msg = msg
+        self.last_navsat_time = self.get_clock().now()
     
     def nav_sat_callback(self, msg):
         """u-blox UBXNavSat callback for satellite information"""
