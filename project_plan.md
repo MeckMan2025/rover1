@@ -136,6 +136,37 @@ Professional GPS/RTK dashboard integration for Foxglove replacing terminal-based
 - [x] **Historical Analysis**: Time-stamped data for RTK acquisition trends
 - [x] **Professional UI**: Eliminates flashing terminal monitoring requirements
 
+## Phase 2.8: GNSS Web Dashboard & Controller Auto-Connect
+*Status: 100% Complete (Dec 26, 2025)*
+
+Real-time web-based GNSS monitoring and automated Bluetooth controller connection.
+
+### 2.8.1 GNSS Web Dashboard
+- [x] **Web Server**: Real-time GNSS health dashboard at `http://rover-ip:8080/`
+- [x] **WebSocket Integration**: Live data streaming from `/gnss/health` topic
+- [x] **Clean UI**: Professional web interface showing satellite count, RTK status, accuracy
+- [x] **Multi-Message Support**: UBXNavPVT + UBXNavSat + NavSat integration
+- [x] **QoS Compatibility**: Mixed QoS profiles for different publisher types
+
+### 2.8.2 Stadia Controller Auto-Connect Service  
+- [x] **Systemd Service**: `stadia-controller.service` auto-connects on boot
+- [x] **Retry Logic**: 10 attempts with 3s delays for robust connection
+- [x] **Security Hardening**: Proper systemd security settings
+- [x] **Installation Scripts**: One-command setup with validation
+- [x] **Logging**: Comprehensive logs to `/var/log/stadia-controller.log`
+
+### 2.8.3 Critical Bug Resolution (Engineering Achievement)
+Complex multi-layered debugging session resolving 7 interconnected issues:
+- [x] **Message Type Correction**: Fixed `ublox_msgs` → `ublox_ubx_msgs` import
+- [x] **Field Name Fixes**: Corrected `msg.svs` → `msg.sv_info`, `sat.flags.sv_used`
+- [x] **Numpy Array Handling**: Fixed truth value ambiguity errors
+- [x] **QoS Matrix Implementation**: Topic-specific QoS profiles for compatibility
+- [x] **Timing Race Resolution**: 3.0s timeout for 1 Hz message safety margin
+- [x] **Fallback Logic Repair**: Always-accept fallback prevents intermittent failures
+- [x] **Active Data Sources**: UBXNavPVT subscription for real-time satellite counts
+
+**Engineering Documentation**: Complete debugging methodology documented in `ENGINEERING_LOG_GNSS_DEBUGGING.md`
+
 2.5.1 Foxglove Bridge Integration
 	•	Goal: Enable live ROS 2 introspection from laptop/tablet via Foxglove Studio.
 	•	Implementation:
@@ -224,12 +255,31 @@ Phase 4 focuses on delivering a polished, customer-facing Web UI, built only aft
 
 ---
 
-## Immediate Next Steps (Updated 2025-12-26)
-1.  ~~**Rebuild & Deploy**: Run `colcon build` on Pi to apply NMEA bridge fix, restart rover service.~~ ✅ **COMPLETE**
-2.  ~~**Professional GPS Dashboard**: Implement GNSS health monitor for Foxglove integration.~~ ✅ **COMPLETE** 
-3.  **Deploy GNSS Health Monitor**: Build and integrate new package on Pi, test Foxglove dashboard.
-4.  **EKF Square Drive Validation**: Perform the 5m square test and analyze the digital trail in Foxglove.
-5.  **Path Planning (Nav2)**: Configure Navigation2 stack for autonomous waypoint following.
-6.  **Mission Controller**: Implement the first "Patrol" state machine.
+## Immediate Next Steps (Updated 2025-12-26 Evening)
+
+### ✅ **RECENTLY COMPLETED (This Session)**
+1. ~~**GNSS Web Dashboard**: Real-time web interface with satellite count and RTK status~~
+2. ~~**Stadia Controller Auto-Connect**: Systemd service for automatic Bluetooth pairing~~  
+3. ~~**Critical Bug Resolution**: 7-layer debugging session fixing message types, QoS, timing, and logic~~
+4. ~~**Engineering Documentation**: Complete debugging methodology and lessons learned~~
+
+### 🎯 **NEXT PRIORITIES**
+
+#### **Phase 3A: EKF Validation & Tuning** *(Immediate - Next Session)*
+1. **EKF Square Drive Test**: Execute precise 5m × 5m square pattern with Stadia controller
+2. **Foxglove Analysis**: Record and analyze odometry drift, GPS alignment, heading accuracy
+3. **Parameter Tuning**: Adjust EKF covariances based on real-world performance data
+4. **TF Tree Validation**: Verify stable `map` → `odom` → `base_link` transforms
+
+#### **Phase 3B: Nav2 Stack Configuration** *(Week 1, Jan 2025)*
+5. **Nav2 Setup**: Install and configure Navigation2 with Regulated Pure Pursuit controller
+6. **Costmap Configuration**: Set up 2D rolling window costmaps for outdoor navigation
+7. **Path Planning**: Configure global and local planners for waypoint following
+8. **Safety Systems**: Emergency stop, obstacle avoidance, timeout handling
+
+#### **Phase 3C: Mission Logic Implementation** *(Week 2-3, Jan 2025)*
+9. **Mission Controller**: Implement state machine (`IDLE`, `MANUAL`, `RECORDING`, `EXECUTING`)
+10. **Teach & Repeat**: GPS waypoint recording and playback functionality
+11. **Patrol Mode**: Autonomous path execution with turnaround logic
 
 
