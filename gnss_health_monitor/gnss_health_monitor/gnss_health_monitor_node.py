@@ -99,7 +99,7 @@ class GnssHealthMonitorNode(Node):
             parameters=[
                 ('navsat_topic', '/gps/filtered'),
                 ('navsat_fallback_topic', '/fix'),
-                ('navsat_timeout_s', 2.0),
+                ('navsat_timeout_s', 3.0),
                 ('ubx_nav_sat_topic', '/ubx_nav_sat'),
                 ('ubx_nav_pvt_topic', '/ubx_nav_pvt'),
                 ('rtcm_topic', '/ntrip_client/rtcm'),
