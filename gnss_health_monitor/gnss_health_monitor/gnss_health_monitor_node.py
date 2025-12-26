@@ -133,7 +133,7 @@ class GnssHealthMonitorNode(Node):
         self.last_navsat_msg = None
         self.sat_visible = 0
         self.sat_used = 0
-        self.dgps_id = -1
+        self.dgps_id = 0  # Use 0 instead of -1 for uint16
         self.rtcm_stats = RTCMStatistics(window_seconds=5.0)
         
         # QoS profiles
@@ -315,8 +315,15 @@ class GnssHealthMonitorNode(Node):
             if not covariance or len(covariance) < 9:
                 return float('nan'), float('nan')
                 
-            # Check if covariance is all zeros (invalid)
-            if all(abs(c) < 1e-9 for c in covariance):
+            # Check if covariance is all zeros (invalid) - handle numpy arrays
+            try:
+                all_zeros = all(abs(c) < 1e-9 for c in covariance)
+            except (ValueError, TypeError):
+                # Handle numpy array comparison
+                covariance_array = list(covariance)
+                all_zeros = all(abs(c) < 1e-9 for c in covariance_array)
+            
+            if all_zeros:
                 return float('nan'), float('nan')
                 
             # Extract diagonal elements (variance)

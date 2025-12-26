@@ -21,4 +21,4 @@ float32 v_acc_m             # Vertical accuracy estimate (meters)
 
 # Enhanced Status (suggested upgrades)
 builtin_interfaces/Time last_update_time  # Timestamp of last valid GPS data
-uint16 dgps_id              # DGPS station ID if available (-1 if unknown)
+uint16 dgps_id              # DGPS station ID if available (0 if unknown)
