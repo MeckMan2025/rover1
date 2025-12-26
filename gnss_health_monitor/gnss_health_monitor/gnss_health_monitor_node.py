@@ -167,13 +167,21 @@ class GnssHealthMonitorNode(Node):
     def _setup_subscriptions(self):
         """Setup all topic subscriptions with fallback logic"""
         
+        # Create QoS profile for RELIABLE NavSat topics (/gps/filtered)
+        reliable_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.VOLATILE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10
+        )
+        
         # NavSat subscription (primary)
         try:
             self.navsat_sub = self.create_subscription(
                 NavSatFix,
                 self.params['navsat_topic'],
                 self.navsat_callback,
-                self.sensor_qos
+                reliable_qos
             )
             self.get_logger().info(f"Subscribed to NavSat: {self.params['navsat_topic']}")
         except Exception as e:
