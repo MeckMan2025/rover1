@@ -75,6 +75,22 @@ def generate_launch_description():
             output='screen'
         ),
         
+        # GNSS Health Monitor (Aggregates GPS/RTK/NTRIP status)
+        Node(
+            package='gnss_health_monitor',
+            executable='gnss_health_monitor_node',
+            name='gnss_health_monitor_node',
+            output='screen'
+        ),
+        
+        # GNSS Web Dashboard (Simple web interface for GPS monitoring)
+        Node(
+            package='gnss_web_dashboard', 
+            executable='gnss_web_dashboard',
+            name='gnss_web_dashboard',
+            output='screen'
+        ),
+        
         # EKF Sensor Fusion (Local: Odom -> Base_Link)
         Node(
             package='robot_localization',

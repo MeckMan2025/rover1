@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rover1 GNSS Health Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0c0c0c 0%, #1a1a1a 100%);
+            color: #ffffff;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .dashboard {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            background: linear-gradient(45deg, #00ff88, #0088ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .connection-status {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 500;
+            margin-left: 20px;
+        }
+        
+        .connected { background: rgba(0, 255, 136, 0.2); color: #00ff88; }
+        .disconnected { background: rgba(255, 68, 68, 0.2); color: #ff4444; }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 25px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .card-title {
+            font-size: 1.2rem;
+            margin-bottom: 20px;
+            color: #ffffff;
+            font-weight: 600;
+        }
+        
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 5px;
+            line-height: 1;
+        }
+        
+        .metric-label {
+            font-size: 0.9rem;
+            color: rgba(255, 255, 255, 0.7);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .rtk-status {
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .rtk-badge {
+            display: inline-block;
+            padding: 15px 30px;
+            border-radius: 25px;
+            font-size: 1.3rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 10px;
+        }
+        
+        .rtk-no-fix { background: rgba(255, 68, 68, 0.2); color: #ff4444; }
+        .rtk-dgps { background: rgba(255, 193, 7, 0.2); color: #ffc107; }
+        .rtk-float { background: rgba(0, 123, 255, 0.2); color: #007bff; }
+        .rtk-fixed { background: rgba(40, 167, 69, 0.2); color: #28a745; }
+        
+        .satellite-visual {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 15px;
+        }
+        
+        .sat-group {
+            text-align: center;
+        }
+        
+        .sat-count {
+            font-size: 2rem;
+            font-weight: 700;
+        }
+        
+        .sat-visible { color: #0088ff; }
+        .sat-used { color: #00ff88; }
+        
+        .ntrip-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-connected { background: #00ff88; }
+        .status-disconnected { background: #ff4444; }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .accuracy-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 15px;
+        }
+        
+        .accuracy-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.3s ease, background-color 0.3s ease;
+        }
+        
+        .accuracy-excellent { background: #00ff88; }
+        .accuracy-good { background: #0088ff; }
+        .accuracy-fair { background: #ffc107; }
+        .accuracy-poor { background: #ff4444; }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .stat-item {
+            text-align: center;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+        }
+        
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #0088ff;
+        }
+        
+        .last-update {
+            text-align: center;
+            margin-top: 20px;
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 0.8rem;
+        }
+        
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+            .header h1 {
+                font-size: 2rem;
+            }
+            .metric-value {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <div class="header">
+            <h1>🛸 Rover1 GNSS Health</h1>
+            <span id="connectionStatus" class="connection-status disconnected">● Connecting...</span>
+        </div>
+        
+        <div class="grid">
+            <!-- RTK Status Card -->
+            <div class="card">
+                <div class="card-title">RTK Status</div>
+                <div class="rtk-status">
+                    <div id="rtkBadge" class="rtk-badge rtk-no-fix">NO FIX</div>
+                    <div id="rtkAccuracy" class="metric-label">Accuracy: --</div>
+                </div>
+                <div class="accuracy-bar">
+                    <div id="accuracyFill" class="accuracy-fill accuracy-poor" style="width: 0%"></div>
+                </div>
+            </div>
+            
+            <!-- Satellites Card -->
+            <div class="card">
+                <div class="card-title">Satellite Status</div>
+                <div class="satellite-visual">
+                    <div class="sat-group">
+                        <div id="satVisible" class="sat-count sat-visible">--</div>
+                        <div class="metric-label">Visible</div>
+                    </div>
+                    <div style="font-size: 1.5rem; color: rgba(255,255,255,0.3);">/</div>
+                    <div class="sat-group">
+                        <div id="satUsed" class="sat-count sat-used">--</div>
+                        <div class="metric-label">Used</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- NTRIP Status Card -->
+            <div class="card">
+                <div class="card-title">NTRIP Corrections</div>
+                <div class="ntrip-indicator">
+                    <div id="ntripDot" class="status-dot status-disconnected"></div>
+                    <div id="ntripStatus" class="metric-label">DISCONNECTED</div>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div id="rtcmRate" class="stat-value">--</div>
+                        <div class="metric-label">msg/s</div>
+                    </div>
+                    <div class="stat-item">
+                        <div id="rtcmAge" class="stat-value">--</div>
+                        <div class="metric-label">age (s)</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Data Statistics Card -->
+            <div class="card">
+                <div class="card-title">Data Statistics</div>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div id="totalMessages" class="stat-value">--</div>
+                        <div class="metric-label">Total RTCM</div>
+                    </div>
+                    <div class="stat-item">
+                        <div id="dataRate" class="stat-value">--</div>
+                        <div class="metric-label">Bytes/s</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="last-update" id="lastUpdate">
+            Last updated: Never
+        </div>
+    </div>
+
+    <script>
+        class GnssHealthDashboard {
+            constructor() {
+                this.websocket = null;
+                this.reconnectInterval = 5000;
+                this.lastUpdateTime = null;
+                this.connect();
+                
+                // Update "last updated" every second
+                setInterval(() => this.updateLastUpdateDisplay(), 1000);
+            }
+            
+            connect() {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.hostname}:8081`;
+                
+                console.log('Connecting to:', wsUrl);
+                this.websocket = new WebSocket(wsUrl);
+                
+                this.websocket.onopen = () => {
+                    console.log('WebSocket connected');
+                    this.updateConnectionStatus(true);
+                };
+                
+                this.websocket.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    this.updateDashboard(data);
+                };
+                
+                this.websocket.onclose = () => {
+                    console.log('WebSocket disconnected');
+                    this.updateConnectionStatus(false);
+                    setTimeout(() => this.connect(), this.reconnectInterval);
+                };
+                
+                this.websocket.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    this.updateConnectionStatus(false);
+                };
+            }
+            
+            updateConnectionStatus(connected) {
+                const statusEl = document.getElementById('connectionStatus');
+                if (connected) {
+                    statusEl.textContent = '● Connected';
+                    statusEl.className = 'connection-status connected';
+                } else {
+                    statusEl.textContent = '● Disconnected';
+                    statusEl.className = 'connection-status disconnected';
+                }
+            }
+            
+            updateDashboard(data) {
+                this.lastUpdateTime = Date.now();
+                
+                // RTK Status
+                this.updateRTKStatus(data.rtk_state, data.h_acc_m);
+                
+                // Satellites
+                document.getElementById('satVisible').textContent = data.sat_visible || '--';
+                document.getElementById('satUsed').textContent = data.sat_used || '--';
+                
+                // NTRIP Status
+                this.updateNTRIPStatus(data.ntrip_connected, data.rtcm_msgs_per_sec, data.corr_age_s);
+                
+                // Data Statistics
+                document.getElementById('totalMessages').textContent = 
+                    data.rtcm_msgs_total ? data.rtcm_msgs_total.toLocaleString() : '--';
+                document.getElementById('dataRate').textContent = 
+                    data.rtcm_bytes_per_sec ? Math.round(data.rtcm_bytes_per_sec) : '--';
+            }
+            
+            updateRTKStatus(state, accuracy) {
+                const badge = document.getElementById('rtkBadge');
+                const accuracyEl = document.getElementById('rtkAccuracy');
+                const fill = document.getElementById('accuracyFill');
+                
+                // Update badge
+                badge.textContent = state || 'NO FIX';
+                badge.className = `rtk-badge rtk-${(state || 'no-fix').toLowerCase().replace('_', '-')}`;
+                
+                // Update accuracy
+                if (accuracy && accuracy > 0) {
+                    const accMeters = accuracy.toFixed(3);
+                    const accCm = (accuracy * 100).toFixed(1);
+                    accuracyEl.textContent = `Accuracy: ${accCm}cm`;
+                    
+                    // Update accuracy bar
+                    let fillPercent, fillClass;
+                    if (accuracy <= 0.02) {
+                        fillPercent = 100; fillClass = 'accuracy-excellent';
+                    } else if (accuracy <= 0.1) {
+                        fillPercent = 80; fillClass = 'accuracy-good';
+                    } else if (accuracy <= 0.5) {
+                        fillPercent = 60; fillClass = 'accuracy-fair';
+                    } else {
+                        fillPercent = 30; fillClass = 'accuracy-poor';
+                    }
+                    
+                    fill.style.width = fillPercent + '%';
+                    fill.className = `accuracy-fill ${fillClass}`;
+                } else {
+                    accuracyEl.textContent = 'Accuracy: --';
+                    fill.style.width = '0%';
+                    fill.className = 'accuracy-fill accuracy-poor';
+                }
+            }
+            
+            updateNTRIPStatus(connected, rate, age) {
+                const dot = document.getElementById('ntripDot');
+                const status = document.getElementById('ntripStatus');
+                const rateEl = document.getElementById('rtcmRate');
+                const ageEl = document.getElementById('rtcmAge');
+                
+                if (connected) {
+                    dot.className = 'status-dot status-connected';
+                    status.textContent = 'CONNECTED';
+                } else {
+                    dot.className = 'status-dot status-disconnected';
+                    status.textContent = 'DISCONNECTED';
+                }
+                
+                rateEl.textContent = rate ? rate.toFixed(1) : '--';
+                ageEl.textContent = age ? age.toFixed(1) : '--';
+            }
+            
+            updateLastUpdateDisplay() {
+                const updateEl = document.getElementById('lastUpdate');
+                if (this.lastUpdateTime) {
+                    const secondsAgo = Math.floor((Date.now() - this.lastUpdateTime) / 1000);
+                    updateEl.textContent = `Last updated: ${secondsAgo}s ago`;
+                } else {
+                    updateEl.textContent = 'Last updated: Never';
+                }
+            }
+        }
+        
+        // Initialize dashboard when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new GnssHealthDashboard();
+        });
+    </script>
+</body>
+</html>

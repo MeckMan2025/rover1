@@ -29,7 +29,8 @@ echo ">>> Checking for updates..."
 cd ~/ros2_ws/src/rover1
 git pull || echo "Warning: Git pull failed (offline or conflict), continuing anyway..."
 
-# 3. Environment & Workspace
+# 3. Environment & Workspace (Proper order for custom message visibility)
+source /opt/ros/jazzy/setup.bash
 source scripts/load_env.sh
 source ~/ros2_ws/install/setup.bash
 
