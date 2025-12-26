@@ -11,7 +11,7 @@ Date: December 2025
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from rclpy.time import Time
 from collections import deque
 import math
@@ -192,11 +192,19 @@ class GnssHealthMonitorNode(Node):
         # Satellite info subscription (if ublox available)
         if UBLOX_AVAILABLE:
             try:
+                # Create QoS profile compatible with /ubx_nav_sat publisher (RELIABLE, TRANSIENT_LOCAL)
+                ublox_qos = QoSProfile(
+                    reliability=ReliabilityPolicy.RELIABLE,
+                    durability=DurabilityPolicy.TRANSIENT_LOCAL,
+                    history=HistoryPolicy.KEEP_LAST,
+                    depth=10
+                )
+                
                 self.nav_sat_sub = self.create_subscription(
                     UBXNavSat,
                     self.params['ubx_nav_sat_topic'],
                     self.nav_sat_callback,
-                    self.sensor_qos
+                    ublox_qos
                 )
                 self.get_logger().info(f"Subscribed to u-blox UBXNavSat: {self.params['ubx_nav_sat_topic']}")
             except Exception as e:
