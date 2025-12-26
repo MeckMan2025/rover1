@@ -13,7 +13,7 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/static', glob('static/*')),
-        ('lib/' + package_name, ['gnss_web_dashboard/web_dashboard.py']),
+        ('lib/' + package_name, ['scripts/gnss_web_dashboard']),
     ],
     install_requires=['setuptools', 'websockets'],
     zip_safe=True,
