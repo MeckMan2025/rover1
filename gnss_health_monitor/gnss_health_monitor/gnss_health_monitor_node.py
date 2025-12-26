@@ -315,22 +315,23 @@ class GnssHealthMonitorNode(Node):
             if not covariance or len(covariance) < 9:
                 return float('nan'), float('nan')
                 
-            # Check if covariance is all zeros (invalid) - handle numpy arrays
+            # Check if covariance is all zeros (invalid) - handle numpy arrays safely
             try:
-                all_zeros = all(abs(c) < 1e-9 for c in covariance)
-            except (ValueError, TypeError):
-                # Handle numpy array comparison
-                covariance_array = list(covariance)
-                all_zeros = all(abs(c) < 1e-9 for c in covariance_array)
+                # Convert to list first to avoid numpy array issues
+                covariance_list = list(covariance)
+                all_zeros = all(abs(float(c)) < 1e-9 for c in covariance_list)
+            except Exception:
+                # If any conversion fails, assume invalid covariance
+                return float('nan'), float('nan')
             
             if all_zeros:
                 return float('nan'), float('nan')
                 
-            # Extract diagonal elements (variance)
+            # Extract diagonal elements (variance) - use the safe list
             # NavSatFix covariance: [xx, xy, xz, yx, yy, yz, zx, zy, zz]
-            var_x = max(covariance[0], 0.0)  # East variance
-            var_y = max(covariance[4], 0.0)  # North variance  
-            var_z = max(covariance[8], 0.0)  # Up variance
+            var_x = max(float(covariance_list[0]), 0.0)  # East variance
+            var_y = max(float(covariance_list[4]), 0.0)  # North variance  
+            var_z = max(float(covariance_list[8]), 0.0)  # Up variance
             
             h_acc = math.sqrt(var_x + var_y)  # Horizontal accuracy (RMS)
             v_acc = math.sqrt(var_z)          # Vertical accuracy
