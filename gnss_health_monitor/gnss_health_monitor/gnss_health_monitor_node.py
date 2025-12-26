@@ -26,7 +26,7 @@ from builtin_interfaces.msg import Time as TimeMsg
 
 # Try to import common u-blox message types (graceful fallback if not available)
 try:
-    from ublox_ubx_msgs.msg import UBXNavSat
+    from ublox_ubx_msgs.msg import UBXNavSat, UBXNavPVT
     UBLOX_AVAILABLE = True
 except ImportError:
     UBLOX_AVAILABLE = False
@@ -101,6 +101,7 @@ class GnssHealthMonitorNode(Node):
                 ('navsat_fallback_topic', '/fix'),
                 ('navsat_timeout_s', 2.0),
                 ('ubx_nav_sat_topic', '/ubx_nav_sat'),
+                ('ubx_nav_pvt_topic', '/ubx_nav_pvt'),
                 ('rtcm_topic', '/ntrip_client/rtcm'),
                 ('rtcm_fallback_topic', '/rtcm'),
                 ('rtcm_timeout_s', 5.0),
@@ -118,6 +119,7 @@ class GnssHealthMonitorNode(Node):
             'navsat_fallback_topic': self.get_parameter('navsat_fallback_topic').value,
             'navsat_timeout_s': self.get_parameter('navsat_timeout_s').value,
             'ubx_nav_sat_topic': self.get_parameter('ubx_nav_sat_topic').value,
+            'ubx_nav_pvt_topic': self.get_parameter('ubx_nav_pvt_topic').value,
             'rtcm_topic': self.get_parameter('rtcm_topic').value,
             'rtcm_fallback_topic': self.get_parameter('rtcm_fallback_topic').value,
             'rtcm_timeout_s': self.get_parameter('rtcm_timeout_s').value,
@@ -207,8 +209,18 @@ class GnssHealthMonitorNode(Node):
                     ublox_qos
                 )
                 self.get_logger().info(f"Subscribed to u-blox UBXNavSat: {self.params['ubx_nav_sat_topic']}")
+                
+                # Also subscribe to UBXNavPVT for active satellite count data
+                self.nav_pvt_sub = self.create_subscription(
+                    UBXNavPVT,
+                    self.params['ubx_nav_pvt_topic'],
+                    self.nav_pvt_callback,
+                    ublox_qos
+                )
+                self.get_logger().info(f"Subscribed to u-blox UBXNavPVT: {self.params['ubx_nav_pvt_topic']}")
+                
             except Exception as e:
-                self.get_logger().warn(f"Failed to subscribe to {self.params['ubx_nav_sat_topic']}: {e}")
+                self.get_logger().warn(f"Failed to subscribe to u-blox topics: {e}")
         else:
             self.get_logger().warn("ublox_ubx_msgs not available, satellite counts will be unavailable")
             
@@ -310,6 +322,25 @@ class GnssHealthMonitorNode(Node):
                     
         except Exception as e:
             self.get_logger().warn(f"Error processing UBXNavSat message: {e}")
+    
+    def nav_pvt_callback(self, msg):
+        """u-blox UBXNavPVT callback for active satellite information (prioritized over NavSat)"""
+        try:
+            # UBXNavPVT message structure - provides active satellite count
+            if hasattr(msg, 'num_sv'):
+                self.sat_visible = msg.num_sv
+                # PVT doesn't distinguish between visible and used satellites
+                # Use num_sv for both since these are actively used satellites
+                self.sat_used = msg.num_sv
+                
+                # Log occasionally for debugging
+                if self.sat_visible > 0:
+                    self.get_logger().debug(f"PVT: {self.sat_visible} satellites in use")
+            else:
+                self.get_logger().warn_once("UBXNavPVT message missing num_sv field")
+                
+        except Exception as e:
+            self.get_logger().warn(f"Error processing UBXNavPVT message: {e}")
     
     def rtcm_callback(self, msg, is_primary: bool):
         """RTCM message callback (rtcm_msgs/Message)"""
