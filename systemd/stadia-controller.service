@@ -4,6 +4,8 @@ Documentation=man:bluetoothctl(1)
 After=bluetooth.service
 Wants=bluetooth.service
 BindsTo=bluetooth.service
+StartLimitBurst=3
+StartLimitIntervalSec=60
 
 [Service]
 Type=oneshot
@@ -15,12 +17,6 @@ Group=andrewmeckley
 # Environment
 Environment=PATH=/usr/bin:/bin:/usr/sbin:/sbin
 
-# Restart policy
-RestartSec=10
-Restart=on-failure
-StartLimitBurst=3
-StartLimitIntervalSec=60
-
 # Timeout settings
 TimeoutStartSec=120
 TimeoutStopSec=30
@@ -29,7 +25,7 @@ TimeoutStopSec=30
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
-ProtectHome=yes
+ProtectHome=read-only
 ReadWritePaths=/var/log
 
 # Logging
