@@ -785,3 +785,72 @@ These types are incompatible - the messages were never delivered.
   3. Check raw driver topics before processed topics
   4. Always specify QoS when echoing sensor topics
 
+---
+
+### 4.10 GNSS Health Monitor Implementation (Dec 26, 2025)
+**Status:** COMPLETE - Professional Foxglove Dashboard Integration
+
+**Problem:** Monitoring GPS/RTK status required checking 5+ different topics with complex QoS requirements, making field diagnostics cumbersome and error-prone.
+
+**Solution:** Implemented a dedicated `gnss_health_monitor` ROS 2 package that aggregates all GPS/RTK/NTRIP data into a single clean topic optimized for Foxglove visualization.
+
+**Key Features:**
+1. **Single Topic Output:** `/gnss/health` - aggregates all GPS status into one message
+2. **Robust Fallback Logic:** Gracefully handles missing topics and varying message types
+3. **Real-time Statistics:** Rolling 5-second windows for RTCM rates and correction age
+4. **Intelligent RTK State Detection:** Heuristic-based state determination (NO_FIX, DGPS, FLOAT, FIXED)
+5. **Enhanced Accuracy Metrics:** Proper covariance matrix interpretation for horizontal/vertical accuracy
+6. **Foxglove-Optimized:** Clean numeric fields for plots, string states for displays
+
+**Implementation Highlights:**
+
+**Package Structure:**
+```
+gnss_health_monitor/
+├── msg/GnssHealth.msg              # Custom message type
+├── gnss_health_monitor/
+│   └── gnss_health_monitor_node.py # Main aggregation node
+├── launch/gnss_health_monitor.launch.py
+├── setup.py, package.xml           # Standard ROS packaging
+└── README.md                       # Usage documentation
+```
+
+**Message Format:**
+- **Satellite Data:** `sat_visible`, `sat_used` (from `/ubx_nav_sat`)
+- **NTRIP Status:** `ntrip_connected`, `rtcm_msgs_per_sec`, `corr_age_s`
+- **RTK State:** `rtk_state` string, `h_acc_m`, `v_acc_m`
+- **Enhanced Fields:** `last_update_time`, `dgps_id`, `rtcm_msgs_total`
+
+**Smart Fallback Architecture:**
+- **NavSat Topics:** `/gps/filtered` → `/fix` (with BEST_EFFORT QoS handling)
+- **RTCM Topics:** `/ntrip_client/rtcm` → `/rtcm` (multiple message type support)
+- **Message Types:** `rtcm_msgs/Message` → `std_msgs/ByteMultiArray` (automatic detection)
+
+**Benefits for Field Operations:**
+- **Foxglove Integration:** Single topic eliminates need for 5+ panels
+- **Historical Analysis:** Clean time-series data for RTK acquisition tracking  
+- **Rate Monitoring:** Real-time RTCM throughput for NTRIP debugging
+- **Accuracy Trends:** Watch precision improve as RTK locks engage
+- **No More Terminal:** Replaces flashing `rover_monitor.sh` with professional UI
+
+**Usage:**
+```bash
+# Build and launch
+colcon build --packages-select gnss_health_monitor
+ros2 launch gnss_health_monitor gnss_health_monitor.launch.py
+
+# View aggregated status
+ros2 topic echo /gnss/health
+```
+
+**Foxglove Setup:**
+1. Connect to rover at `ws://[IP]:8765`
+2. Add `/gnss/health` panels:
+   - **Raw Messages:** Complete status overview
+   - **Plot:** `h_acc_m`, `sat_used`, `rtcm_msgs_per_sec` time series
+   - **State Transitions:** `rtk_state` changes over time
+   - **Table:** Live numeric dashboard
+
+**Engineering Impact:**
+This implementation represents a significant quality-of-life improvement for rover operations. It transforms complex multi-topic GPS debugging into a streamlined, professional monitoring experience suitable for field demonstrations and development work.
+

@@ -108,9 +108,33 @@ Establishing the critical `map` -> `odom` -> `base_link` transform tree.
 ## Phase 2.6: Engineering UI, Visualization & Tuning (Foxglove)
 *Status: 100% Complete*
 
-This phase establishes a professional-grade engineering interface for real-time inspection, tuning, and validation of Rover1’s internal state during indoor and outdoor testing.
+This phase establishes a professional-grade engineering interface for real-time inspection, tuning, and validation of Rover1's internal state during indoor and outdoor testing.
 
 This UI is not customer-facing. It exists to ensure sensor fusion, localization, and navigation behaviors are correct, observable, and debuggable before autonomy is enabled.
+
+## Phase 2.7: GNSS Health Monitor Integration
+*Status: 100% Complete (Dec 26, 2025)*
+
+Professional GPS/RTK dashboard integration for Foxglove replacing terminal-based monitoring.
+
+### 2.7.1 GNSS Health Aggregation Package
+- [x] **Custom Message Type**: `GnssHealth.msg` with satellite counts, RTCM rates, RTK state, and accuracy
+- [x] **Aggregation Node**: `gnss_health_monitor_node.py` with robust topic fallback logic
+- [x] **Multi-topic Subscription**: `/gps/filtered` → `/fix`, `/ntrip_client/rtcm` → `/rtcm`
+- [x] **QoS Handling**: Proper BEST_EFFORT QoS for sensor topics
+- [x] **Message Type Detection**: Automatic `rtcm_msgs/Message` → `std_msgs/ByteMultiArray` fallback
+
+### 2.7.2 Real-time Statistics Engine  
+- [x] **Rolling Windows**: 5-second RTCM rate calculation with deque-based implementation
+- [x] **Correction Age Tracking**: Real-time seconds since last RTCM packet
+- [x] **Accuracy Interpretation**: Proper NavSat covariance matrix → horizontal/vertical accuracy
+- [x] **RTK State Heuristics**: Threshold-based NO_FIX/DGPS/FLOAT/FIXED determination
+
+### 2.7.3 Foxglove Dashboard Optimization
+- [x] **Single Topic Design**: `/gnss/health` replaces 5+ separate topic monitoring
+- [x] **Clean Data Types**: Numeric fields for plots, string fields for state displays
+- [x] **Historical Analysis**: Time-stamped data for RTK acquisition trends
+- [x] **Professional UI**: Eliminates flashing terminal monitoring requirements
 
 2.5.1 Foxglove Bridge Integration
 	•	Goal: Enable live ROS 2 introspection from laptop/tablet via Foxglove Studio.
@@ -200,11 +224,12 @@ Phase 4 focuses on delivering a polished, customer-facing Web UI, built only aft
 
 ---
 
-## Immediate Next Steps (Updated 2025-12-24)
-1.  **Rebuild & Deploy**: Run `colcon build` on Pi to apply NMEA bridge fix, restart rover service.
-2.  **Verify RTK Flow**: Confirm `/ntrip_client/rtcm` is receiving data and GPS achieves RTK Float/Fixed.
-3.  **EKF Square Drive Validation**: Perform the 5m square test and analyze the digital trail in Foxglove.
-4.  **Path Planning (Nav2)**: Configure Navigation2 stack for autonomous waypoint following.
-5.  **Mission Controller**: Implement the first "Patrol" state machine.
+## Immediate Next Steps (Updated 2025-12-26)
+1.  ~~**Rebuild & Deploy**: Run `colcon build` on Pi to apply NMEA bridge fix, restart rover service.~~ ✅ **COMPLETE**
+2.  ~~**Professional GPS Dashboard**: Implement GNSS health monitor for Foxglove integration.~~ ✅ **COMPLETE** 
+3.  **Deploy GNSS Health Monitor**: Build and integrate new package on Pi, test Foxglove dashboard.
+4.  **EKF Square Drive Validation**: Perform the 5m square test and analyze the digital trail in Foxglove.
+5.  **Path Planning (Nav2)**: Configure Navigation2 stack for autonomous waypoint following.
+6.  **Mission Controller**: Implement the first "Patrol" state machine.
 
 
