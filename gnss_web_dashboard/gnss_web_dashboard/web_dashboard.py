@@ -31,7 +31,7 @@ class GnssWebDashboard(Node):
         self.health_lock = threading.Lock()
         
         # Connected WebSocket clients
-        self.clients = set()
+        self.ws_clients = set()
         
         # Subscribe to GNSS health with reliable QoS
         self.health_sub = self.create_subscription(
@@ -67,32 +67,32 @@ class GnssWebDashboard(Node):
             }
             
         # Broadcast to all connected WebSocket clients
-        if self.clients:
+        if self.ws_clients:
             asyncio.new_event_loop().run_until_complete(
                 self.broadcast_health_data()
             )
     
     async def broadcast_health_data(self):
         """Send health data to all connected WebSocket clients"""
-        if not self.latest_health or not self.clients:
+        if not self.latest_health or not self.ws_clients:
             return
             
         message = json.dumps(self.latest_health)
         disconnected = set()
         
-        for client in self.clients:
+        for client in self.ws_clients:
             try:
                 await client.send(message)
             except websockets.exceptions.ConnectionClosed:
                 disconnected.add(client)
         
         # Clean up disconnected clients
-        self.clients -= disconnected
+        self.ws_clients -= disconnected
     
     async def handle_websocket(self, websocket, path):
         """Handle new WebSocket connections"""
-        self.clients.add(websocket)
-        self.get_logger().info(f"New client connected. Total clients: {len(self.clients)}")
+        self.ws_clients.add(websocket)
+        self.get_logger().info(f"New client connected. Total clients: {len(self.ws_clients)}")
         
         try:
             # Send current health data immediately
@@ -106,8 +106,8 @@ class GnssWebDashboard(Node):
         except websockets.exceptions.ConnectionClosed:
             pass
         finally:
-            self.clients.discard(websocket)
-            self.get_logger().info(f"Client disconnected. Total clients: {len(self.clients)}")
+            self.ws_clients.discard(websocket)
+            self.get_logger().info(f"Client disconnected. Total clients: {len(self.ws_clients)}")
 
 
 class CustomHTTPHandler(SimpleHTTPRequestHandler):
