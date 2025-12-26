@@ -26,7 +26,7 @@ from builtin_interfaces.msg import Time as TimeMsg
 
 # Try to import common u-blox message types (graceful fallback if not available)
 try:
-    from ublox_msgs.msg import NavSAT
+    from ublox_ubx_msgs.msg import UBXNavSat
     UBLOX_AVAILABLE = True
 except ImportError:
     UBLOX_AVAILABLE = False
@@ -193,16 +193,16 @@ class GnssHealthMonitorNode(Node):
         if UBLOX_AVAILABLE:
             try:
                 self.nav_sat_sub = self.create_subscription(
-                    NavSAT,
+                    UBXNavSat,
                     self.params['ubx_nav_sat_topic'],
                     self.nav_sat_callback,
                     self.sensor_qos
                 )
-                self.get_logger().info(f"Subscribed to u-blox NavSAT: {self.params['ubx_nav_sat_topic']}")
+                self.get_logger().info(f"Subscribed to u-blox UBXNavSat: {self.params['ubx_nav_sat_topic']}")
             except Exception as e:
                 self.get_logger().warn(f"Failed to subscribe to {self.params['ubx_nav_sat_topic']}: {e}")
         else:
-            self.get_logger().warn("ublox_msgs not available, satellite counts will be unavailable")
+            self.get_logger().warn("ublox_ubx_msgs not available, satellite counts will be unavailable")
             
         # RTCM subscription (primary)
         self._setup_rtcm_subscription(self.params['rtcm_topic'], is_primary=True)
@@ -256,20 +256,26 @@ class GnssHealthMonitorNode(Node):
             self.last_navsat_time = self.get_clock().now()
     
     def nav_sat_callback(self, msg):
-        """u-blox NavSAT callback for satellite information"""
+        """u-blox UBXNavSat callback for satellite information"""
         try:
-            # Detect message structure
-            if hasattr(msg, 'sv'):
-                satellites = msg.sv
-            elif hasattr(msg, 'sats'):
-                satellites = msg.sats
-            elif hasattr(msg, 'satellites'):
-                satellites = msg.satellites
+            # UBXNavSat message structure
+            if hasattr(msg, 'num_svs') and hasattr(msg, 'svs'):
+                # Use num_svs field for satellite count and svs array for satellite list
+                self.sat_visible = msg.num_svs
+                satellites = msg.svs
             else:
-                self.get_logger().warn_once("Unknown NavSAT message structure")
-                return
+                # Fallback: detect message structure for other message types
+                if hasattr(msg, 'sv'):
+                    satellites = msg.sv
+                elif hasattr(msg, 'sats'):
+                    satellites = msg.sats
+                elif hasattr(msg, 'satellites'):
+                    satellites = msg.satellites
+                else:
+                    self.get_logger().warn_once("Unknown UBXNavSat message structure")
+                    return
+                self.sat_visible = len(satellites)
                 
-            self.sat_visible = len(satellites)
             self.sat_used = 0
             
             # Count satellites used in solution
@@ -291,7 +297,7 @@ class GnssHealthMonitorNode(Node):
                     self.sat_used += 1
                     
         except Exception as e:
-            self.get_logger().warn(f"Error processing NavSAT message: {e}")
+            self.get_logger().warn(f"Error processing UBXNavSat message: {e}")
     
     def rtcm_callback(self, msg, is_primary: bool):
         """RTCM message callback (rtcm_msgs/Message)"""
