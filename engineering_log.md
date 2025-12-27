@@ -1,7 +1,7 @@
 # Rover1 Engineering Journal & Technical Specifications
 
 **Maintainer:** MeckMan2025
-**Last Updated:** 2025-12-24
+**Last Updated:** 2025-12-27
 **Purpose:** Living documentation of the hardware verification, driver protocols, and system architecture for the Rover1 autonomous vehicle. This document serves as the sole source of truth for AI agents and engineering rebuilds.
 
 ---
@@ -9,12 +9,15 @@
 ## 1. Hardware Architecture
 
 ### 1.1 Compute Unit
-- **Device:** Raspberry Pi 5
-- **OS:** Ubuntu 24.04 (Noble Numbat)
-- **Host Name:** `rover1.local`
-- **User:** `andrewmeckley`
+- **Device:** Raspberry Pi 5 Model B Rev 1.1
+- **Architecture:** aarch64 (ARM64)
+- **OS:** Ubuntu 24.04.3 LTS (Noble Numbat)
+- **Kernel:** 6.8.0-1043-raspi (PREEMPT_DYNAMIC)
+- **Host Name:** `rover1`
+- **User:** `andrewmeckley` (Groups: video, dialout, gpio, i2c, spi)
 - **Work Directory:** `~/ros2_ws/src/rover1`
 - **ROS Distribution:** ROS 2 Jazzy Jalisco
+- **IP Address:** `192.168.6.84` (mDNS: `rover1.local`)
 
 ### 1.2 Motor Control System
 - **Controller:** Hiwonder Motor Driver HAT (Connected via I2C)
@@ -57,7 +60,17 @@ Standard Hiwonder protocols (broadcast speed) failed. Direct register addressing
   - **Register:** `0x00` (2-byte unsigned int).
   - **Unit:** Millivolts (mV).
   - **Note:** Register values confirm ~14.5V readings for 4S battery.
-- **Regulation:** Hiwonder HAT provides 5V to Raspberry Pi via Pins.
+### 1.5 Vision System (Perception)
+- **Camera Module:** Nuwa-HP60C (ASJ ZNX_NVT)
+- **Manufacturer:** NOVATEK (USB ID: `3482:6723`)
+- **Serial Number:** `510550000000100`
+- **Driver:** `uvcvideo` (Kernel built-in) / `ascamera` ROS 2 driver
+- **Device Paths:** `/dev/video0`, `/dev/video1`, `/dev/media0`
+- **Mounting Height:** 33cm (Measured from ground to bottom surface of camera housing)
+- **Pitch Angle:** -7° (Pointed downward at ground, verified via level)
+- **Formats (MJPG):** 1280x720 @ 30fps (Recommended), 640x480 @ 30fps
+- **Formats (YUYV):** 1280x1040 @ 8fps (Highest res)
+- **Physical Position:** Top-mounted, forward-facing.
 
 ---
 
@@ -92,9 +105,21 @@ Standard Hiwonder protocols (broadcast speed) failed. Direct register addressing
 - **Mountpoint:** `RTCM3_IMAX`
 - **Auth:** Basic Auth (Credentials stored in `.env` file)
 - **Security:** Environment variables loaded via `scripts/load_env.sh`
-- **Note:** `authenticate: True` parameter is **REQUIRED** for `ntrip_ros.py` to transmit credentials.
+#### Network & Port Access
+- **Port Redirect:** Port 80 is redirected to 8080 for easy dashboard access (`http://rover1.local`).
+- **Implementation:** `iptables` NAT rule (Persistent via `iptables-persistent`).
+- **Rule:** `-A PREROUTING -p tcp -m tcp --dport 80 -j REDIRECT --to-ports 8080`
 
-### 2.3 Known Issues & Fixes
+### 2.4 Vision & Perception Stack
+- **OpenCV Version:** 4.6.0 (python3-opencv)
+- **ROS 2 Packages:** 
+    - `ros-jazzy-cv-bridge` (v4.1.0)
+    - `ros-jazzy-image-transport` (v5.1.7)
+    - `ros-jazzy-image-transport-plugins` (compressed, theora)
+    - `ros-jazzy-pcl-ros` (v2.6.2)
+- **Hardware Integration:** `libusb-1.0-0-dev`, `libudev-dev`, `v4l-utils`
+
+### 2.5 Known Issues & Fixes
 - **GPS USB Busy:** `LIBUSB_ERROR_BUSY`.
     - *Cause:* Linux kernel driver `cdc_acm` grabs the USB device before ROS `ublox_dgnss` can claim it via `libusb`.
     - *Fix:* [SOLVED] Created `/etc/udev/rules.d/99-ublox-gnss.rules` to detach `cdc_acm`.
@@ -904,3 +929,64 @@ ros2 run foxglove_bridge foxglove_bridge --port 8765
 
 **Applied to:** GNSS Health Monitor (`gnss_health_monitor/msg/GnssHealth`) - successfully resolved topic visibility and enabled professional GPS/RTK dashboard integration.
 
+### 4.11 Camera Module Integration & Perception Planning (Dec 27, 2025)
+**Status:** PLANNING COMPLETE - Moving to Phase 5: Perception
+
+**Hardware Specs (Nuwa-HP60C):**
+- **Mounting Height:** 33cm from ground to bottom of housing.
+- **Pitch Angle:** -7° (downward tilt).
+- **Driver Reference:** `Camera_Specs/ascam_ros2_ws/src.zip` (~135MB).
+
+**Implementation Strategy:**
+1. **Perception Foundation:** Deploy AsCam driver workspace and update URDF with precise camera transforms.
+2. **Bandwidth Strategy:** Use `image_transport` compression (JPEG/PNG) to maintain low latency over wireless links.
+3. **Hybrid Logic:** Developing a "Vision Shield" that runs in parallel with Nav2 GPS waypoints.
+4. **Safety Interface:** Monitoring camera node heartbeats in `rover_monitor.sh` v3.0.
+
+**Next Steps:** Unpack SDK and verify camera stream frequency (target 15-20 Hz for autonomous navigation).
+
+---
+
+## 5. Engineering Reference & Verification
+
+### 5.1 Quick Validation Commands
+```bash
+# Check camera hardware detection
+lsusb | grep 3482:6723
+
+# List video devices
+v4l2-ctl --list-devices
+
+# Check supported formats/resolutions
+v4l2-ctl -d /dev/video0 --list-formats-ext
+
+# Test OpenCV capture
+python3 -c "import cv2; cap=cv2.VideoCapture(0); ret,f=cap.read(); print(f'Captured: {f.shape}' if ret else 'FAILED'); cap.release()"
+
+# Test ROS 2 cv_bridge integration
+python3 -c "import cv_bridge; print('cv_bridge OK')"
+
+# Verify port 80 redirect
+sudo iptables -t nat -L PREROUTING -n
+
+# Check web dashboard accessibility
+curl -s -o /dev/null -w '%{http_code}' http://rover1.local
+```
+
+### 5.2 Rebuild & Maintenance
+In case of system failure or fresh install:
+1. **Toolbox:** `sudo apt install -y python3-opencv v4l-utils iptables-persistent`
+2. **ROS Vision:** `sudo apt install -y ros-jazzy-cv-bridge ros-jazzy-image-transport ros-jazzy-image-transport-plugins ros-jazzy-pcl-ros`
+3. **Permissions:** `sudo usermod -aG video $USER`
+4. **Networking:**
+   ```bash
+   sudo iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-ports 8080
+   sudo sh -c 'iptables-save > /etc/iptables/rules.v4'
+   ```
+
+### 5.3 Optimal Camera Configurations
+For Python/OpenCV implementations:
+- **High Performance (Streaming):** `MJPG` @ 1280x720 (30 FPS)
+- **High Resolution (Mapping):** `YUYV` @ 1280x1040 (8 FPS)
+
+---

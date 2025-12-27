@@ -1,19 +1,23 @@
 [Unit]
-Description=Rover1 Autonomous Startup Service
+Description=Rover1 Master Launch Service
 After=network-online.target
 Wants=network-online.target
-StartLimitIntervalSec=300
-StartLimitBurst=5
 
 [Service]
 Type=simple
 User=andrewmeckley
-WorkingDirectory=/home/andrewmeckley/ros2_ws/src/rover1
-ExecStart=/bin/bash /home/andrewmeckley/ros2_ws/src/rover1/scripts/startup_launch.sh
-Restart=on-failure
+Group=andrewmeckley
+WorkingDirectory=/home/andrewmeckley/ros2_ws
+Environment="PYTHONPATH=/home/andrewmeckley/ros2_ws/install/rover1_hardware/lib/python3.12/site-packages:/home/andrewmeckley/ros2_ws/install/gnss_health_monitor/lib/python3.12/site-packages:/home/andrewmeckley/ros2_ws/install/gnss_web_dashboard/lib/python3.12/site-packages"
+Environment="PATH=/opt/ros/jazzy/bin:/usr/bin:/bin"
+Environment="ROS_DISTRO=jazzy"
+Environment="ROS_DOMAIN_ID=0"
+
+# Source ROS and Workspace, then launch the master rover.launch.py
+ExecStart=/bin/bash -c "source /opt/ros/jazzy/setup.bash && source /home/andrewmeckley/ros2_ws/install/setup.bash && ros2 launch rover1_bringup rover.launch.py"
+
+Restart=always
 RestartSec=10
-StandardOutput=inherit
-StandardError=inherit
 
 [Install]
 WantedBy=multi-user.target

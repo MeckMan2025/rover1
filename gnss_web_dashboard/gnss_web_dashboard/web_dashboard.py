@@ -18,6 +18,11 @@ import os
 from pathlib import Path
 
 from gnss_health_monitor.msg import GnssHealth
+from sensor_msgs.msg import Image
+from cv_bridge import CvBridge
+import cv2
+import base64
+import time
 from ament_index_python.packages import get_package_share_directory
 
 
@@ -40,6 +45,22 @@ class GnssWebDashboard(Node):
             '/gnss/health',
             self.health_callback,
             10
+        )
+        
+        # Camera integration
+        self.bridge = CvBridge()
+        self.latest_image_base64 = None
+        self.last_img_time = 0
+        self.fps_limit = 10.0
+        self.interval = 1.0 / self.fps_limit
+        
+        # Subscribe to camera RGB feed
+        # Topic as identified from ascamera_node defaults + namespace
+        self.image_sub = self.create_subscription(
+            Image,
+            '/ascamera_hp60c/rgb0/image',
+            self.image_callback,
+            rclpy.qos.qos_profile_sensor_data
         )
         
         # Get package directory for serving static files
@@ -75,16 +96,59 @@ class GnssWebDashboard(Node):
             
         # Broadcast to all connected WebSocket clients
         if self.ws_clients:
-            asyncio.new_event_loop().run_until_complete(
-                self.broadcast_health_data()
-            )
-    
-    async def broadcast_health_data(self):
-        """Send health data to all connected WebSocket clients"""
-        if not self.latest_health or not self.ws_clients:
+            self.broadcast_data()
+
+    def image_callback(self, msg: Image):
+        """Process incoming camera images and encode for web"""
+        now = time.time()
+        if now - self.last_img_time < self.interval:
             return
             
-        message = json.dumps(self.latest_health)
+        try:
+            # Convert ROS Image to OpenCV BGR
+            cv_img = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+            
+            # Downscale for performance if needed (already 640x480 usually)
+            # cv_img = cv2.resize(cv_img, (320, 240)) 
+            
+            # Encode as JPEG
+            # Quality 40-60 is a good balance for bandwidth vs clarity
+            _, buffer = cv2.imencode('.jpg', cv_img, [cv2.IMWRITE_JPEG_QUALITY, 50])
+            
+            # Convert to Base64 string
+            base64_img = base64.b64encode(buffer).decode('utf-8')
+            
+            with self.health_lock:
+                self.latest_image_base64 = base64_img
+                self.last_img_time = now
+                
+            # Broadcast immediately on image update if health is already there
+            if self.ws_clients:
+                self.broadcast_data()
+                
+        except Exception as e:
+            self.get_logger().error(f"Image processing error: {e}")
+
+    def broadcast_data(self):
+        """Prepare and broadcast combined health + image data"""
+        if not self.latest_health:
+            return
+            
+        # Combine data
+        payload = self.latest_health.copy()
+        if self.latest_image_base64:
+            payload['image'] = self.latest_image_base64
+            
+        asyncio.new_event_loop().run_until_complete(
+            self.send_payload(payload)
+        )
+    
+    async def send_payload(self, data):
+        """Send data to all connected WebSocket clients"""
+        if not self.ws_clients:
+            return
+            
+        message = json.dumps(data)
         disconnected = set()
         
         for client in self.ws_clients:

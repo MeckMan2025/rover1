@@ -90,6 +90,22 @@ def generate_launch_description():
             name='gnss_web_dashboard',
             output='screen'
         ),
+
+        # Camera Integration (Nuwa-HP60C)
+        Node(
+            package='ascamera',
+            executable='ascamera_node',
+            name='ascamera_node',
+            namespace='ascamera_hp60c',
+            output='screen',
+            parameters=[{
+                'confiPath': '/home/andrewmeckley/ros2_ws/src/rover1/Camera_Specs/ascam_ros2_ws/src/ascamera/configurationfiles',
+                'fps': 10,
+                'rgb_width': 640,
+                'rgb_height': 480,
+                'pub_tfTree': False # We handle TF in our own URDF for better control
+            }]
+        ),
         
         # EKF Sensor Fusion (Local: Odom -> Base_Link)
         Node(

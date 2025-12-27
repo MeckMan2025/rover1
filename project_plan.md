@@ -253,9 +253,50 @@ Phase 4 focuses on delivering a polished, customer-facing Web UI, built only aft
     - **Virtual Joystick**: Large touch targets, "deadzone" logic for drift prevention.
     - **Mission Panel**: Live status of GPS Quality (RTK/Float/Single) and Mission State.
 
+## Phase 5: Computer Vision & Perception
+*Status: Planned*
+
+This phase introduces visual intelligence to complement RTK-GPS navigation, providing obstacle avoidance, precise local positioning, and enhanced situational awareness.
+
+### 5.1 Perception Foundation (Drivers & Transforms)
+- **Driver Integration**: Build and deploy `ascam_ros2_ws` on Pi 5.
+- **TF Tree Update**: Update URDF with precise camera mounting:
+    - **Height**: 33cm from ground to bottom surface of housing.
+    - **Pitch**: -7° (downward tilt towards ground).
+- **Optimization**: Implement `image_transport` compression for low-latency Foxglove monitoring.
+
+### 5.2 Feature Extraction
+- **Obstacle Veto**: Implement color segmentation or depth-based traversability analysis.
+- **Visual Landmarks**: AprilTag or marker detection for docking and sub-decimeter refinement.
+
+### 5.3 Hybrid Navigation Controller
+- **Vision Veto Layer**: Integrate "Stop/Swerve on detection" logic into the mission controller.
+- **Local Planner Blending**: Use CV data to adjust GPS-based paths in real-time.
+- **State Machine Modes**: Add `VISION_NAV` mode for tight spaces.
+
+### 5.4 Observability & Safety
+- **Web Cockpit**: Integrate live MJPEG stream or WebSocket frames directly into the `gnss_web_dashboard` (Port 8080).
+- **Visual Overlays**: Display RTK status and accuracy as an "HUD" (Heads-Up Display) on top of the live video feed.
+- **Safety Shield**: Logic to perform an immediate "Clean Stop" if the camera node heartbeats stall.
+
+### 5.5 Implementation & Testing Plan (Dashboard-First Visuals)
+
+#### 5.5.1 Step-by-Step Implementation
+1. **Unpack & Build**: Deploy `ascam_ros2_ws` to Pi 5 and compile with `colcon build`.
+2. **Dashboard Upgrade**: Enhance `web_dashboard.py` with `image_raw` subscription and JPEG encoding.
+3. **HTML HUD**: Update `index.html` with a video window and dynamic HUD overlays.
+4. **TF Alignment**: Update URDF with `33cm` height and `-7°` pitch offsets.
+5. **Logic**: Develop `obstacle_veto_node.py` (Simple ROI-based thresholding for traversability).
+
+#### 5.5.2 Testing & Validation
+- **P0: Stream Latency**: Verify <200ms delay between reality and Web Dashboard at 640x480.
+- **P0: Controller Sync**: Verify zero "input lag" when driving via Stadia controller while watching the web stream.
+- **P1: Concurrency Audit**: Ensure the Pi 5 can handle the Web Server, WebSocket, GPS stack, and Video encoder simultaneously.
+- **P2: Safety Failover**: Verify Mission Controller triggers "Clean Stop" if the video stream disconnects for >1s.
+
 ---
 
-## Immediate Next Steps (Updated 2025-12-26 Evening)
+## Immediate Next Steps (Updated 2025-12-27)
 
 ### ✅ **RECENTLY COMPLETED (This Session)**
 1. ~~**GNSS Web Dashboard**: Real-time web interface with satellite count and RTK status~~

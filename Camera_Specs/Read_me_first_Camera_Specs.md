@@ -1,0 +1,1 @@
+This folder contains all the supplier reference technical documentation and code examples for the camera module. All AI agents should reference this knowledge in order to make the camera module work for computer vision autonomous navigation. 

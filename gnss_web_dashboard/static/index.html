@@ -59,6 +59,44 @@
             gap: 20px;
             margin-bottom: 30px;
         }
+
+        .video-container {
+            grid-column: 1 / -1;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            overflow: hidden;
+            position: relative;
+            background-color: #000;
+            aspect-ratio: 4 / 3;
+            max-width: 800px;
+            margin: 0 auto 30px auto;
+        }
+
+        #videoFeed {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .video-overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            pointer-events: none;
+            text-shadow: 2px 2px 2px rgba(0,0,0,0.8);
+            font-family: 'Courier New', Courier, monospace;
+            font-weight: bold;
+        }
+
+        .video-placeholder {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: rgba(255,255,255,0.3);
+            text-align: center;
+        }
         
         .card {
             background: rgba(255, 255, 255, 0.05);
@@ -243,6 +281,20 @@
             <h1>🛸 Rover1 GNSS Health</h1>
             <span id="connectionStatus" class="connection-status disconnected">● Connecting...</span>
         </div>
+
+        <!-- Live Camera Feed Section -->
+        <div class="video-container">
+            <div id="videoPlaceholder" class="video-placeholder">
+                <div style="font-size: 3rem;">📸</div>
+                <div>WAITING FOR CAMERA FEED...</div>
+            </div>
+            <img id="videoFeed" src="" style="display: none;">
+            <div class="video-overlay" id="videoOverlay">
+                <div id="hudRtk" style="color: #ff4444;">RTK: NO FIX</div>
+                <div id="hudSat" style="color: #0088ff;">SAT: --</div>
+                <div id="hudVolt" style="color: #00ff88;">VOLT: -- V</div>
+            </div>
+        </div>
         
         <div class="grid">
             <!-- RTK Status Card -->
@@ -397,8 +449,45 @@
                 document.getElementById('dataRate').textContent =
                     data.rtcm_bytes_per_sec ? Math.round(data.rtcm_bytes_per_sec) : '--';
 
+                // Video Feed
+                this.updateVideoFeed(data.image);
+
+                // HUD Overlays
+                this.updateHUD(data);
+
                 // Battery Status
                 this.updateBatteryStatus(data.battery_voltage);
+            }
+
+            updateVideoFeed(base64Data) {
+                const img = document.getElementById('videoFeed');
+                const placeholder = document.getElementById('videoPlaceholder');
+                
+                if (base64Data) {
+                    img.src = `data:image/jpeg;base64,${base64Data}`;
+                    img.style.display = 'block';
+                    placeholder.style.display = 'none';
+                }
+            }
+
+            updateHUD(data) {
+                const rtk = document.getElementById('hudRtk');
+                const sat = document.getElementById('hudSat');
+                const volt = document.getElementById('hudVolt');
+
+                if (data.rtk_state) {
+                    rtk.textContent = `RTK: ${data.rtk_state}`;
+                    rtk.style.color = data.rtk_state === 'FIXED' ? '#00ff88' : 
+                                     (data.rtk_state === 'FLOAT' ? '#0088ff' : '#ffc107');
+                }
+
+                if (data.sat_used !== undefined) {
+                    sat.textContent = `SAT: ${data.sat_used}`;
+                }
+
+                if (data.battery_voltage !== undefined) {
+                    volt.textContent = `VOLT: ${data.battery_voltage.toFixed(1)} V`;
+                }
             }
             
             updateRTKStatus(state, accuracy) {
