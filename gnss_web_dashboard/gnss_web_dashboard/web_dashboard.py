@@ -36,8 +36,9 @@ class GnssWebDashboard(Node):
         self.latest_health = None
         self.health_lock = threading.Lock()
         
-        # Connected WebSocket clients
+        # Connected WebSocket clients and event loop
         self.ws_clients = set()
+        self.ws_loop = None
         
         # Subscribe to GNSS health with reliable QoS
         self.health_sub = self.create_subscription(
@@ -131,17 +132,21 @@ class GnssWebDashboard(Node):
 
     def broadcast_data(self):
         """Prepare and broadcast combined health + image data"""
-        if not self.latest_health:
+        if self.latest_health is None:
             return
+
+        # Prepare combined data
+        with self.health_lock:
+            payload = self.latest_health.copy()
+            if self.latest_image_base64:
+                payload['image'] = self.latest_image_base64
             
-        # Combine data
-        payload = self.latest_health.copy()
-        if self.latest_image_base64:
-            payload['image'] = self.latest_image_base64
-            
-        asyncio.new_event_loop().run_until_complete(
-            self.send_payload(payload)
-        )
+        # Broadcast via the WebSocket thread's event loop
+        if self.ws_loop:
+            asyncio.run_coroutine_threadsafe(
+                self.send_payload(payload),
+                self.ws_loop
+            )
     
     async def send_payload(self, data):
         """Send data to all connected WebSocket clients"""
@@ -223,6 +228,7 @@ def run_websocket_server(dashboard_node):
     )
     
     print("WebSocket server starting on port 8081")
+    dashboard_node.ws_loop = loop
     loop.run_until_complete(server)
     loop.run_forever()
 
