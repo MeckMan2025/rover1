@@ -34,8 +34,21 @@ class StadiaTeleop(Node):
         # State tracking for safety
         self.deadman_active = False
         self.is_initialized = False  # Stadia triggers start at 1.0; ignore until we see that.
-        self.joysticks_ready = False  # Stadia axes start at 1.0; wait for user to center sticks
         self.msg_count = 0
+
+        # Per-axis activation tracking: Stadia sends 1.0 on axes at first connect.
+        # Each axis becomes "activated" when it enters the deadzone (user touched & released).
+        # Unactivated axes output 0.0 to prevent erratic motion from stale 1.0 values.
+        self.axis_activated = {
+            self.AXIS_LEFT_X: False,
+            self.AXIS_LEFT_Y: False,
+            self.AXIS_RIGHT_X: False,
+        }
+        self.axis_names = {
+            self.AXIS_LEFT_X: 'Left X (rotate)',
+            self.AXIS_LEFT_Y: 'Left Y (fwd/back)',
+            self.AXIS_RIGHT_X: 'Right X (strafe)',
+        }
 
         self.get_logger().info('=== Stadia Teleop Node Started ===')
         self.get_logger().info(f'Max Linear: {self.max_linear} m/s | Max Angular: {self.max_angular} rad/s')
@@ -44,11 +57,29 @@ class StadiaTeleop(Node):
         if self.debug_axes:
             self.get_logger().info('DEBUG MODE: Logging raw axis values')
 
-    def apply_deadzone(self, value: float) -> float:
-        """Apply deadzone filtering to axis value."""
-        if abs(value) < self.joystick_deadzone:
+    def get_axis_value(self, axis_index: int, raw_value: float) -> float:
+        """
+        Get processed axis value with activation check and deadzone filtering.
+
+        - If axis not yet activated and value enters deadzone, activate it
+        - If axis not activated, return 0.0 (ignore stale values)
+        - If axis activated, apply deadzone filtering and return value
+        """
+        in_deadzone = abs(raw_value) < self.joystick_deadzone
+
+        # Check for activation: axis enters deadzone means user has touched & released
+        if not self.axis_activated[axis_index] and in_deadzone:
+            self.axis_activated[axis_index] = True
+            self.get_logger().info(f'{self.axis_names[axis_index]} axis activated')
+
+        # If not activated, ignore this axis entirely
+        if not self.axis_activated[axis_index]:
             return 0.0
-        return value
+
+        # Activated: apply deadzone filtering
+        if in_deadzone:
+            return 0.0
+        return raw_value
 
     def joy_callback(self, msg):
         self.msg_count += 1
@@ -73,44 +104,31 @@ class StadiaTeleop(Node):
                 # Still waiting for a valid identity packet
                 return
 
-        # Joystick ready check: Stadia sends 1.0 on all axes at first connect.
-        # Wait for user to physically touch/center sticks (all axes near 0.0).
-        if not self.joysticks_ready:
-            left_x = msg.axes[self.AXIS_LEFT_X]
-            left_y = msg.axes[self.AXIS_LEFT_Y]
-            right_x = msg.axes[self.AXIS_RIGHT_X]
-            if abs(left_x) < self.joystick_deadzone and \
-               abs(left_y) < self.joystick_deadzone and \
-               abs(right_x) < self.joystick_deadzone:
-                self.joysticks_ready = True
-                self.get_logger().info('Joysticks calibrated - motion enabled')
-
         deadman_pressed = l2_value < self.deadman_thresh
 
         # Debug logging (throttled to every 20 messages ~1Hz at 20Hz rate)
         if self.debug_axes and self.msg_count % 20 == 0:
+            act = self.axis_activated
             self.get_logger().info(
                 f'Axes: LX={msg.axes[self.AXIS_LEFT_X]:.2f} LY={msg.axes[self.AXIS_LEFT_Y]:.2f} '
                 f'RX={msg.axes[self.AXIS_RIGHT_X]:.2f} L2={l2_value:.2f} | '
-                f'Deadman={deadman_pressed} JoyReady={self.joysticks_ready}'
+                f'Deadman={deadman_pressed} Active=[LX:{act[0]} LY:{act[1]} RX:{act[2]}]'
             )
 
         # Log deadman state changes
         if deadman_pressed != self.deadman_active:
             self.deadman_active = deadman_pressed
             if deadman_pressed:
-                if self.joysticks_ready:
-                    self.get_logger().info('Deadman ENGAGED - motion enabled')
-                else:
-                    self.get_logger().info('Deadman ENGAGED - waiting for joystick calibration')
+                self.get_logger().info('System Armed - move joysticks to enable axes')
             else:
                 self.get_logger().info('Deadman RELEASED - stopping')
 
-        if deadman_pressed and self.joysticks_ready:
-            # Apply deadzone filtering to raw axis values
-            left_y = self.apply_deadzone(msg.axes[self.AXIS_LEFT_Y])
-            left_x = self.apply_deadzone(msg.axes[self.AXIS_LEFT_X])
-            right_x = self.apply_deadzone(msg.axes[self.AXIS_RIGHT_X])
+        if deadman_pressed:
+            # Get axis values with per-axis activation check and deadzone filtering
+            # Unactivated axes return 0.0, activated axes return filtered value
+            left_y = self.get_axis_value(self.AXIS_LEFT_Y, msg.axes[self.AXIS_LEFT_Y])
+            left_x = self.get_axis_value(self.AXIS_LEFT_X, msg.axes[self.AXIS_LEFT_X])
+            right_x = self.get_axis_value(self.AXIS_RIGHT_X, msg.axes[self.AXIS_RIGHT_X])
 
             # LS Forward/Back -> linear.x
             twist.linear.x = left_y * self.max_linear
