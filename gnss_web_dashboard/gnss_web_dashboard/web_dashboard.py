@@ -69,7 +69,8 @@ class GnssWebDashboard(Node):
                 'rtk_state': msg.rtk_state,
                 'h_acc_m': msg.h_acc_m if msg.h_acc_m > 0 else None,
                 'v_acc_m': msg.v_acc_m if msg.v_acc_m > 0 else None,
-                'dgps_id': msg.dgps_id
+                'dgps_id': msg.dgps_id,
+                'battery_voltage': msg.battery_voltage if msg.battery_voltage > 0 else None
             }
             
         # Broadcast to all connected WebSocket clients

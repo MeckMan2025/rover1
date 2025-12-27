@@ -20,7 +20,7 @@ from typing import Optional, Any, Dict
 
 # Message imports
 from sensor_msgs.msg import NavSatFix
-from std_msgs.msg import ByteMultiArray
+from std_msgs.msg import ByteMultiArray, Float32
 from gnss_health_monitor.msg import GnssHealth
 from builtin_interfaces.msg import Time as TimeMsg
 
@@ -110,6 +110,7 @@ class GnssHealthMonitorNode(Node):
                 ('rtk_float_h_acc_threshold_m', 0.30),
                 ('sat_used_flag_mask', 0x08),
                 ('use_ublox_carrsoln_if_available', True),
+                ('battery_topic', 'battery_voltage'),
             ]
         )
         
@@ -128,6 +129,7 @@ class GnssHealthMonitorNode(Node):
             'rtk_float_h_acc_threshold_m': self.get_parameter('rtk_float_h_acc_threshold_m').value,
             'sat_used_flag_mask': self.get_parameter('sat_used_flag_mask').value,
             'use_ublox_carrsoln_if_available': self.get_parameter('use_ublox_carrsoln_if_available').value,
+            'battery_topic': self.get_parameter('battery_topic').value,
         }
         
         # State variables
@@ -137,6 +139,7 @@ class GnssHealthMonitorNode(Node):
         self.sat_used = 0
         self.dgps_id = 0  # Use 0 instead of -1 for uint16
         self.rtcm_stats = RTCMStatistics(window_seconds=5.0)
+        self.battery_voltage = -1.0  # -1.0 indicates no data
         
         # QoS profiles
         self.sensor_qos = QoSProfile(
@@ -234,9 +237,21 @@ class GnssHealthMonitorNode(Node):
             
         # RTCM subscription (primary)
         self._setup_rtcm_subscription(self.params['rtcm_topic'], is_primary=True)
-        
+
         # RTCM fallback subscription
         self._setup_rtcm_subscription(self.params['rtcm_fallback_topic'], is_primary=False)
+
+        # Battery voltage subscription
+        try:
+            self.battery_sub = self.create_subscription(
+                Float32,
+                self.params['battery_topic'],
+                self.battery_callback,
+                10
+            )
+            self.get_logger().info(f"Subscribed to battery: {self.params['battery_topic']}")
+        except Exception as e:
+            self.get_logger().warn(f"Failed to subscribe to battery topic: {e}")
         
     def _setup_rtcm_subscription(self, topic: str, is_primary: bool):
         """Setup RTCM subscription with multiple message type support"""
@@ -362,6 +377,10 @@ class GnssHealthMonitorNode(Node):
             self.rtcm_stats.add_message(byte_count)
         except Exception as e:
             self.get_logger().warn(f"Error processing RTCM ByteMultiArray: {e}")
+
+    def battery_callback(self, msg: Float32):
+        """Battery voltage callback"""
+        self.battery_voltage = msg.data
     
     def compute_accuracy_from_covariance(self, covariance) -> tuple[float, float]:
         """Extract horizontal and vertical accuracy from NavSatFix covariance"""
@@ -457,10 +476,13 @@ class GnssHealthMonitorNode(Node):
                 msg.last_update_time.nanosec = 0
                 
             msg.rtk_state = self.determine_rtk_state(msg.h_acc_m, msg.ntrip_connected)
-            
-            # DGPS ID (placeholder for future enhancement)  
+
+            # DGPS ID (placeholder for future enhancement)
             msg.dgps_id = int(self.dgps_id)
-            
+
+            # Battery voltage
+            msg.battery_voltage = float(self.battery_voltage)
+
             self.health_pub.publish(msg)
             
         except Exception as e:
@@ -483,13 +505,16 @@ class GnssHealthMonitorNode(Node):
         
         msgs_per_sec, _ = self.rtcm_stats.get_rates()
         
+        batt_str = f"{self.battery_voltage:.1f}V" if self.battery_voltage > 0 else "N/A"
+
         self.get_logger().info(
             f"GNSS: {self.sat_used}/{self.sat_visible} sats | "
             f"{rtk_state} | "
             f"H_ACC: {h_acc_str} | "
             f"CORR_AGE: {corr_age:.1f}s | "
             f"RTCM: {msgs_per_sec:.1f} msg/s | "
-            f"NTRIP: {ntrip_status}"
+            f"NTRIP: {ntrip_status} | "
+            f"BATT: {batt_str}"
         )
 
 

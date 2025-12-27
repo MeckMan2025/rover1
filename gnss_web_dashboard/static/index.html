@@ -171,6 +171,31 @@
         .accuracy-good { background: #0088ff; }
         .accuracy-fair { background: #ffc107; }
         .accuracy-poor { background: #ff4444; }
+
+        .battery-display {
+            text-align: center;
+            padding: 15px 0;
+        }
+
+        .battery-bar {
+            width: 100%;
+            height: 12px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+
+        .battery-fill {
+            height: 100%;
+            border-radius: 6px;
+            transition: width 0.3s ease, background-color 0.3s ease;
+        }
+
+        .battery-full { background: #00ff88; }
+        .battery-good { background: #0088ff; }
+        .battery-low { background: #ffc107; }
+        .battery-critical { background: #ff4444; }
         
         .stats-grid {
             display: grid;
@@ -281,6 +306,19 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Battery Status Card -->
+            <div class="card">
+                <div class="card-title">Battery Status</div>
+                <div class="battery-display">
+                    <div id="batteryVoltage" class="metric-value" style="color: #00ff88;">--</div>
+                    <div class="metric-label">Volts</div>
+                </div>
+                <div class="battery-bar">
+                    <div id="batteryFill" class="battery-fill battery-good" style="width: 0%"></div>
+                </div>
+                <div id="batteryStatus" class="metric-label" style="text-align: center; margin-top: 10px;">--</div>
+            </div>
         </div>
         
         <div class="last-update" id="lastUpdate">
@@ -342,22 +380,25 @@
             
             updateDashboard(data) {
                 this.lastUpdateTime = Date.now();
-                
+
                 // RTK Status
                 this.updateRTKStatus(data.rtk_state, data.h_acc_m);
-                
+
                 // Satellites
                 document.getElementById('satVisible').textContent = data.sat_visible || '--';
                 document.getElementById('satUsed').textContent = data.sat_used || '--';
-                
+
                 // NTRIP Status
                 this.updateNTRIPStatus(data.ntrip_connected, data.rtcm_msgs_per_sec, data.corr_age_s);
-                
+
                 // Data Statistics
-                document.getElementById('totalMessages').textContent = 
+                document.getElementById('totalMessages').textContent =
                     data.rtcm_msgs_total ? data.rtcm_msgs_total.toLocaleString() : '--';
-                document.getElementById('dataRate').textContent = 
+                document.getElementById('dataRate').textContent =
                     data.rtcm_bytes_per_sec ? Math.round(data.rtcm_bytes_per_sec) : '--';
+
+                // Battery Status
+                this.updateBatteryStatus(data.battery_voltage);
             }
             
             updateRTKStatus(state, accuracy) {
@@ -401,7 +442,7 @@
                 const status = document.getElementById('ntripStatus');
                 const rateEl = document.getElementById('rtcmRate');
                 const ageEl = document.getElementById('rtcmAge');
-                
+
                 if (connected) {
                     dot.className = 'status-dot status-connected';
                     status.textContent = 'CONNECTED';
@@ -409,9 +450,55 @@
                     dot.className = 'status-dot status-disconnected';
                     status.textContent = 'DISCONNECTED';
                 }
-                
+
                 rateEl.textContent = rate ? rate.toFixed(1) : '--';
                 ageEl.textContent = age ? age.toFixed(1) : '--';
+            }
+
+            updateBatteryStatus(voltage) {
+                const voltageEl = document.getElementById('batteryVoltage');
+                const fill = document.getElementById('batteryFill');
+                const statusEl = document.getElementById('batteryStatus');
+
+                if (voltage && voltage > 0) {
+                    voltageEl.textContent = voltage.toFixed(2);
+
+                    // Battery percentage and status based on typical LiPo 3S (11.1V nominal)
+                    // Full: 12.6V, Empty: 9.9V (3.3V per cell cutoff)
+                    const minV = 9.9;
+                    const maxV = 12.6;
+                    const percent = Math.max(0, Math.min(100, ((voltage - minV) / (maxV - minV)) * 100));
+
+                    let fillClass, statusText, voltageColor;
+                    if (voltage >= 12.0) {
+                        fillClass = 'battery-full';
+                        statusText = 'FULL';
+                        voltageColor = '#00ff88';
+                    } else if (voltage >= 11.1) {
+                        fillClass = 'battery-good';
+                        statusText = 'GOOD';
+                        voltageColor = '#0088ff';
+                    } else if (voltage >= 10.5) {
+                        fillClass = 'battery-low';
+                        statusText = 'LOW';
+                        voltageColor = '#ffc107';
+                    } else {
+                        fillClass = 'battery-critical';
+                        statusText = 'CRITICAL';
+                        voltageColor = '#ff4444';
+                    }
+
+                    fill.style.width = percent + '%';
+                    fill.className = `battery-fill ${fillClass}`;
+                    statusEl.textContent = `${statusText} (${Math.round(percent)}%)`;
+                    voltageEl.style.color = voltageColor;
+                } else {
+                    voltageEl.textContent = '--';
+                    voltageEl.style.color = 'rgba(255, 255, 255, 0.5)';
+                    fill.style.width = '0%';
+                    fill.className = 'battery-fill battery-good';
+                    statusEl.textContent = 'NO DATA';
+                }
             }
             
             updateLastUpdateDisplay() {

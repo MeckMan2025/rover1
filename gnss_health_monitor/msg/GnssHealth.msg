@@ -19,6 +19,9 @@ string rtk_state            # NO_FIX, DGPS, FLOAT, FIXED
 float32 h_acc_m             # Horizontal accuracy estimate (meters)
 float32 v_acc_m             # Vertical accuracy estimate (meters)
 
-# Enhanced Status (suggested upgrades)
+# Enhanced Status
 builtin_interfaces/Time last_update_time  # Timestamp of last valid GPS data
 uint16 dgps_id              # DGPS station ID if available (0 if unknown)
+
+# Power Status
+float32 battery_voltage     # Battery voltage in volts (-1.0 if unavailable)
