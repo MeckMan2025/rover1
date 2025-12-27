@@ -14,12 +14,14 @@ class StadiaTeleop(Node):
         self.declare_parameter('max_angular_speed', 1.0)
         self.declare_parameter('deadman_threshold', 0.0)  # L2 starts at 1.0, pressed goes to -1.0
         self.declare_parameter('joystick_deadzone', 0.1)  # Ignore axis values below this threshold
+        self.declare_parameter('activation_threshold', 0.3)  # Must move stick past this to prove intent
         self.declare_parameter('debug_axes', False)       # Log raw axis values for calibration
 
         self.max_linear = self.get_parameter('max_linear_speed').value
         self.max_angular = self.get_parameter('max_angular_speed').value
         self.deadman_thresh = self.get_parameter('deadman_threshold').value
         self.joystick_deadzone = self.get_parameter('joystick_deadzone').value
+        self.activation_threshold = self.get_parameter('activation_threshold').value
         self.debug_axes = self.get_parameter('debug_axes').value
 
         # Stadia Mapping indices (Calibrated Dec 23, 2025)
@@ -36,9 +38,16 @@ class StadiaTeleop(Node):
         self.is_initialized = False  # Stadia triggers start at 1.0; ignore until we see that.
         self.msg_count = 0
 
-        # Per-axis activation tracking: Stadia sends 1.0 on axes at first connect.
-        # Each axis becomes "activated" when it enters the deadzone (user touched & released).
-        # Unactivated axes output 0.0 to prevent erratic motion from stale 1.0 values.
+        # Two-phase axis activation: Stadia axes drift 1.0 → 0.0 after connection.
+        # To prevent false activation, we require:
+        #   1. axis_was_moved: User pushed stick past activation_threshold (proves intent)
+        #   2. axis_activated: User then released stick to deadzone (confirms centering)
+        # Only after both phases does the axis respond to input.
+        self.axis_was_moved = {
+            self.AXIS_LEFT_X: False,
+            self.AXIS_LEFT_Y: False,
+            self.AXIS_RIGHT_X: False,
+        }
         self.axis_activated = {
             self.AXIS_LEFT_X: False,
             self.AXIS_LEFT_Y: False,
@@ -59,27 +68,35 @@ class StadiaTeleop(Node):
 
     def get_axis_value(self, axis_index: int, raw_value: float) -> float:
         """
-        Get processed axis value with activation check and deadzone filtering.
+        Get processed axis value with two-phase activation and deadzone filtering.
 
-        - If axis not yet activated and value enters deadzone, activate it
-        - If axis not activated, return 0.0 (ignore stale values)
-        - If axis activated, apply deadzone filtering and return value
+        Phase 1: Detect movement - axis must exceed activation_threshold (proves user intent)
+        Phase 2: Detect release - axis must enter deadzone (confirms centering)
+        Only after both phases does the axis respond to input.
+
+        This prevents false activation from Stadia's natural 1.0 → 0.0 drift.
         """
         in_deadzone = abs(raw_value) < self.joystick_deadzone
+        outside_threshold = abs(raw_value) > self.activation_threshold
 
-        # Check for activation: axis enters deadzone means user has touched & released
-        if not self.axis_activated[axis_index] and in_deadzone:
+        # If already activated, just apply deadzone filtering
+        if self.axis_activated[axis_index]:
+            if in_deadzone:
+                return 0.0
+            return raw_value
+
+        # Phase 1: Detect intentional movement (stick pushed past threshold)
+        if not self.axis_was_moved[axis_index] and outside_threshold:
+            self.axis_was_moved[axis_index] = True
+            self.get_logger().info(f'{self.axis_names[axis_index]} moved - release to activate')
+
+        # Phase 2: Detect release to center (only if was_moved is True)
+        if self.axis_was_moved[axis_index] and in_deadzone:
             self.axis_activated[axis_index] = True
-            self.get_logger().info(f'{self.axis_names[axis_index]} axis activated')
+            self.get_logger().info(f'{self.axis_names[axis_index]} activated')
 
-        # If not activated, ignore this axis entirely
-        if not self.axis_activated[axis_index]:
-            return 0.0
-
-        # Activated: apply deadzone filtering
-        if in_deadzone:
-            return 0.0
-        return raw_value
+        # Not yet activated - return 0.0
+        return 0.0
 
     def joy_callback(self, msg):
         self.msg_count += 1
@@ -108,11 +125,12 @@ class StadiaTeleop(Node):
 
         # Debug logging (throttled to every 20 messages ~1Hz at 20Hz rate)
         if self.debug_axes and self.msg_count % 20 == 0:
+            mv = self.axis_was_moved
             act = self.axis_activated
             self.get_logger().info(
                 f'Axes: LX={msg.axes[self.AXIS_LEFT_X]:.2f} LY={msg.axes[self.AXIS_LEFT_Y]:.2f} '
                 f'RX={msg.axes[self.AXIS_RIGHT_X]:.2f} L2={l2_value:.2f} | '
-                f'Deadman={deadman_pressed} Active=[LX:{act[0]} LY:{act[1]} RX:{act[2]}]'
+                f'Moved=[{mv[0]},{mv[1]},{mv[2]}] Active=[{act[0]},{act[1]},{act[2]}]'
             )
 
         # Log deadman state changes
