@@ -13,11 +13,13 @@ class StadiaTeleop(Node):
         self.declare_parameter('max_linear_speed', 0.5)
         self.declare_parameter('max_angular_speed', 1.0)
         self.declare_parameter('deadman_threshold', 0.0)  # L2 starts at 1.0, pressed goes to -1.0
+        self.declare_parameter('joystick_deadzone', 0.1)  # Ignore axis values below this threshold
         self.declare_parameter('debug_axes', False)       # Log raw axis values for calibration
 
         self.max_linear = self.get_parameter('max_linear_speed').value
         self.max_angular = self.get_parameter('max_angular_speed').value
         self.deadman_thresh = self.get_parameter('deadman_threshold').value
+        self.joystick_deadzone = self.get_parameter('joystick_deadzone').value
         self.debug_axes = self.get_parameter('debug_axes').value
 
         # Stadia Mapping indices (Calibrated Dec 23, 2025)
@@ -34,11 +36,24 @@ class StadiaTeleop(Node):
         self.is_initialized = False # Stadia triggers start at 1.0; ignore until we see that.
         self.msg_count = 0
 
+        # Joystick baseline offsets (captured at initialization to compensate for drift)
+        self.offset_left_x = 0.0
+        self.offset_left_y = 0.0
+        self.offset_right_x = 0.0
+
         self.get_logger().info('=== Stadia Teleop Node Started ===')
         self.get_logger().info(f'Max Linear: {self.max_linear} m/s | Max Angular: {self.max_angular} rad/s')
+        self.get_logger().info(f'Joystick Deadzone: {self.joystick_deadzone}')
         self.get_logger().info('Controls: Hold L2 to enable. LS=Fwd/Turn, RS=Strafe')
         if self.debug_axes:
             self.get_logger().info('DEBUG MODE: Logging raw axis values')
+
+    def apply_deadzone(self, value: float, offset: float) -> float:
+        """Apply baseline offset correction and deadzone filtering to axis value."""
+        adjusted = value - offset
+        if abs(adjusted) < self.joystick_deadzone:
+            return 0.0
+        return adjusted
 
     def joy_callback(self, msg):
         self.msg_count += 1
@@ -57,8 +72,16 @@ class StadiaTeleop(Node):
         # L2 is actually 1.0 when released. We MUST see it hit 1.0 before we trust it.
         if not self.is_initialized:
             if l2_value == 1.0:
+                # Capture joystick baseline offsets to compensate for initial drift
+                self.offset_left_x = msg.axes[self.AXIS_LEFT_X]
+                self.offset_left_y = msg.axes[self.AXIS_LEFT_Y]
+                self.offset_right_x = msg.axes[self.AXIS_RIGHT_X]
                 self.is_initialized = True
                 self.get_logger().info('Controller Initialized (L2 identity seen at 1.0)')
+                self.get_logger().info(
+                    f'Joystick baseline offsets captured: LX={self.offset_left_x:.3f} '
+                    f'LY={self.offset_left_y:.3f} RX={self.offset_right_x:.3f}'
+                )
             else:
                 # Still waiting for a valid identity packet
                 return
@@ -81,14 +104,19 @@ class StadiaTeleop(Node):
                 self.get_logger().info('Deadman RELEASED - stopping')
 
         if deadman_pressed:
+            # Apply deadzone filtering with baseline offset compensation
+            left_y = self.apply_deadzone(msg.axes[self.AXIS_LEFT_Y], self.offset_left_y)
+            left_x = self.apply_deadzone(msg.axes[self.AXIS_LEFT_X], self.offset_left_x)
+            right_x = self.apply_deadzone(msg.axes[self.AXIS_RIGHT_X], self.offset_right_x)
+
             # LS Forward/Back -> linear.x
-            twist.linear.x = msg.axes[self.AXIS_LEFT_Y] * self.max_linear
+            twist.linear.x = left_y * self.max_linear
 
             # RS Left/Right -> linear.y (Strafe)
-            twist.linear.y = msg.axes[self.AXIS_RIGHT_X] * self.max_linear
+            twist.linear.y = right_x * self.max_linear
 
             # LS Left/Right -> angular.z (Rotate)
-            twist.angular.z = msg.axes[self.AXIS_LEFT_X] * self.max_angular
+            twist.angular.z = left_x * self.max_angular
 
         # Always publish (zero twist when deadman released = immediate stop)
         self.publisher.publish(twist)
