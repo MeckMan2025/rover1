@@ -33,13 +33,9 @@ class StadiaTeleop(Node):
 
         # State tracking for safety
         self.deadman_active = False
-        self.is_initialized = False # Stadia triggers start at 1.0; ignore until we see that.
+        self.is_initialized = False  # Stadia triggers start at 1.0; ignore until we see that.
+        self.joysticks_ready = False  # Stadia axes start at 1.0; wait for user to center sticks
         self.msg_count = 0
-
-        # Joystick baseline offsets (captured at initialization to compensate for drift)
-        self.offset_left_x = 0.0
-        self.offset_left_y = 0.0
-        self.offset_right_x = 0.0
 
         self.get_logger().info('=== Stadia Teleop Node Started ===')
         self.get_logger().info(f'Max Linear: {self.max_linear} m/s | Max Angular: {self.max_angular} rad/s')
@@ -48,12 +44,11 @@ class StadiaTeleop(Node):
         if self.debug_axes:
             self.get_logger().info('DEBUG MODE: Logging raw axis values')
 
-    def apply_deadzone(self, value: float, offset: float) -> float:
-        """Apply baseline offset correction and deadzone filtering to axis value."""
-        adjusted = value - offset
-        if abs(adjusted) < self.joystick_deadzone:
+    def apply_deadzone(self, value: float) -> float:
+        """Apply deadzone filtering to axis value."""
+        if abs(value) < self.joystick_deadzone:
             return 0.0
-        return adjusted
+        return value
 
     def joy_callback(self, msg):
         self.msg_count += 1
@@ -72,19 +67,23 @@ class StadiaTeleop(Node):
         # L2 is actually 1.0 when released. We MUST see it hit 1.0 before we trust it.
         if not self.is_initialized:
             if l2_value == 1.0:
-                # Capture joystick baseline offsets to compensate for initial drift
-                self.offset_left_x = msg.axes[self.AXIS_LEFT_X]
-                self.offset_left_y = msg.axes[self.AXIS_LEFT_Y]
-                self.offset_right_x = msg.axes[self.AXIS_RIGHT_X]
                 self.is_initialized = True
                 self.get_logger().info('Controller Initialized (L2 identity seen at 1.0)')
-                self.get_logger().info(
-                    f'Joystick baseline offsets captured: LX={self.offset_left_x:.3f} '
-                    f'LY={self.offset_left_y:.3f} RX={self.offset_right_x:.3f}'
-                )
             else:
                 # Still waiting for a valid identity packet
                 return
+
+        # Joystick ready check: Stadia sends 1.0 on all axes at first connect.
+        # Wait for user to physically touch/center sticks (all axes near 0.0).
+        if not self.joysticks_ready:
+            left_x = msg.axes[self.AXIS_LEFT_X]
+            left_y = msg.axes[self.AXIS_LEFT_Y]
+            right_x = msg.axes[self.AXIS_RIGHT_X]
+            if abs(left_x) < self.joystick_deadzone and \
+               abs(left_y) < self.joystick_deadzone and \
+               abs(right_x) < self.joystick_deadzone:
+                self.joysticks_ready = True
+                self.get_logger().info('Joysticks calibrated - motion enabled')
 
         deadman_pressed = l2_value < self.deadman_thresh
 
@@ -92,22 +91,26 @@ class StadiaTeleop(Node):
         if self.debug_axes and self.msg_count % 20 == 0:
             self.get_logger().info(
                 f'Axes: LX={msg.axes[self.AXIS_LEFT_X]:.2f} LY={msg.axes[self.AXIS_LEFT_Y]:.2f} '
-                f'RX={msg.axes[self.AXIS_RIGHT_X]:.2f} L2={l2_value:.2f} | Deadman={deadman_pressed}'
+                f'RX={msg.axes[self.AXIS_RIGHT_X]:.2f} L2={l2_value:.2f} | '
+                f'Deadman={deadman_pressed} JoyReady={self.joysticks_ready}'
             )
 
         # Log deadman state changes
         if deadman_pressed != self.deadman_active:
             self.deadman_active = deadman_pressed
             if deadman_pressed:
-                self.get_logger().info('Deadman ENGAGED - motion enabled')
+                if self.joysticks_ready:
+                    self.get_logger().info('Deadman ENGAGED - motion enabled')
+                else:
+                    self.get_logger().info('Deadman ENGAGED - waiting for joystick calibration')
             else:
                 self.get_logger().info('Deadman RELEASED - stopping')
 
-        if deadman_pressed:
-            # Apply deadzone filtering with baseline offset compensation
-            left_y = self.apply_deadzone(msg.axes[self.AXIS_LEFT_Y], self.offset_left_y)
-            left_x = self.apply_deadzone(msg.axes[self.AXIS_LEFT_X], self.offset_left_x)
-            right_x = self.apply_deadzone(msg.axes[self.AXIS_RIGHT_X], self.offset_right_x)
+        if deadman_pressed and self.joysticks_ready:
+            # Apply deadzone filtering to raw axis values
+            left_y = self.apply_deadzone(msg.axes[self.AXIS_LEFT_Y])
+            left_x = self.apply_deadzone(msg.axes[self.AXIS_LEFT_X])
+            right_x = self.apply_deadzone(msg.axes[self.AXIS_RIGHT_X])
 
             # LS Forward/Back -> linear.x
             twist.linear.x = left_y * self.max_linear
