@@ -5,6 +5,7 @@ from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import PathJoinSubstitution, Command, LaunchConfiguration
 from launch_ros.substitutions import FindPackageShare
+from launch_ros.parameter_descriptions import ParameterValue
 
 def generate_launch_description():
     pkg_share = FindPackageShare('rover1_bringup')
@@ -16,7 +17,7 @@ def generate_launch_description():
 
     # Process URDF
     urdf_file = PathJoinSubstitution([desc_share, 'urdf', 'rover.urdf.xacro'])
-    robot_description = Command(['xacro ', urdf_file])
+    robot_description = ParameterValue(Command(['xacro ', urdf_file]), value_type=str)
     
     return LaunchDescription([
         DeclareLaunchArgument(
