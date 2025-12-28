@@ -1,0 +1,3 @@
+# This package requires OpenCV 4.2.0 but the Pi has OpenCV 4.6.0.
+# KCF tracker not needed for RTAB-Map indoor SLAM demos.
+# Remove this file if you need KCF tracking functionality.

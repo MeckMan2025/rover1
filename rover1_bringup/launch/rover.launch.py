@@ -96,15 +96,17 @@ def generate_launch_description():
         Node(
             package='ascamera',
             executable='ascamera_node',
-            name='ascamera_node',
+            name='camera_publisher',  # Matches vendor hp60c.launch.py and dashboard expectations
             namespace='ascamera_hp60c',
             output='screen',
             parameters=[{
                 'confiPath': '/home/andrewmeckley/ros2_ws/src/ascamera/configurationfiles',
                 'fps': 10,
+                'depth_width': 640,   # Required for driver initialization
+                'depth_height': 480,  # Required for driver initialization
                 'rgb_width': 640,
                 'rgb_height': 480,
-                'pub_tfTree': False # We handle TF in our own URDF for better control
+                'pub_tfTree': False   # We handle TF in our own URDF for better control
             }]
         ),
         
