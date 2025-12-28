@@ -323,4 +323,345 @@ This phase introduces visual intelligence to complement RTK-GPS navigation, prov
 10. **Teach & Repeat**: GPS waypoint recording and playback functionality
 11. **Patrol Mode**: Autonomous path execution with turnaround logic
 
+---
+
+## Phase 6: Indoor Autonomy Demo (RTAB-Map + Nav2)
+*Status: Planning*
+
+Winter indoor demonstration system enabling visual SLAM mapping and autonomous navigation in GPS-denied environments. Target venues: home (kitchen/living room loop) and high school engineering classroom (desk navigation).
+
+### 6.1 Product Vision
+
+**User Experience Flow:**
+1. Power on rover → All systems auto-start
+2. Open `http://rover1.local` on any device (phone/tablet/laptop)
+3. Select demo preset from dropdown (e.g., "Kitchen Loop", "Classroom Demo")
+4. Drive rover with Stadia controller while watching live map build on dashboard
+5. When map quality indicator shows "Ready", press **A button** to start autonomous loop
+6. Rover follows recorded breadcrumb path indefinitely, rerouting around obstacles
+7. Press **B button** for immediate E-Stop (full motor cut)
+
+**Target Environments:**
+| Demo | Location | Path Description |
+|------|----------|------------------|
+| Home Demo | Kitchen ↔ Living Room | Loop through walkways between rooms |
+| School Demo | Engineering Classroom | Weave between desk rows |
+
+### 6.2 Technical Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        WEB DASHBOARD                                │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                 │
+│  │ GNSS Health │  │ Computer    │  │ Rover       │  ← Hamburger    │
+│  │             │  │ Vision      │  │ Systems     │    Menu         │
+│  └─────────────┘  └─────────────┘  └─────────────┘                 │
+│        │                │                │                          │
+│        ▼                ▼                ▼                          │
+│  [Sat Count]      [Live Map]       [Battery]                       │
+│  [RTK Status]     [Camera Feed]    [Mode: TELEOP]                  │
+│  [Accuracy]       [Save/Clear]     [System Health]                 │
+│                   [Demo Select ▼]                                   │
+└─────────────────────────────────────────────────────────────────────┘
+                              │
+                    WebSocket (rosbridge)
+                              │
+┌─────────────────────────────────────────────────────────────────────┐
+│                         ROS 2 STACK                                 │
+│                                                                     │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐          │
+│  │   HP60C      │───▶│  RTAB-Map    │───▶│    Nav2      │          │
+│  │  RGB-D Cam   │    │  (SLAM)      │    │ (Navigation) │          │
+│  └──────────────┘    └──────────────┘    └──────────────┘          │
+│         │                   │                   │                   │
+│         ▼                   ▼                   ▼                   │
+│    /camera/rgb         /map              /cmd_vel                   │
+│    /camera/depth       /odom             /path                      │
+│                        /tf                                          │
+│                                                                     │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐          │
+│  │  Breadcrumb  │───▶│   Mission    │───▶│   Motor      │          │
+│  │  Recorder    │    │  Controller  │    │   Driver     │          │
+│  └──────────────┘    └──────────────┘    └──────────────┘          │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 6.3 Controller Mapping (Stadia)
+
+| Input | Function | Mode |
+|-------|----------|------|
+| Left Stick Y | Forward/Backward | TELEOP |
+| Left Stick X | Turn Left/Right | TELEOP |
+| Right Stick X | Strafe Left/Right | TELEOP |
+| L2 Trigger | Dead Man's Switch | TELEOP |
+| **A Button (Green)** | Start Autonomous Loop | MAPPING → AUTONOMOUS |
+| **B Button (Red)** | E-Stop (Full Motor Cut) | ALL MODES |
+
+### 6.4 Web Dashboard Redesign
+
+#### 6.4.1 Responsive Design Requirements
+- **Mobile (< 768px)**: Single column, touch-optimized controls
+- **Tablet (768px - 1024px)**: Two-column layout, larger touch targets
+- **Desktop (> 1024px)**: Full multi-panel layout with side-by-side views
+
+#### 6.4.2 Navigation Menu (Hamburger)
+```
+☰ Menu
+├── GNSS Health
+│   ├── Satellite Count
+│   ├── RTK Status
+│   └── Position Accuracy
+├── Computer Vision
+│   ├── Live Camera Feed
+│   ├── Map Visualization
+│   ├── Save Map
+│   ├── Clear Map / Reset
+│   └── Demo Presets [Dropdown]
+└── Rover Systems
+    ├── Battery Level
+    ├── Mode Indicator
+    ├── Motor Status
+    └── System Health
+```
+
+#### 6.4.3 Mode Indicator (Always Visible)
+| Mode | Color | Description |
+|------|-------|-------------|
+| `TELEOP` | Blue | Manual driving, no mapping |
+| `MAPPING` | Yellow | Building map while driving |
+| `AUTONOMOUS` | Green | Following breadcrumb path |
+| `E-STOP` | Red | Motors cut, awaiting reset |
+
+#### 6.4.4 Map Quality Indicator
+Visual feedback showing when map is ready for autonomous navigation:
+- **Red**: Insufficient coverage / poor loop closure
+- **Yellow**: Partial coverage, continue mapping
+- **Green + Checkmark**: Good loop closure, ready for autonomous
+
+### 6.5 Map Management
+
+#### 6.5.1 Map Persistence
+Maps saved to: `/home/rover/maps/`
+```
+/home/rover/maps/
+├── kitchen_loop.db          # RTAB-Map database
+├── kitchen_loop.yaml        # Map metadata
+├── kitchen_loop_path.yaml   # Breadcrumb waypoints
+├── classroom_demo.db
+├── classroom_demo.yaml
+└── classroom_demo_path.yaml
+```
+
+#### 6.5.2 Demo Preset Selection (Web Dashboard)
+Dropdown menu under Computer Vision showing:
+- Kitchen Loop
+- Living Room Circuit
+- Classroom Demo
+- [+ Create New]
+
+Selecting a preset:
+1. Loads saved RTAB-Map database
+2. Loads associated breadcrumb path
+3. RTAB-Map enters localization mode (not mapping)
+4. Path preview displayed on map
+5. Ready for autonomous loop on A button press
+
+### 6.6 Breadcrumb Path Recording
+
+#### 6.6.1 Recording Workflow
+1. User selects "Create New" demo or enters MAPPING mode
+2. User drives rover through desired path with Stadia controller
+3. System records pose at 1 Hz (position + orientation from RTAB-Map odometry)
+4. Breadcrumb points displayed as trail on live map
+5. When user completes loop (returns near start), system detects loop closure
+6. User saves map + path via dashboard
+
+#### 6.6.2 Path Data Structure
+```yaml
+# kitchen_loop_path.yaml
+metadata:
+  name: "Kitchen Loop"
+  created: "2025-01-15T14:30:00"
+  total_distance_m: 12.5
+  estimated_duration_s: 45
+waypoints:
+  - {x: 0.0, y: 0.0, theta: 0.0}
+  - {x: 0.5, y: 0.1, theta: 0.05}
+  - {x: 1.0, y: 0.2, theta: 0.1}
+  # ... continuous breadcrumb trail
+loop_closure: true
+```
+
+### 6.7 Autonomous Navigation
+
+#### 6.7.1 Path Following
+- Nav2 waypoint follower executes breadcrumb path sequentially
+- Regulated Pure Pursuit controller for smooth trajectory tracking
+- Upon reaching final waypoint, automatically restart from beginning (infinite loop)
+
+#### 6.7.2 Obstacle Handling
+| Scenario | Behavior |
+|----------|----------|
+| Static obstacle detected | Nav2 local planner reroutes around obstacle |
+| Path blocked completely | Stop, wait 5s, attempt reroute, alert user if still blocked |
+| Dynamic obstacle (person) | Slow down, reroute, resume path when clear |
+
+#### 6.7.3 Safety Systems
+- **Battery Warning**: Alert at 20%, auto-stop at 15%
+- **E-Stop**: B button = immediate motor cut, requires manual reset
+- **Watchdog**: If no heartbeat from Nav2 for 2s, stop motors
+- **Obstacle Timeout**: If stuck for 30s, stop and alert user
+
+### 6.8 Implementation Phases
+
+#### Phase 6.1: Dashboard Redesign Foundation
+*Priority: High | Estimated Complexity: Medium*
+
+**Tasks:**
+- [ ] 6.1.1 Implement responsive CSS framework (mobile-first)
+- [ ] 6.1.2 Create hamburger menu navigation component
+- [ ] 6.1.3 Build GNSS Health panel (migrate existing)
+- [ ] 6.1.4 Build Rover Systems panel (battery, mode indicator)
+- [ ] 6.1.5 Implement mode indicator component (TELEOP/MAPPING/AUTONOMOUS/E-STOP)
+- [ ] 6.1.6 Test across phone, tablet, laptop screen sizes
+
+**Acceptance Criteria:**
+- Dashboard loads and is usable on iPhone, iPad, MacBook
+- Hamburger menu opens/closes smoothly
+- Mode indicator visible on all screen sizes
+
+#### Phase 6.2: RTAB-Map Integration
+*Priority: High | Estimated Complexity: High*
+
+**Tasks:**
+- [ ] 6.2.1 Install RTAB-Map ROS 2 package on Pi 5
+- [ ] 6.2.2 Configure HP60C camera topics for RTAB-Map input
+- [ ] 6.2.3 Create `rtabmap.launch.py` with proper parameters
+- [ ] 6.2.4 Verify occupancy grid output on `/map` topic
+- [ ] 6.2.5 Test mapping in controlled indoor environment
+- [ ] 6.2.6 Implement map save/load functionality
+- [ ] 6.2.7 Add COLCON_IGNORE to ros2_orbslam (not needed)
+
+**Acceptance Criteria:**
+- RTAB-Map produces valid occupancy grid from HP60C
+- Maps can be saved to disk and reloaded
+- Localization works when map is loaded
+
+#### Phase 6.3: Computer Vision Dashboard Panel
+*Priority: High | Estimated Complexity: Medium*
+
+**Tasks:**
+- [ ] 6.3.1 Build Computer Vision menu section
+- [ ] 6.3.2 Integrate live camera feed (existing)
+- [ ] 6.3.3 Add real-time map visualization (occupancy grid render)
+- [ ] 6.3.4 Implement Save Map button + naming dialog
+- [ ] 6.3.5 Implement Clear Map / Reset button
+- [ ] 6.3.6 Build demo preset dropdown with saved maps
+- [ ] 6.3.7 Add map quality indicator (loop closure detection)
+- [ ] 6.3.8 Implement path preview overlay on map
+
+**Acceptance Criteria:**
+- User can see camera feed and map building simultaneously
+- Save/Clear map functions work from dashboard
+- Demo presets populate from saved maps directory
+
+#### Phase 6.4: Breadcrumb Path System
+*Priority: High | Estimated Complexity: Medium*
+
+**Tasks:**
+- [ ] 6.4.1 Create `breadcrumb_recorder` node
+- [ ] 6.4.2 Subscribe to RTAB-Map odometry for pose tracking
+- [ ] 6.4.3 Implement 1 Hz waypoint recording during MAPPING mode
+- [ ] 6.4.4 Add loop closure detection (start/end proximity)
+- [ ] 6.4.5 Implement path serialization to YAML
+- [ ] 6.4.6 Visualize breadcrumb trail on dashboard map
+- [ ] 6.4.7 Associate paths with saved maps
+
+**Acceptance Criteria:**
+- Driving path recorded as breadcrumb waypoints
+- Path saved alongside map database
+- Path visible as trail on map visualization
+
+#### Phase 6.5: Nav2 Indoor Configuration
+*Priority: High | Estimated Complexity: High*
+
+**Tasks:**
+- [ ] 6.5.1 Configure Nav2 for indoor operation (no GPS)
+- [ ] 6.5.2 Set up costmap with RTAB-Map as source
+- [ ] 6.5.3 Configure Regulated Pure Pursuit for indoor speeds
+- [ ] 6.5.4 Implement waypoint follower for breadcrumb execution
+- [ ] 6.5.5 Add infinite loop logic (restart path on completion)
+- [ ] 6.5.6 Configure obstacle avoidance (reroute behavior)
+- [ ] 6.5.7 Tune local planner for tight indoor spaces
+
+**Acceptance Criteria:**
+- Nav2 follows breadcrumb path accurately
+- Rover reroutes around obstacles
+- Path loops continuously until stopped
+
+#### Phase 6.6: Mission Controller Enhancement
+*Priority: High | Estimated Complexity: Medium*
+
+**Tasks:**
+- [ ] 6.6.1 Add MAPPING state to mission controller
+- [ ] 6.6.2 Implement A button → Start autonomous loop
+- [ ] 6.6.3 Implement B button → E-Stop (full motor cut)
+- [ ] 6.6.4 Add state transitions: TELEOP ↔ MAPPING → AUTONOMOUS
+- [ ] 6.6.5 Implement battery level check before autonomous start
+- [ ] 6.6.6 Add watchdog timer for Nav2 heartbeat
+- [ ] 6.6.7 Broadcast mode changes to dashboard via WebSocket
+
+**Acceptance Criteria:**
+- Controller buttons trigger correct state changes
+- E-Stop immediately cuts motors
+- Mode indicator on dashboard reflects current state
+
+#### Phase 6.7: Safety & Polish
+*Priority: Medium | Estimated Complexity: Low*
+
+**Tasks:**
+- [ ] 6.7.1 Implement battery warning overlay (< 20%)
+- [ ] 6.7.2 Add auto-stop on low battery (< 15%)
+- [ ] 6.7.3 Implement stuck detection (30s timeout)
+- [ ] 6.7.4 Add user alerts for error conditions
+- [ ] 6.7.5 Test full workflow end-to-end
+- [ ] 6.7.6 Document demo setup procedure
+
+**Acceptance Criteria:**
+- Safety systems prevent unsafe autonomous operation
+- Full demo workflow works reliably
+- Documentation sufficient for classroom demo
+
+### 6.9 Technical Dependencies
+
+| Component | Package | Status |
+|-----------|---------|--------|
+| Visual SLAM | `ros-jazzy-rtabmap-ros` | To Install |
+| Navigation | `ros-jazzy-navigation2` | To Install |
+| Depth Camera | `ascamera` (HP60C) | Installed |
+| Web Framework | Flask + WebSocket | Installed |
+| Controller | `ros-jazzy-joy` | Installed |
+
+### 6.10 Success Metrics
+
+| Metric | Target |
+|--------|--------|
+| Map build time | < 5 minutes for typical room |
+| Localization accuracy | < 10cm position error |
+| Path following accuracy | < 20cm deviation from recorded path |
+| Obstacle reroute time | < 3 seconds |
+| Dashboard latency | < 200ms for all visualizations |
+| Demo reliability | 95% success rate for complete loop |
+
+### 6.11 Risk Mitigation
+
+| Risk | Mitigation |
+|------|------------|
+| Pi 5 CPU overload | Profile and optimize; consider offloading map visualization |
+| RTAB-Map drift | Ensure good loop closure; add visual landmarks if needed |
+| Narrow passages | Tune costmap inflation; reduce robot footprint margin |
+| Lighting variation | Test in different lighting; consider IR projection |
+| Network latency | Optimize WebSocket payloads; compress map data |
+
+---
 

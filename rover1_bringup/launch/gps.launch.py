@@ -48,14 +48,8 @@ def generate_launch_description():
             output='screen'
         ),
 
-        # Battery Monitor
-        # Publishes battery voltage to /battery_voltage for dashboard
-        Node(
-            package='rover1_hardware',
-            executable='battery_monitor',
-            name='battery_monitor',
-            output='screen'
-        ),
+        # NOTE: battery_monitor removed from here - it's launched in rover.launch.py
+        # with proper I2C parameters. This avoids duplicate node instances.
 
         # U-Blox Driver & Converter (Standard Mode)
         # Includes both the driver (for raw UBX) and the converter (UBX -> NavSatFix).
