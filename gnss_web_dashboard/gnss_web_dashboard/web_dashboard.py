@@ -59,7 +59,7 @@ class GnssWebDashboard(Node):
         # Topic as identified from ascamera_node defaults + namespace
         self.image_sub = self.create_subscription(
             Image,
-            '/ascamera_hp60c/rgb0/image',
+            '/ascamera_hp60c/camera_publisher/rgb0/image',
             self.image_callback,
             rclpy.qos.qos_profile_sensor_data
         )
