@@ -48,6 +48,15 @@ def generate_launch_description():
             output='screen'
         ),
 
+        # Battery Monitor
+        # Publishes battery voltage to /battery_voltage for dashboard
+        Node(
+            package='rover1_hardware',
+            executable='battery_monitor',
+            name='battery_monitor',
+            output='screen'
+        ),
+
         # U-Blox Driver & Converter (Standard Mode)
         # Includes both the driver (for raw UBX) and the converter (UBX -> NavSatFix).
         # Usage: Host internal topic is /ntrip_client/rtcm, so we match that.
