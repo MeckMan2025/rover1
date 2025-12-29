@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash",
+      "Edit",
+      "Write",
+      "Read",
+      "Glob",
+      "Grep",
+      "WebFetch",
+      "WebSearch"
+    ],
+    "deny": []
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "type": "prompt",
+        "prompt": "Before stopping, check if you encountered errors, are stuck, or left tasks incomplete. If so, ask the user for help or clarification instead of stopping silently.",
+        "timeout": 30
+      }
+    ]
+  }
+}
