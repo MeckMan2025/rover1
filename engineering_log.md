@@ -1,7 +1,7 @@
 # Rover1 Engineering Journal & Technical Specifications
 
 **Maintainer:** MeckMan2025
-**Last Updated:** 2025-12-27
+**Last Updated:** 2025-12-29
 **Purpose:** Living documentation of the hardware verification, driver protocols, and system architecture for the Rover1 autonomous vehicle. This document serves as the sole source of truth for AI agents and engineering rebuilds.
 
 ---
@@ -60,7 +60,16 @@ Standard Hiwonder protocols (broadcast speed) failed. Direct register addressing
   - **Register:** `0x00` (2-byte unsigned int).
   - **Unit:** Millivolts (mV).
   - **Note:** Register values confirm ~14.5V readings for 4S battery.
-### 1.5 Vision System (Perception)
+### 1.5 Display & Human Interface
+- **Display:** Hosyond 7" IPS Touchscreen (1024x600)
+- **Touch Controller:** QDTECH MPI7002 (USB HID)
+- **Connection:** USB (Power + Touch) + HDMI (Video)
+- **Driver:** `libinput` (Linux built-in)
+- **Kiosk Mode:** Cage (Wayland compositor) + Chromium in fullscreen
+- **Dashboard URL:** `http://localhost:8080` (rover web dashboard)
+- **Systemd Service:** `kiosk.service` (starts after `rover1.service`)
+
+### 1.6 Vision System (Perception)
 - **Camera Module:** Nuwa-HP60C (ASJ ZNX_NVT)
 - **Manufacturer:** NOVATEK (USB ID: `3482:6723`)
 - **Serial Number:** `510550000000100`
@@ -929,7 +938,109 @@ ros2 run foxglove_bridge foxglove_bridge --port 8765
 
 **Applied to:** GNSS Health Monitor (`gnss_health_monitor/msg/GnssHealth`) - successfully resolved topic visibility and enabled professional GPS/RTK dashboard integration.
 
-### 4.11 Camera Module Integration & Perception Planning (Dec 27, 2025)
+### 4.12 7" Touchscreen Kiosk Mode (Dec 29, 2025)
+**Status:** IMPLEMENTED - Awaiting field test on rover hardware.
+
+**Hardware Added:**
+- **Display:** Hosyond 7" IPS Touchscreen (1024x600 resolution)
+- **Touch Input:** QDTECH MPI7002 controller (detected as USB HID device)
+- **Connection:** USB for power/touch, HDMI for video signal
+- **Purpose:** On-rover human interaction without laptop/phone
+
+**Software Stack:**
+- **Compositor:** Cage (lightweight Wayland kiosk compositor)
+- **Browser:** Chromium (kiosk mode with all dialogs/updates disabled)
+- **Init System:** Systemd service with autologin on tty1
+
+**Implementation Files:**
+| File | Purpose |
+|------|---------|
+| `scripts/kiosk_setup.sh` | One-time installer (Cage, Chromium, autologin, systemd) |
+| `scripts/kiosk.service` | Systemd unit - starts after rover1.service |
+| `scripts/kiosk_disable.sh` | Helper to disable kiosk for debugging |
+
+**Kiosk Service Architecture:**
+```
+[rover1.service] ──starts──▶ [Web Dashboard :8080]
+       │
+       └──triggers──▶ [kiosk.service]
+                            │
+                            ▼
+                      [Cage Compositor]
+                            │
+                            ▼
+                    [Chromium --kiosk]
+                            │
+                            ▼
+                [http://localhost:8080]
+```
+
+**Chromium Flags (Kiosk Hardening):**
+```
+--kiosk                          # Fullscreen, no UI chrome
+--noerrdialogs                   # Suppress error dialogs
+--disable-infobars               # No "Chrome is being controlled" bar
+--disable-translate              # No translation prompts
+--no-first-run                   # Skip first-run wizard
+--disable-features=TranslateUI   # Extra translation suppression
+--check-for-update-interval=31536000  # Disable update checks (1 year)
+--disable-session-crashed-bubble # No "restore session" prompts
+--disable-sync                   # No Google account sync
+--disable-extensions             # No extension popups
+--autoplay-policy=no-user-gesture-required  # Allow video autoplay
+```
+
+**Environment Variables (Wayland/Cage):**
+```bash
+WLR_LIBINPUT_NO_DEVICES=1   # Allow boot without keyboard
+XDG_RUNTIME_DIR=/run/user/1000
+WLR_BACKENDS=drm
+WLR_DRM_DEVICES=/dev/dri/card1
+```
+
+**Management Commands:**
+```bash
+# Start/stop kiosk
+sudo systemctl start kiosk
+sudo systemctl stop kiosk
+
+# Check status
+sudo systemctl status kiosk
+
+# View logs
+journalctl -u kiosk -f
+
+# Enable/disable on boot
+sudo systemctl enable kiosk
+sudo systemctl disable kiosk
+
+# Full disable (remove autologin too)
+./scripts/kiosk_disable.sh
+```
+
+**Troubleshooting:**
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Black screen | Dashboard not ready | Check rover1.service status |
+| No touch | Wrong DRM device | Edit WLR_DRM_DEVICES in environment |
+| Chromium crash | Display driver issue | Check `journalctl -u kiosk` |
+| Can't SSH | Not a kiosk issue | Network still works, SSH in normally |
+
+**Dependencies on rover1.service:**
+- Kiosk binds to rover1.service via `BindsTo=` directive
+- If rover1.service stops/restarts, kiosk automatically stops
+- Dashboard must be running on :8080 before Chromium loads
+
+**Touch Calibration (if needed):**
+```bash
+# Check touch input device
+libinput list-devices | grep -A5 "QDTECH"
+
+# Test touch events
+libinput debug-events --device /dev/input/eventX
+```
+
+### 4.13 Camera Module Integration & Perception Planning (Dec 27, 2025)
 **Status:** PLANNING COMPLETE - Moving to Phase 5: Perception
 
 **Hardware Specs (Nuwa-HP60C):**
