@@ -107,6 +107,25 @@ echo "5. Configuring shell profile to launch kiosk on tty1..."
 # Add kiosk launch to .bash_profile (runs on login, not SSH)
 KIOSK_MARKER="# >>> ROVER KIOSK MODE >>>"
 KIOSK_END_MARKER="# <<< ROVER KIOSK MODE <<<"
+BASHRC_MARKER="# Source .bashrc for interactive shell settings"
+
+# Ensure .bash_profile sources .bashrc (for colors, PATH, aliases in SSH sessions)
+if [ ! -f "$USER_HOME/.bash_profile" ] || ! grep -q "source.*\.bashrc" "$USER_HOME/.bash_profile"; then
+    echo "   Adding .bashrc sourcing to .bash_profile..."
+    cat > "$USER_HOME/.bash_profile.tmp" << 'BASHRC_SOURCE'
+# Source .bashrc for interactive shell settings (colors, PATH, aliases)
+# This ensures SSH sessions get the same environment as local terminals
+if [ -f ~/.bashrc ]; then
+    source ~/.bashrc
+fi
+
+BASHRC_SOURCE
+    # Prepend to existing .bash_profile or create new one
+    if [ -f "$USER_HOME/.bash_profile" ]; then
+        cat "$USER_HOME/.bash_profile" >> "$USER_HOME/.bash_profile.tmp"
+    fi
+    mv "$USER_HOME/.bash_profile.tmp" "$USER_HOME/.bash_profile"
+fi
 
 # Remove old kiosk block if exists
 if [ -f "$USER_HOME/.bash_profile" ]; then
