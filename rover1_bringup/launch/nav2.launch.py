@@ -125,6 +125,7 @@ def generate_launch_description():
             parameters=[{
                 'use_sim_time': use_sim_time,
                 'autostart': autostart,
+                'bond_timeout': 10.0,  # Increased for Pi 5
                 'node_names': [
                     'controller_server',
                     'planner_server',
@@ -166,6 +167,7 @@ def generate_launch_description():
             parameters=[{
                 'use_sim_time': use_sim_time,
                 'autostart': autostart,
+                'bond_timeout': 10.0,  # Increased for Pi 5
                 'node_names': [
                     'local_costmap',
                     'global_costmap',
@@ -173,20 +175,6 @@ def generate_launch_description():
             }],
         ),
 
-        # Velocity Mux - Prioritize teleop over nav
-        # Teleop (higher priority) vs Nav2 (lower priority)
-        Node(
-            package='twist_mux',
-            executable='twist_mux',
-            name='twist_mux',
-            output='screen',
-            parameters=[{
-                'topics': {
-                    'teleop': {'topic': 'cmd_vel_teleop', 'timeout': 0.5, 'priority': 100},
-                    'nav': {'topic': 'cmd_vel', 'timeout': 0.5, 'priority': 50},
-                },
-                'lock_timeout': 0.5,
-            }],
-            remappings=[('cmd_vel_out', 'cmd_vel_mux')]
-        ),
+        # Note: twist_mux removed for now - will add back with mission controller
+        # For testing, Nav2 outputs directly to cmd_vel via velocity_smoother
     ])
