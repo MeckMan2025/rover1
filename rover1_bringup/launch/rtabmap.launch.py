@@ -30,6 +30,7 @@ from launch.conditions import IfCondition, UnlessCondition
 def generate_launch_description():
     # Launch arguments
     localization = LaunchConfiguration('localization', default='false')
+    use_viz = LaunchConfiguration('use_viz', default='false')  # Disabled by default (needs display)
     database_path = LaunchConfiguration('database_path',
                                          default='/home/andrewmeckley/maps/rtabmap.db')
 
@@ -98,6 +99,23 @@ def generate_launch_description():
             default_value='/home/andrewmeckley/maps/rtabmap.db',
             description='Path to RTAB-Map database file'
         ),
+        DeclareLaunchArgument(
+            'use_viz',
+            default_value='false',
+            description='Enable RTAB-Map visualization (requires display)'
+        ),
+
+        # Static transform: Bridge URDF camera frame to driver's frame
+        # URDF defines: camera_optical_frame
+        # Camera driver publishes with: ascamera_hp60c_ascamera_0
+        # This identity transform links them so RTAB-Map can find the TF
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='camera_frame_bridge',
+            arguments=['0', '0', '0', '0', '0', '0',
+                       'camera_optical_frame', 'ascamera_hp60c_ascamera_0'],
+        ),
 
         # RTAB-Map SLAM Node (Mapping Mode)
         Node(
@@ -153,8 +171,9 @@ def generate_launch_description():
             remappings=remappings,
         ),
 
-        # RTAB-Map Visualization (publishes point cloud for Foxglove/RViz)
+        # RTAB-Map Visualization (optional - requires display, disabled by default)
         Node(
+            condition=IfCondition(use_viz),
             package='rtabmap_viz',
             executable='rtabmap_viz',
             name='rtabmap_viz',
