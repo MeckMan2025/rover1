@@ -939,7 +939,7 @@ ros2 run foxglove_bridge foxglove_bridge --port 8765
 **Applied to:** GNSS Health Monitor (`gnss_health_monitor/msg/GnssHealth`) - successfully resolved topic visibility and enabled professional GPS/RTK dashboard integration.
 
 ### 4.12 7" Touchscreen Kiosk Mode (Dec 29, 2025)
-**Status:** IMPLEMENTED - Awaiting field test on rover hardware.
+**Status:** VERIFIED WORKING - Shell profile approach after systemd fix.
 
 **Hardware Added:**
 - **Display:** Hosyond 7" IPS Touchscreen (1024x600 resolution)
@@ -950,30 +950,52 @@ ros2 run foxglove_bridge foxglove_bridge --port 8765
 **Software Stack:**
 - **Compositor:** Cage (lightweight Wayland kiosk compositor)
 - **Browser:** Chromium (kiosk mode with all dialogs/updates disabled)
-- **Init System:** Systemd service with autologin on tty1
+- **Init System:** Shell profile launch (NOT systemd - see lesson learned below)
 
 **Implementation Files:**
 | File | Purpose |
 |------|---------|
-| `scripts/kiosk_setup.sh` | One-time installer (Cage, Chromium, autologin, systemd) |
-| `scripts/kiosk.service` | Systemd unit - starts after rover1.service |
+| `scripts/kiosk_setup.sh` | One-time installer (Cage, Chromium, autologin, .bash_profile) |
 | `scripts/kiosk_disable.sh` | Helper to disable kiosk for debugging |
+| `~/.bash_profile` | Launches cage on tty1 login (created by setup script) |
 
-**Kiosk Service Architecture:**
+**Kiosk Architecture (Shell Profile Approach):**
 ```
-[rover1.service] ──starts──▶ [Web Dashboard :8080]
-       │
-       └──triggers──▶ [kiosk.service]
-                            │
-                            ▼
-                      [Cage Compositor]
-                            │
-                            ▼
-                    [Chromium --kiosk]
-                            │
-                            ▼
-                [http://localhost:8080]
+[Boot] ──▶ [getty@tty1 autologin] ──▶ [.bash_profile]
+                                            │
+                                            ▼
+                                  [Wait for rover1.service]
+                                            │
+                                            ▼
+                                    [exec cage chromium]
+                                            │
+                                            ▼
+                                 [http://localhost:8080]
 ```
+
+**Critical Lesson Learned - Why Systemd Doesn't Work:**
+Initial implementation used `kiosk.service` (systemd) to launch cage, but this failed with:
+- `Could not open tty0 to update VT: Permission denied`
+- `Timeout waiting session to become active`
+- `Unable to create the wlroots backend`
+
+**Root Cause:** Wayland compositors (cage, sway, etc.) require VT/seat access that only exists within a login session. Systemd services run in a separate context without seat access. The `seatd` daemon could theoretically help, but the simpler fix is launching from the shell profile.
+
+**Solution:** Launch cage from `~/.bash_profile` on tty1 login:
+```bash
+# In ~/.bash_profile (added by kiosk_setup.sh)
+if [ "$(tty)" = "/dev/tty1" ] && [ -z "$SSH_CONNECTION" ]; then
+    systemctl is-active --wait rover1.service 2>/dev/null || true
+    sleep 3
+    exec cage ~/.config/rover-kiosk/launch-kiosk.sh
+fi
+```
+
+This works because:
+1. The shell runs IN the tty1 login session (has seat0 access)
+2. cage inherits proper VT and seat permissions
+3. SSH sessions skip kiosk (checked via `$SSH_CONNECTION` and `tty`)
+4. `exec` replaces shell with cage, so logout = cage exit = login prompt
 
 **Chromium Flags (Kiosk Hardening):**
 ```

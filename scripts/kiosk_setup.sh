@@ -4,6 +4,9 @@
 #
 # Hardware: Raspberry Pi 5, Ubuntu 24.04, Hosyond 7" IPS (1024x600)
 # Touch: QDTECH MPI7002
+#
+# NOTE: Uses shell profile approach (not systemd) because Wayland compositors
+# like cage need VT/seat access that only comes from a login session.
 
 set -e
 
@@ -84,12 +87,7 @@ KIOSK_SCRIPT
 chmod +x "$USER_HOME/.config/rover-kiosk/launch-kiosk.sh"
 
 echo ""
-echo "3. Installing kiosk systemd service..."
-sudo cp "$SCRIPT_DIR/kiosk.service" /etc/systemd/system/kiosk.service
-sudo systemctl daemon-reload
-
-echo ""
-echo "4. Setting up autologin on tty1..."
+echo "3. Setting up autologin on tty1..."
 # Create autologin override for getty@tty1
 sudo mkdir -p /etc/systemd/system/getty@tty1.service.d
 sudo tee /etc/systemd/system/getty@tty1.service.d/autologin.conf > /dev/null << EOF
@@ -99,31 +97,55 @@ ExecStart=-/sbin/agetty --autologin $USER_NAME --noclear %I \$TERM
 EOF
 
 echo ""
-echo "5. Configuring display environment..."
-# Create environment file for Wayland/Cage
-cat > "$USER_HOME/.config/rover-kiosk/environment" << 'ENV_FILE'
-# Kiosk display environment
-export WLR_LIBINPUT_NO_DEVICES=1
-export XDG_RUNTIME_DIR=/run/user/1000
-export WAYLAND_DISPLAY=wayland-1
-export WLR_BACKENDS=drm
-export WLR_DRM_DEVICES=/dev/dri/card1
-ENV_FILE
+echo "4. Disabling old systemd kiosk service (if exists)..."
+# Clean up old systemd approach (doesn't work - cage needs login session)
+sudo systemctl disable kiosk.service 2>/dev/null || true
+sudo systemctl stop kiosk.service 2>/dev/null || true
 
 echo ""
-echo "6. Enabling kiosk service..."
-sudo systemctl enable kiosk.service
+echo "5. Configuring shell profile to launch kiosk on tty1..."
+# Add kiosk launch to .bash_profile (runs on login, not SSH)
+KIOSK_MARKER="# >>> ROVER KIOSK MODE >>>"
+KIOSK_END_MARKER="# <<< ROVER KIOSK MODE <<<"
+
+# Remove old kiosk block if exists
+if [ -f "$USER_HOME/.bash_profile" ]; then
+    sed -i "/$KIOSK_MARKER/,/$KIOSK_END_MARKER/d" "$USER_HOME/.bash_profile"
+fi
+
+# Add kiosk launch block
+cat >> "$USER_HOME/.bash_profile" << 'PROFILE_BLOCK'
+
+# >>> ROVER KIOSK MODE >>>
+# Launch kiosk on tty1 only (not SSH sessions)
+# Cage needs to run from login session for VT/seat access
+if [ "$(tty)" = "/dev/tty1" ] && [ -z "$SSH_CONNECTION" ]; then
+    echo "Waiting for rover1.service..."
+    systemctl is-active --wait rover1.service 2>/dev/null || true
+    sleep 3  # Extra time for web dashboard to initialize
+
+    echo "Launching kiosk mode..."
+    exec cage ~/.config/rover-kiosk/launch-kiosk.sh
+fi
+# <<< ROVER KIOSK MODE <<<
+PROFILE_BLOCK
 
 echo ""
 echo "=== Kiosk Setup Complete ==="
 echo ""
-echo "The kiosk will start automatically on next boot."
+echo "The kiosk will start automatically on next boot (tty1 only)."
+echo "SSH sessions are unaffected - you can still SSH in normally."
 echo ""
-echo "Commands:"
-echo "  Start now:     sudo systemctl start kiosk"
-echo "  Stop:          sudo systemctl stop kiosk"
-echo "  Status:        sudo systemctl status kiosk"
-echo "  Disable:       sudo systemctl disable kiosk"
-echo "  View logs:     journalctl -u kiosk -f"
+echo "How it works:"
+echo "  1. Autologin on tty1 -> runs .bash_profile"
+echo "  2. .bash_profile waits for rover1.service"
+echo "  3. cage launches Chromium in kiosk mode"
+echo ""
+echo "To access terminal while kiosk is running:"
+echo "  Press Ctrl+Alt+F2 to switch to tty2"
+echo "  Press Ctrl+Alt+F1 to switch back to kiosk"
+echo ""
+echo "To disable kiosk:"
+echo "  ./scripts/kiosk_disable.sh"
 echo ""
 echo "Reboot to test: sudo reboot"
