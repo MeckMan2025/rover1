@@ -19,17 +19,14 @@ With RTAB-Map (full indoor autonomy):
 
 from launch import LaunchDescription
 from launch_ros.actions import Node
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
-from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
-from launch.conditions import IfCondition
 
 
 def generate_launch_description():
     # Package paths
     pkg_share = FindPackageShare('rover1_bringup')
-    nav2_bringup_share = FindPackageShare('nav2_bringup')
 
     # Launch arguments
     use_sim_time = LaunchConfiguration('use_sim_time', default='false')
@@ -57,17 +54,16 @@ def generate_launch_description():
             description='Full path to Nav2 parameters file'
         ),
 
-        # Nav2 Controller Server
+        # Nav2 Controller Server (includes local costmap)
         Node(
             package='nav2_controller',
             executable='controller_server',
             name='controller_server',
             output='screen',
             parameters=[params_file, {'use_sim_time': use_sim_time}],
-            remappings=[('cmd_vel', 'cmd_vel_nav')]  # Separate from teleop
         ),
 
-        # Nav2 Planner Server
+        # Nav2 Planner Server (includes global costmap)
         Node(
             package='nav2_planner',
             executable='planner_server',
@@ -110,13 +106,9 @@ def generate_launch_description():
             name='velocity_smoother',
             output='screen',
             parameters=[params_file, {'use_sim_time': use_sim_time}],
-            remappings=[
-                ('cmd_vel', 'cmd_vel_nav'),
-                ('cmd_vel_smoothed', 'cmd_vel')
-            ]
         ),
 
-        # Nav2 Lifecycle Manager
+        # Nav2 Lifecycle Manager - manages all Nav2 servers
         Node(
             package='nav2_lifecycle_manager',
             executable='lifecycle_manager',
@@ -125,7 +117,7 @@ def generate_launch_description():
             parameters=[{
                 'use_sim_time': use_sim_time,
                 'autostart': autostart,
-                'bond_timeout': 10.0,  # Increased for Pi 5
+                'bond_timeout': 15.0,  # Generous timeout for Pi 5
                 'node_names': [
                     'controller_server',
                     'planner_server',
@@ -136,45 +128,4 @@ def generate_launch_description():
                 ]
             }],
         ),
-
-        # Local Costmap Node
-        Node(
-            package='nav2_costmap_2d',
-            executable='nav2_costmap_2d',
-            name='local_costmap',
-            output='screen',
-            parameters=[params_file, {'use_sim_time': use_sim_time}],
-            remappings=[
-                ('cmd_vel', 'cmd_vel_nav')
-            ]
-        ),
-
-        # Global Costmap Node
-        Node(
-            package='nav2_costmap_2d',
-            executable='nav2_costmap_2d',
-            name='global_costmap',
-            output='screen',
-            parameters=[params_file, {'use_sim_time': use_sim_time}],
-        ),
-
-        # Costmap Lifecycle Manager
-        Node(
-            package='nav2_lifecycle_manager',
-            executable='lifecycle_manager',
-            name='lifecycle_manager_costmap',
-            output='screen',
-            parameters=[{
-                'use_sim_time': use_sim_time,
-                'autostart': autostart,
-                'bond_timeout': 10.0,  # Increased for Pi 5
-                'node_names': [
-                    'local_costmap',
-                    'global_costmap',
-                ]
-            }],
-        ),
-
-        # Note: twist_mux removed for now - will add back with mission controller
-        # For testing, Nav2 outputs directly to cmd_vel via velocity_smoother
     ])
