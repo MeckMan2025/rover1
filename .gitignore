@@ -13,9 +13,11 @@ __pycache__/
 # User Request: Ignore Documents
 # *.pdf (Unlocked by user request)
 
-# Secrets
+# Secrets and Environment Files
 .env
 .env.*
+*.env
+**/.env*
 **/secrets/
 **/*credentials*
 
