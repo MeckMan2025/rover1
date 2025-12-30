@@ -359,6 +359,8 @@ class Rover1WebDashboard(Node):
             return self.get_map_image(cmd.get('path_name'))
         elif action == 'set_teleop_speed':
             return self.set_teleop_speed(cmd.get('speed_percent', 1.0))
+        elif action == 'get_pointcloud':
+            return self.get_pointcloud(cmd.get('path_name'))
         else:
             return {'success': False, 'message': f'Unknown action: {action}'}
 
@@ -455,6 +457,33 @@ class Rover1WebDashboard(Node):
             with open(img_path, 'rb') as f:
                 img_data = base64.b64encode(f.read()).decode('utf-8')
             return {'success': True, 'image': img_data}
+        except Exception as e:
+            return {'success': False, 'message': str(e)}
+
+    def get_pointcloud(self, path_name):
+        """Get base64-encoded PLY point cloud for a path"""
+        if not path_name:
+            return {'success': False, 'message': 'No path name provided'}
+
+        # Sanitize filename
+        safe_name = "".join(c for c in path_name if c.isalnum() or c in ('_', '-')).lower()
+        ply_path = self.paths_dir / f'{safe_name}_cloud.ply'
+
+        if not ply_path.exists():
+            return {'success': False, 'message': 'Point cloud not found. Save a path first to generate.'}
+
+        try:
+            with open(ply_path, 'rb') as f:
+                ply_data = base64.b64encode(f.read()).decode('utf-8')
+
+            # Get file size for info
+            file_size_kb = ply_path.stat().st_size / 1024
+
+            return {
+                'success': True,
+                'pointcloud': ply_data,
+                'file_size_kb': round(file_size_kb, 1)
+            }
         except Exception as e:
             return {'success': False, 'message': str(e)}
 

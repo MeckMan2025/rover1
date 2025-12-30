@@ -28,7 +28,7 @@ from datetime import datetime
 from pathlib import Path
 
 from rover1_patrol.msg import PatrolStatus
-from rover1_patrol.srv import SavePath, SaveMapSnapshot
+from rover1_patrol.srv import SavePath, SaveMapSnapshot, SavePointCloud
 
 
 class WaypointRecorder(Node):
@@ -86,6 +86,11 @@ class WaypointRecorder(Node):
         # Map snapshot client (will be called when saving)
         self.map_snapshot_client = self.create_client(
             SaveMapSnapshot, '/patrol/save_map_snapshot'
+        )
+
+        # Point cloud export client (will be called when saving)
+        self.pointcloud_client = self.create_client(
+            SavePointCloud, '/patrol/save_pointcloud'
         )
 
         # Status publisher
@@ -279,6 +284,17 @@ class WaypointRecorder(Node):
             self.get_logger().info('Map snapshot requested')
         else:
             self.get_logger().warn('Map snapshot service not available')
+
+        # Request point cloud export (for 3D visualization)
+        if self.pointcloud_client.wait_for_service(timeout_sec=2.0):
+            cloud_req = SavePointCloud.Request()
+            cloud_req.path_name = safe_name
+
+            future = self.pointcloud_client.call_async(cloud_req)
+            # Don't wait for response - let it complete async
+            self.get_logger().info('Point cloud export requested')
+        else:
+            self.get_logger().warn('Point cloud export service not available')
 
         # Clear waypoints
         self.waypoints = []

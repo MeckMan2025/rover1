@@ -20,6 +20,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/ListPaths.srv"
   "srv/StartPatrol.srv"
   "srv/SaveMapSnapshot.srv"
+  "srv/SavePointCloud.srv"
   DEPENDENCIES std_msgs geometry_msgs builtin_interfaces
 )
 
@@ -29,6 +30,7 @@ install(PROGRAMS
   rover1_patrol/patrol_manager.py
   rover1_patrol/map_snapshot.py
   rover1_patrol/velocity_scaler.py
+  rover1_patrol/pointcloud_exporter.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

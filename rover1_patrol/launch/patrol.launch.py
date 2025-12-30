@@ -4,6 +4,7 @@ Patrol System Launch File
 Launches the Teach & Repeat patrol nodes:
   - waypoint_recorder: Records waypoints during manual driving
   - map_snapshot: Generates map images with waypoint overlays
+  - pointcloud_exporter: Exports 3D point clouds for web visualization
   - patrol_manager: Manages patrol execution
   - velocity_scaler: Scales velocities based on patrol speed setting
 
@@ -55,6 +56,19 @@ def generate_launch_description():
             output='screen',
             parameters=[{
                 'paths_directory': LaunchConfiguration('paths_directory')
+            }]
+        ),
+
+        # Point Cloud Exporter (for 3D web visualization)
+        Node(
+            package='rover1_patrol',
+            executable='pointcloud_exporter.py',
+            name='pointcloud_exporter',
+            output='screen',
+            parameters=[{
+                'paths_directory': LaunchConfiguration('paths_directory'),
+                'voxel_size': 0.05,  # 5cm voxel grid for downsampling
+                'max_points': 200000  # Limit for browser performance
             }]
         ),
 
