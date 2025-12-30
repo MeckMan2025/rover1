@@ -81,14 +81,15 @@ def generate_launch_description():
             parameters=[params_file, {'use_sim_time': use_sim_time}],
         ),
 
-        # Nav2 BT Navigator
-        Node(
-            package='nav2_bt_navigator',
-            executable='bt_navigator',
-            name='bt_navigator',
-            output='screen',
-            parameters=[params_file, {'use_sim_time': use_sim_time}],
-        ),
+        # Nav2 BT Navigator - DISABLED (Jazzy/ARM64 issues)
+        # Using nav2_simple_commander instead for goal sending
+        # Node(
+        #     package='nav2_bt_navigator',
+        #     executable='bt_navigator',
+        #     name='bt_navigator',
+        #     output='screen',
+        #     parameters=[params_file, {'use_sim_time': use_sim_time}],
+        # ),
 
         # Nav2 Waypoint Follower
         Node(
@@ -122,7 +123,7 @@ def generate_launch_description():
                     'controller_server',
                     'planner_server',
                     'behavior_server',
-                    'bt_navigator',
+                    # 'bt_navigator',  # Disabled - using simple_commander
                     'waypoint_follower',
                     'velocity_smoother',
                 ]
