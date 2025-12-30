@@ -34,6 +34,30 @@ source /opt/ros/jazzy/setup.bash
 source scripts/load_env.sh
 source ~/ros2_ws/install/setup.bash
 
-# 4. Launch Rover (Note: No 'screen' here, systemd logs to journalctl)
-echo ">>> Starting Rover1 Launch Stack..."
-ros2 launch rover1_bringup rover.launch.py
+# 4. Launch Full Autonomy Stack (Note: No 'screen' here, systemd logs to journalctl)
+echo ">>> Starting Rover1 Full Autonomy Stack..."
+
+# Launch base rover in background
+echo ">>> [1/4] Launching rover base system..."
+ros2 launch rover1_bringup rover.launch.py &
+ROVER_PID=$!
+sleep 30
+
+# Launch RTAB-Map SLAM
+echo ">>> [2/4] Launching RTAB-Map SLAM..."
+ros2 launch rover1_bringup rtabmap.launch.py &
+sleep 30
+
+# Launch Nav2 navigation stack
+echo ">>> [3/4] Launching Nav2 navigation..."
+ros2 launch rover1_bringup nav2.launch.py &
+sleep 60
+
+# Launch Patrol system
+echo ">>> [4/4] Launching Patrol system..."
+ros2 launch rover1_patrol patrol.launch.py &
+
+echo ">>> Full autonomy stack launched. Waiting on rover base process..."
+
+# Wait for rover (main process) - keeps systemd happy
+wait $ROVER_PID
