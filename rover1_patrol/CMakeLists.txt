@@ -23,9 +23,6 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   DEPENDENCIES std_msgs geometry_msgs builtin_interfaces
 )
 
-# Install Python modules
-ament_python_install_package(${PROJECT_NAME})
-
 # Install Python executables
 install(PROGRAMS
   rover1_patrol/waypoint_recorder.py
