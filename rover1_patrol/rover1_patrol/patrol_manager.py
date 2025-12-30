@@ -115,7 +115,10 @@ class PatrolManager(Node):
 
     def timer_callback(self):
         """Periodic status publishing and stuck detection."""
-        self.publish_status()
+        # Only publish status when actively patrolling/paused/error
+        # When idle, let waypoint_recorder own /patrol/status to avoid conflicts
+        if self.state != 'idle':
+            self.publish_status()
         self.publish_speed()
 
         # Stuck detection
@@ -308,6 +311,7 @@ class PatrolManager(Node):
             self.get_logger().info('All loops completed')
             self.state = 'idle'
             self.current_path_name = ''
+            self.publish_status()  # Notify dashboard that patrol ended
             return
 
         # Continue looping
@@ -411,6 +415,7 @@ class PatrolManager(Node):
         self.current_path_name = ''
         self.waypoints = []
         self.error_message = ''
+        self.publish_status()  # Notify dashboard that patrol ended
 
         self.get_logger().info('Patrol stopped')
 
