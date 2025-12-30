@@ -19,7 +19,7 @@ setup(
     zip_safe=True,
     maintainer='Rover1 Project',
     maintainer_email='rover1@example.com',
-    description='Simple web dashboard for GNSS health monitoring',
+    description='Web dashboard for Rover1 monitoring and patrol control',
     license='MIT',
     tests_require=['pytest'],
     entry_points={

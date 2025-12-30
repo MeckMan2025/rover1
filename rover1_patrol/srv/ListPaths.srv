@@ -1,0 +1,5 @@
+# List all saved patrol paths
+---
+string[] path_names
+int32[] waypoint_counts
+string[] recorded_dates

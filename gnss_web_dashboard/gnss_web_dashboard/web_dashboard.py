@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 """
-GNSS Web Dashboard Server
+Rover1 Web Dashboard Server
 
-Simple web server that subscribes to /gnss/health and serves real-time
-GPS status via a clean web interface accessible from any device.
+Web server that provides real-time monitoring and control:
+- GNSS/RTK status from /gnss/health
+- Camera feed
+- Patrol system controls (Teach & Repeat)
+
+Accessible from any device on the network.
 """
 
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
+from rclpy.callback_groups import ReentrantCallbackGroup
 import json
 import asyncio
 import websockets
@@ -19,6 +24,9 @@ from pathlib import Path
 import subprocess
 
 from gnss_health_monitor.msg import GnssHealth
+from rover1_patrol.msg import PatrolStatus
+from rover1_patrol.srv import ListPaths, StartPatrol, SavePath
+from std_srvs.srv import Trigger
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 import cv2
@@ -27,20 +35,27 @@ import time
 from ament_index_python.packages import get_package_share_directory
 
 
-class GnssWebDashboard(Node):
-    """Web dashboard server for GNSS health monitoring"""
-    
+class Rover1WebDashboard(Node):
+    """Web dashboard server for Rover1 monitoring and patrol control"""
+
     def __init__(self):
-        super().__init__('gnss_web_dashboard')
-        
-        # Latest GNSS health data
+        super().__init__('rover1_web_dashboard')
+
+        # Callback group for service calls
+        self.cb_group = ReentrantCallbackGroup()
+
+        # Latest data
         self.latest_health = None
+        self.latest_patrol_status = None
         self.health_lock = threading.Lock()
-        
+
+        # Paths directory for map images
+        self.paths_dir = Path(os.path.expanduser('~/paths'))
+
         # Connected WebSocket clients and event loop
         self.ws_clients = set()
         self.ws_loop = None
-        
+
         # Subscribe to GNSS health with reliable QoS
         self.health_sub = self.create_subscription(
             GnssHealth,
@@ -48,14 +63,35 @@ class GnssWebDashboard(Node):
             self.health_callback,
             10
         )
-        
+
+        # Subscribe to patrol status
+        self.patrol_sub = self.create_subscription(
+            PatrolStatus,
+            '/patrol/status',
+            self.patrol_status_callback,
+            10
+        )
+
+        # Create patrol service clients
+        self.patrol_clients = {
+            'list_paths': self.create_client(ListPaths, '/patrol/list_paths'),
+            'start_recording': self.create_client(Trigger, '/patrol/start_recording'),
+            'stop_recording': self.create_client(Trigger, '/patrol/stop_recording'),
+            'save_path': self.create_client(SavePath, '/patrol/save_path'),
+            'discard_recording': self.create_client(Trigger, '/patrol/discard_recording'),
+            'start_patrol': self.create_client(StartPatrol, '/patrol/start_patrol'),
+            'stop_patrol': self.create_client(Trigger, '/patrol/stop_patrol'),
+            'pause_patrol': self.create_client(Trigger, '/patrol/pause_patrol'),
+            'resume_patrol': self.create_client(Trigger, '/patrol/resume_patrol'),
+        }
+
         # Camera integration
         self.bridge = CvBridge()
         self.latest_image_base64 = None
         self.last_img_time = 0
         self.fps_limit = 10.0
         self.interval = 1.0 / self.fps_limit
-        
+
         # Subscribe to camera RGB feed
         # Topic as identified from ascamera_node defaults + namespace
         self.image_sub = self.create_subscription(
@@ -78,15 +114,19 @@ class GnssWebDashboard(Node):
             # Fallback for development
             self.package_dir = Path(__file__).parent.parent
             self.static_dir = self.package_dir / 'static'
-        
-        self.get_logger().info(f"GNSS Web Dashboard started. Package dir: {self.package_dir}")
+
+        self.get_logger().info(f"Rover1 Web Dashboard started. Package dir: {self.package_dir}")
         
     def health_callback(self, msg: GnssHealth):
         """Process incoming GNSS health messages"""
+        import math
         with self.health_lock:
             # Convert ROS message to JSON-serializable dict
             self.latest_health = {
                 'timestamp': msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9,
+                'latitude': msg.latitude if not math.isnan(msg.latitude) else None,
+                'longitude': msg.longitude if not math.isnan(msg.longitude) else None,
+                'altitude': msg.altitude if not math.isnan(msg.altitude) else None,
                 'sat_visible': msg.sat_visible,
                 'sat_used': msg.sat_used,
                 'ntrip_connected': msg.ntrip_connected,
@@ -101,6 +141,25 @@ class GnssWebDashboard(Node):
                 'battery_voltage': msg.battery_voltage if msg.battery_voltage > 0 else None
             }
             
+        # Broadcast to all connected WebSocket clients
+        if self.ws_clients:
+            self.broadcast_data()
+
+    def patrol_status_callback(self, msg: PatrolStatus):
+        """Process incoming patrol status messages"""
+        with self.health_lock:
+            self.latest_patrol_status = {
+                'state': msg.state,
+                'path_name': msg.path_name,
+                'current_waypoint': msg.current_waypoint,
+                'total_waypoints': msg.total_waypoints,
+                'current_loop': msg.current_loop,
+                'total_loops': msg.total_loops,
+                'speed_percent': msg.speed_percent,
+                'error_message': msg.error_message,
+                'recorded_waypoint_count': msg.recorded_waypoint_count,
+            }
+
         # Broadcast to all connected WebSocket clients
         if self.ws_clients:
             self.broadcast_data()
@@ -196,18 +255,22 @@ class GnssWebDashboard(Node):
             self.power_status = {'status': 'UNKNOWN', 'status_color': 'unknown'}
 
     def broadcast_data(self):
-        """Prepare and broadcast combined health + image data"""
-        if self.latest_health is None:
-            return
-
+        """Prepare and broadcast combined health + image + patrol data"""
         # Prepare combined data
         with self.health_lock:
-            payload = self.latest_health.copy()
+            payload = {}
+            if self.latest_health:
+                payload.update(self.latest_health)
             if self.latest_image_base64:
                 payload['image'] = self.latest_image_base64
             if self.power_status:
                 payload['power_status'] = self.power_status
-            
+            if self.latest_patrol_status:
+                payload['patrol'] = self.latest_patrol_status
+
+        if not payload:
+            return
+
         # Broadcast via the WebSocket thread's event loop
         if self.ws_loop:
             asyncio.run_coroutine_threadsafe(
@@ -236,21 +299,155 @@ class GnssWebDashboard(Node):
         """Handle new WebSocket connections"""
         self.ws_clients.add(websocket)
         self.get_logger().info(f"New client connected. Total clients: {len(self.ws_clients)}")
-        
+
         try:
-            # Send current health data immediately
-            if self.latest_health:
-                await websocket.send(json.dumps(self.latest_health))
-            
-            # Keep connection alive
+            # Send current data immediately
+            self.broadcast_data()
+
+            # Handle incoming messages (commands)
             async for message in websocket:
-                pass  # Client doesn't need to send anything
-                
+                try:
+                    cmd = json.loads(message)
+                    response = await self.handle_command(cmd)
+                    await websocket.send(json.dumps(response))
+                except json.JSONDecodeError:
+                    await websocket.send(json.dumps({'error': 'Invalid JSON'}))
+                except Exception as e:
+                    await websocket.send(json.dumps({'error': str(e)}))
+
         except websockets.exceptions.ConnectionClosed:
             pass
         finally:
             self.ws_clients.discard(websocket)
             self.get_logger().info(f"Client disconnected. Total clients: {len(self.ws_clients)}")
+
+    async def handle_command(self, cmd):
+        """Handle commands from the dashboard"""
+        action = cmd.get('action')
+
+        if action == 'list_paths':
+            return await self.call_list_paths()
+        elif action == 'start_recording':
+            return await self.call_trigger_service('start_recording')
+        elif action == 'stop_recording':
+            return await self.call_trigger_service('stop_recording')
+        elif action == 'save_path':
+            return await self.call_save_path(cmd.get('path_name', 'unnamed'))
+        elif action == 'discard_recording':
+            return await self.call_trigger_service('discard_recording')
+        elif action == 'start_patrol':
+            return await self.call_start_patrol(
+                cmd.get('path_name'),
+                cmd.get('loop_count', 0),
+                cmd.get('reverse_mode', False),
+                cmd.get('speed_percent', 1.0)
+            )
+        elif action == 'stop_patrol':
+            return await self.call_trigger_service('stop_patrol')
+        elif action == 'pause_patrol':
+            return await self.call_trigger_service('pause_patrol')
+        elif action == 'resume_patrol':
+            return await self.call_trigger_service('resume_patrol')
+        elif action == 'get_map_image':
+            return self.get_map_image(cmd.get('path_name'))
+        else:
+            return {'success': False, 'message': f'Unknown action: {action}'}
+
+    async def call_trigger_service(self, service_name):
+        """Call a Trigger service and return the result"""
+        client = self.patrol_clients.get(service_name)
+        if not client:
+            return {'success': False, 'message': f'Service {service_name} not found'}
+
+        if not client.wait_for_service(timeout_sec=1.0):
+            return {'success': False, 'message': f'Service {service_name} not available'}
+
+        request = Trigger.Request()
+        future = client.call_async(request)
+
+        # Wait for result in a non-blocking way
+        while not future.done():
+            await asyncio.sleep(0.1)
+
+        result = future.result()
+        return {'success': result.success, 'message': result.message}
+
+    async def call_list_paths(self):
+        """Call list_paths service and return the result"""
+        client = self.patrol_clients.get('list_paths')
+        if not client.wait_for_service(timeout_sec=1.0):
+            return {'success': False, 'message': 'list_paths service not available', 'paths': []}
+
+        request = ListPaths.Request()
+        future = client.call_async(request)
+
+        while not future.done():
+            await asyncio.sleep(0.1)
+
+        result = future.result()
+        paths = []
+        for i, name in enumerate(result.path_names):
+            paths.append({
+                'name': name,
+                'waypoint_count': result.waypoint_counts[i] if i < len(result.waypoint_counts) else 0,
+                'recorded_date': result.recorded_dates[i] if i < len(result.recorded_dates) else '',
+            })
+
+        return {'success': True, 'paths': paths}
+
+    async def call_save_path(self, path_name):
+        """Call save_path service"""
+        client = self.patrol_clients.get('save_path')
+        if not client.wait_for_service(timeout_sec=1.0):
+            return {'success': False, 'message': 'save_path service not available'}
+
+        request = SavePath.Request()
+        request.path_name = path_name
+
+        future = client.call_async(request)
+        while not future.done():
+            await asyncio.sleep(0.1)
+
+        result = future.result()
+        return {'success': result.success, 'message': result.message}
+
+    async def call_start_patrol(self, path_name, loop_count, reverse_mode, speed_percent):
+        """Call start_patrol service"""
+        client = self.patrol_clients.get('start_patrol')
+        if not client.wait_for_service(timeout_sec=1.0):
+            return {'success': False, 'message': 'start_patrol service not available'}
+
+        request = StartPatrol.Request()
+        request.path_name = path_name
+        request.loop_count = loop_count
+        request.reverse_mode = reverse_mode
+        request.speed_percent = speed_percent
+
+        future = client.call_async(request)
+        while not future.done():
+            await asyncio.sleep(0.1)
+
+        result = future.result()
+        return {'success': result.success, 'message': result.message}
+
+    def get_map_image(self, path_name):
+        """Get base64-encoded map image for a path"""
+        if not path_name:
+            return {'success': False, 'message': 'No path name provided'}
+
+        # Sanitize filename
+        safe_name = "".join(c for c in path_name if c.isalnum() or c in ('_', '-')).lower()
+        img_path = self.paths_dir / f'{safe_name}_map.png'
+
+        if not img_path.exists():
+            return {'success': False, 'message': 'Map image not found'}
+
+        try:
+            with open(img_path, 'rb') as f:
+                img_data = base64.b64encode(f.read()).decode('utf-8')
+            return {'success': True, 'image': img_data}
+        except Exception as e:
+            return {'success': False, 'message': str(e)}
 
 
 class CustomHTTPHandler(SimpleHTTPRequestHandler):
@@ -303,9 +500,9 @@ def run_websocket_server(dashboard_node):
 def main(args=None):
     """Main entry point"""
     rclpy.init(args=args)
-    
+
     # Create dashboard node
-    dashboard = GnssWebDashboard()
+    dashboard = Rover1WebDashboard()
     
     # Start HTTP server in separate thread
     http_thread = threading.Thread(
@@ -323,7 +520,7 @@ def main(args=None):
     )
     ws_thread.start()
     
-    dashboard.get_logger().info("GNSS Web Dashboard ready at http://<rover-ip>:8080")
+    dashboard.get_logger().info("Rover1 Web Dashboard ready at http://<rover-ip>:8080")
     
     try:
         # Run ROS node

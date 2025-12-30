@@ -105,12 +105,27 @@ def generate_launch_description():
         ),
 
         # Nav2 Velocity Smoother
+        # Output remapped to /cmd_vel_nav for patrol velocity_scaler to intercept
         Node(
             package='nav2_velocity_smoother',
             executable='velocity_smoother',
             name='velocity_smoother',
             output='screen',
             parameters=[params_file, {'use_sim_time': use_sim_time}],
+            remappings=[('cmd_vel_smoothed', '/cmd_vel_nav')],
+        ),
+
+        # Velocity Scaler (for patrol speed control)
+        # Always runs - passes through at 100% when patrol not active
+        Node(
+            package='rover1_patrol',
+            executable='velocity_scaler.py',
+            name='velocity_scaler',
+            output='screen',
+            parameters=[{
+                'min_scale': 0.1,
+                'default_scale': 1.0
+            }]
         ),
 
         # Nav2 Lifecycle Manager - manages all Nav2 servers

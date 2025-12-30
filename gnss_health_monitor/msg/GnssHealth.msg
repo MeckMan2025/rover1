@@ -3,6 +3,11 @@
 
 std_msgs/Header header
 
+# Position (WGS84)
+float64 latitude            # Latitude in degrees (NaN if no fix)
+float64 longitude           # Longitude in degrees (NaN if no fix)
+float64 altitude            # Altitude in meters above WGS84 ellipsoid (NaN if no fix)
+
 # Satellite Information
 uint16 sat_visible          # Number of satellites visible
 uint16 sat_used             # Number of satellites used in navigation solution

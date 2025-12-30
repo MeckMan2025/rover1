@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Rover1 Dashboard</title>
+    <!-- Leaflet CSS for OpenStreetMap -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+          crossorigin=""/>
     <style>
         * {
             margin: 0;
@@ -299,12 +303,353 @@
                 font-size: 2rem;
             }
         }
+
+        /* Patrol Card Styles */
+        .patrol-card {
+            grid-column: 1 / -1;
+        }
+
+        .patrol-section {
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .patrol-section:last-child {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+
+        .section-title {
+            font-size: 0.9rem;
+            color: rgba(255, 255, 255, 0.7);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 12px;
+        }
+
+        .patrol-status-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .patrol-idle { background: rgba(128, 128, 128, 0.2); color: #888; }
+        .patrol-recording { background: rgba(255, 68, 68, 0.2); color: #ff4444; animation: pulse 1s infinite; }
+        .patrol-pending-save { background: rgba(255, 193, 7, 0.2); color: #ffc107; }
+        .patrol-patrolling { background: rgba(0, 255, 136, 0.2); color: #00ff88; animation: pulse 2s infinite; }
+        .patrol-paused { background: rgba(0, 136, 255, 0.2); color: #0088ff; }
+        .patrol-error { background: rgba(255, 68, 68, 0.2); color: #ff4444; }
+
+        .patrol-progress {
+            margin-top: 10px;
+            font-size: 0.9rem;
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .patrol-error-msg {
+            margin-top: 10px;
+            padding: 10px;
+            background: rgba(255, 68, 68, 0.1);
+            border: 1px solid rgba(255, 68, 68, 0.3);
+            border-radius: 8px;
+            color: #ff4444;
+        }
+
+        .path-selector {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .path-select {
+            flex: 1;
+            min-width: 150px;
+            padding: 10px 15px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            color: #fff;
+            font-size: 1rem;
+        }
+
+        .path-select option {
+            background: #1a1a1a;
+            color: #fff;
+        }
+
+        .map-preview {
+            margin-top: 15px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            overflow: hidden;
+            max-height: 300px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .map-preview img {
+            max-width: 100%;
+            max-height: 300px;
+            object-fit: contain;
+        }
+
+        .map-placeholder {
+            padding: 40px;
+            color: rgba(255, 255, 255, 0.3);
+            text-align: center;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-size: 0.85rem;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #00ff88, #00cc6a);
+            color: #000;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 255, 136, 0.3);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #ff4444, #cc0000);
+            color: #fff;
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(255, 68, 68, 0.3);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-warning {
+            background: linear-gradient(135deg, #ffc107, #ff9800);
+            color: #000;
+        }
+
+        .patrol-options {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .option-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .option-label {
+            font-size: 0.8rem;
+            color: rgba(255, 255, 255, 0.6);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .option-input {
+            padding: 8px 12px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            color: #fff;
+            font-size: 0.9rem;
+        }
+
+        .speed-slider {
+            width: 100%;
+            -webkit-appearance: none;
+            height: 8px;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            outline: none;
+        }
+
+        .speed-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #00ff88;
+            cursor: pointer;
+        }
+
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            padding: 8px 0;
+        }
+
+        .checkbox-label input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: #00ff88;
+        }
+
+        .recording-indicator {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .recording-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ff4444;
+            animation: pulse 1s infinite;
+        }
+
+        .save-dialog {
+            display: none;
+            margin-top: 15px;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+        }
+
+        .save-dialog.active {
+            display: block;
+        }
+
+        .path-name-input {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            color: #fff;
+            font-size: 1rem;
+        }
+
+        /* Map Card Styles */
+        .map-card {
+            grid-column: 1 / -1;
+        }
+
+        .map-container {
+            height: 400px;
+            border-radius: 10px;
+            overflow: hidden;
+            background: #1a1a1a;
+        }
+
+        #roverMap {
+            height: 100%;
+            width: 100%;
+        }
+
+        .map-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 15px;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .coord-display {
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+        }
+
+        .coord-label {
+            color: rgba(255, 255, 255, 0.6);
+            margin-right: 5px;
+        }
+
+        .coord-value {
+            color: #00ff88;
+        }
+
+        .map-controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        .map-no-fix {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+            color: rgba(255, 255, 255, 0.3);
+            font-size: 1.2rem;
+        }
+
+        /* Leaflet popup styling */
+        .leaflet-popup-content-wrapper {
+            background: rgba(26, 26, 26, 0.95);
+            color: #fff;
+            border-radius: 8px;
+        }
+
+        .leaflet-popup-tip {
+            background: rgba(26, 26, 26, 0.95);
+        }
+
+        .rover-popup {
+            text-align: center;
+        }
+
+        .rover-popup .status {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .rover-popup .coords {
+            font-family: monospace;
+            font-size: 0.85rem;
+            color: rgba(255, 255, 255, 0.8);
+        }
     </style>
 </head>
 <body>
     <div class="dashboard">
         <div class="header">
-            <h1>🛸 Rover1 Dashboard</h1>
+            <h1>Rover1 Dashboard</h1>
             <span id="connectionStatus" class="connection-status disconnected">● Connecting...</span>
         </div>
 
@@ -321,7 +666,31 @@
                 <div id="hudVolt" style="color: #00ff88;">VOLT: -- V</div>
             </div>
         </div>
-        
+
+        <!-- Street Map Section -->
+        <div class="card map-card" style="max-width: 800px; margin: 0 auto 30px auto;">
+            <div class="card-title">Rover Location</div>
+            <div class="map-container">
+                <div id="roverMap"></div>
+            </div>
+            <div class="map-info">
+                <div class="coord-display">
+                    <span class="coord-label">LAT:</span>
+                    <span class="coord-value" id="mapLat">--</span>
+                    <span class="coord-label" style="margin-left: 15px;">LON:</span>
+                    <span class="coord-value" id="mapLon">--</span>
+                    <span class="coord-label" style="margin-left: 15px;">ALT:</span>
+                    <span class="coord-value" id="mapAlt">--</span>
+                </div>
+                <div class="map-controls">
+                    <button class="btn btn-secondary" onclick="mapController.centerOnRover()">Center</button>
+                    <button class="btn btn-secondary" onclick="mapController.toggleFollow()">
+                        <span id="followBtn">Follow: ON</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <div class="grid">
             <!-- RTK Status Card -->
             <div class="card">
@@ -401,6 +770,109 @@
                     <span class="power-status-text power-unknown" id="powerStatus">USB-C: --</span>
                 </div>
             </div>
+
+            <!-- Patrol Card -->
+            <div class="card patrol-card">
+                <div class="card-title">Teach & Repeat Patrol</div>
+
+                <!-- Status Section -->
+                <div class="patrol-section">
+                    <div class="section-title">Status</div>
+                    <span id="patrolStatusBadge" class="patrol-status-badge patrol-idle">IDLE</span>
+                    <div id="patrolProgress" class="patrol-progress" style="display: none;"></div>
+                    <div id="patrolError" class="patrol-error-msg" style="display: none;"></div>
+                </div>
+
+                <!-- Recording Section -->
+                <div class="patrol-section">
+                    <div class="section-title">Record New Path</div>
+                    <div id="recordingControls">
+                        <div class="btn-group">
+                            <button id="btnStartRecord" class="btn btn-danger" onclick="patrol.startRecording()">
+                                Start Recording
+                            </button>
+                            <button id="btnStopRecord" class="btn btn-secondary" onclick="patrol.stopRecording()" disabled>
+                                Stop Recording
+                            </button>
+                        </div>
+                        <div id="recordingIndicator" class="recording-indicator" style="display: none; margin-top: 10px;">
+                            <div class="recording-dot"></div>
+                            <span id="recordingCount">Recording: 0 waypoints</span>
+                        </div>
+                    </div>
+
+                    <!-- Save Dialog (shown after stopping recording) -->
+                    <div id="saveDialog" class="save-dialog">
+                        <input type="text" id="pathNameInput" class="path-name-input" placeholder="Enter path name...">
+                        <div class="btn-group">
+                            <button class="btn btn-primary" onclick="patrol.savePath()">Save Path</button>
+                            <button class="btn btn-secondary" onclick="patrol.discardRecording()">Discard</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Path Selection Section -->
+                <div class="patrol-section">
+                    <div class="section-title">Select Path</div>
+                    <div class="path-selector">
+                        <select id="pathSelect" class="path-select" onchange="patrol.onPathSelect()">
+                            <option value="">-- Select a path --</option>
+                        </select>
+                        <button class="btn btn-secondary" onclick="patrol.refreshPaths()">Refresh</button>
+                    </div>
+                    <div id="mapPreview" class="map-preview">
+                        <div class="map-placeholder">Select a path to preview map</div>
+                    </div>
+                </div>
+
+                <!-- Patrol Options Section -->
+                <div class="patrol-section">
+                    <div class="section-title">Patrol Options</div>
+                    <div class="patrol-options">
+                        <div class="option-group">
+                            <label class="option-label">Loop Count</label>
+                            <select id="loopCount" class="option-input">
+                                <option value="0">Continuous</option>
+                                <option value="1">1 loop</option>
+                                <option value="2">2 loops</option>
+                                <option value="3">3 loops</option>
+                                <option value="5">5 loops</option>
+                                <option value="10">10 loops</option>
+                            </select>
+                        </div>
+                        <div class="option-group">
+                            <label class="option-label">Speed: <span id="speedValue">100</span>%</label>
+                            <input type="range" id="speedSlider" class="speed-slider"
+                                   min="10" max="100" value="100" oninput="patrol.updateSpeedLabel()">
+                        </div>
+                        <div class="option-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="reverseMode">
+                                Reverse Mode (back & forth)
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Patrol Controls Section -->
+                <div class="patrol-section">
+                    <div class="section-title">Patrol Controls</div>
+                    <div class="btn-group">
+                        <button id="btnStartPatrol" class="btn btn-primary" onclick="patrol.startPatrol()">
+                            Start Patrol
+                        </button>
+                        <button id="btnPausePatrol" class="btn btn-warning" onclick="patrol.pausePatrol()" disabled>
+                            Pause
+                        </button>
+                        <button id="btnResumePatrol" class="btn btn-primary" onclick="patrol.resumePatrol()" disabled>
+                            Resume
+                        </button>
+                        <button id="btnStopPatrol" class="btn btn-danger" onclick="patrol.stopPatrol()" disabled>
+                            Stop
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
         
         <div class="last-update" id="lastUpdate">
@@ -408,47 +880,82 @@
         </div>
     </div>
 
+    <!-- Leaflet JS for OpenStreetMap -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+            crossorigin=""></script>
+
     <script>
-        class GnssHealthDashboard {
+        // Global controllers
+        let patrol = null;
+        let mapController = null;
+
+        class Rover1Dashboard {
             constructor() {
                 this.websocket = null;
                 this.reconnectInterval = 5000;
                 this.lastUpdateTime = null;
+                this.patrolController = null;
                 this.connect();
-                
+
                 // Update "last updated" every second
                 setInterval(() => this.updateLastUpdateDisplay(), 1000);
             }
-            
+
+            setPatrolController(controller) {
+                this.patrolController = controller;
+            }
+
             connect() {
                 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                 const wsUrl = `${protocol}//${window.location.hostname}:8081`;
-                
+
                 console.log('Connecting to:', wsUrl);
                 this.websocket = new WebSocket(wsUrl);
-                
+
                 this.websocket.onopen = () => {
                     console.log('WebSocket connected');
                     this.updateConnectionStatus(true);
+                    // Refresh paths when connected
+                    if (this.patrolController) {
+                        this.patrolController.refreshPaths();
+                    }
                 };
-                
+
                 this.websocket.onmessage = (event) => {
                     const data = JSON.parse(event.data);
-                    this.updateDashboard(data);
+                    // Check if this is a command response
+                    if (data.success !== undefined && !data.patrol) {
+                        // This is a response to a command
+                        if (this.patrolController) {
+                            this.patrolController.handleResponse(data);
+                        }
+                    } else {
+                        // This is a status broadcast
+                        this.updateDashboard(data);
+                    }
                 };
-                
+
                 this.websocket.onclose = () => {
                     console.log('WebSocket disconnected');
                     this.updateConnectionStatus(false);
                     setTimeout(() => this.connect(), this.reconnectInterval);
                 };
-                
+
                 this.websocket.onerror = (error) => {
                     console.error('WebSocket error:', error);
                     this.updateConnectionStatus(false);
                 };
             }
-            
+
+            sendCommand(cmd) {
+                if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+                    this.websocket.send(JSON.stringify(cmd));
+                } else {
+                    console.error('WebSocket not connected');
+                }
+            }
+
             updateConnectionStatus(connected) {
                 const statusEl = document.getElementById('connectionStatus');
                 if (connected) {
@@ -459,37 +966,73 @@
                     statusEl.className = 'connection-status disconnected';
                 }
             }
-            
+
             updateDashboard(data) {
                 this.lastUpdateTime = Date.now();
 
                 // RTK Status
-                this.updateRTKStatus(data.rtk_state, data.h_acc_m);
+                if (data.rtk_state !== undefined) {
+                    this.updateRTKStatus(data.rtk_state, data.h_acc_m);
+                }
 
                 // Satellites
-                document.getElementById('satVisible').textContent = data.sat_visible || '--';
-                document.getElementById('satUsed').textContent = data.sat_used || '--';
+                if (data.sat_visible !== undefined) {
+                    document.getElementById('satVisible').textContent = data.sat_visible || '--';
+                    document.getElementById('satUsed').textContent = data.sat_used || '--';
+                }
 
                 // NTRIP Status
-                this.updateNTRIPStatus(data.ntrip_connected, data.rtcm_msgs_per_sec, data.corr_age_s);
+                if (data.ntrip_connected !== undefined) {
+                    this.updateNTRIPStatus(data.ntrip_connected, data.rtcm_msgs_per_sec, data.corr_age_s);
+                }
 
                 // Data Statistics
-                document.getElementById('totalMessages').textContent =
-                    data.rtcm_msgs_total ? data.rtcm_msgs_total.toLocaleString() : '--';
-                document.getElementById('dataRate').textContent =
-                    data.rtcm_bytes_per_sec ? Math.round(data.rtcm_bytes_per_sec) : '--';
+                if (data.rtcm_msgs_total !== undefined) {
+                    document.getElementById('totalMessages').textContent =
+                        data.rtcm_msgs_total ? data.rtcm_msgs_total.toLocaleString() : '--';
+                    document.getElementById('dataRate').textContent =
+                        data.rtcm_bytes_per_sec ? Math.round(data.rtcm_bytes_per_sec) : '--';
+                }
 
                 // Video Feed
-                this.updateVideoFeed(data.image);
+                if (data.image) {
+                    this.updateVideoFeed(data.image);
+                }
 
                 // HUD Overlays
                 this.updateHUD(data);
 
                 // Battery Status
-                this.updateBatteryStatus(data.battery_voltage);
+                if (data.battery_voltage !== undefined) {
+                    this.updateBatteryStatus(data.battery_voltage);
+                }
 
                 // Power Supply Status (USB-C PD)
-                this.updatePowerStatus(data.power_status);
+                if (data.power_status) {
+                    this.updatePowerStatus(data.power_status);
+                }
+
+                // Patrol Status
+                if (data.patrol) {
+                    this.updatePatrolStatus(data.patrol);
+                }
+
+                // Map location
+                if (data.latitude !== undefined && data.longitude !== undefined) {
+                    this.updateMapLocation(data.latitude, data.longitude, data.altitude, data.rtk_state);
+                }
+            }
+
+            updatePatrolStatus(patrol) {
+                if (this.patrolController) {
+                    this.patrolController.updateStatus(patrol);
+                }
+            }
+
+            updateMapLocation(lat, lon, alt, rtkState) {
+                if (mapController) {
+                    mapController.updatePosition(lat, lon, alt, rtkState);
+                }
             }
 
             updateVideoFeed(base64Data) {
@@ -672,10 +1215,432 @@
                 }
             }
         }
-        
+
+        class PatrolController {
+            constructor(dashboard) {
+                this.dashboard = dashboard;
+                this.currentState = 'idle';
+                this.pendingCallback = null;
+                this.paths = [];
+            }
+
+            sendCommand(cmd) {
+                this.dashboard.sendCommand(cmd);
+            }
+
+            handleResponse(data) {
+                console.log('Patrol response:', data);
+                if (data.paths !== undefined) {
+                    // Response from list_paths
+                    this.updatePathList(data.paths);
+                } else if (data.image !== undefined) {
+                    // Response from get_map_image
+                    this.showMapPreview(data.image);
+                } else if (!data.success) {
+                    // Error response
+                    alert(data.message || 'Operation failed');
+                }
+            }
+
+            updateStatus(status) {
+                this.currentState = status.state;
+
+                // Update status badge
+                const badge = document.getElementById('patrolStatusBadge');
+                const stateClass = `patrol-${status.state.replace('_', '-')}`;
+                badge.className = `patrol-status-badge ${stateClass}`;
+
+                let stateText = status.state.toUpperCase().replace('_', ' ');
+                if (status.state === 'recording') {
+                    stateText = `RECORDING (${status.recorded_waypoint_count} pts)`;
+                }
+                badge.textContent = stateText;
+
+                // Update progress display
+                const progressEl = document.getElementById('patrolProgress');
+                if (status.state === 'patrolling' || status.state === 'paused') {
+                    const loopText = status.total_loops > 0
+                        ? `Loop ${status.current_loop + 1} of ${status.total_loops}`
+                        : `Loop ${status.current_loop + 1} (continuous)`;
+                    progressEl.textContent = `Waypoint ${status.current_waypoint + 1} of ${status.total_waypoints} | ${loopText}`;
+                    progressEl.style.display = 'block';
+                } else {
+                    progressEl.style.display = 'none';
+                }
+
+                // Update error display
+                const errorEl = document.getElementById('patrolError');
+                if (status.error_message) {
+                    errorEl.textContent = status.error_message;
+                    errorEl.style.display = 'block';
+                } else {
+                    errorEl.style.display = 'none';
+                }
+
+                // Update recording indicator
+                const recordingIndicator = document.getElementById('recordingIndicator');
+                const recordingCount = document.getElementById('recordingCount');
+                if (status.state === 'recording') {
+                    recordingIndicator.style.display = 'flex';
+                    recordingCount.textContent = `Recording: ${status.recorded_waypoint_count} waypoints`;
+                } else {
+                    recordingIndicator.style.display = 'none';
+                }
+
+                // Update button states
+                this.updateButtonStates(status.state);
+
+                // Show/hide save dialog
+                const saveDialog = document.getElementById('saveDialog');
+                if (status.state === 'pending_save') {
+                    saveDialog.classList.add('active');
+                } else {
+                    saveDialog.classList.remove('active');
+                }
+            }
+
+            updateButtonStates(state) {
+                const btnStartRecord = document.getElementById('btnStartRecord');
+                const btnStopRecord = document.getElementById('btnStopRecord');
+                const btnStartPatrol = document.getElementById('btnStartPatrol');
+                const btnPausePatrol = document.getElementById('btnPausePatrol');
+                const btnResumePatrol = document.getElementById('btnResumePatrol');
+                const btnStopPatrol = document.getElementById('btnStopPatrol');
+
+                // Reset all buttons
+                btnStartRecord.disabled = false;
+                btnStopRecord.disabled = true;
+                btnStartPatrol.disabled = false;
+                btnPausePatrol.disabled = true;
+                btnResumePatrol.disabled = true;
+                btnStopPatrol.disabled = true;
+
+                switch (state) {
+                    case 'idle':
+                        // Default state - can start recording or patrol
+                        break;
+                    case 'recording':
+                        btnStartRecord.disabled = true;
+                        btnStopRecord.disabled = false;
+                        btnStartPatrol.disabled = true;
+                        break;
+                    case 'pending_save':
+                        btnStartRecord.disabled = true;
+                        btnStopRecord.disabled = true;
+                        btnStartPatrol.disabled = true;
+                        break;
+                    case 'patrolling':
+                        btnStartRecord.disabled = true;
+                        btnStartPatrol.disabled = true;
+                        btnPausePatrol.disabled = false;
+                        btnStopPatrol.disabled = false;
+                        break;
+                    case 'paused':
+                        btnStartRecord.disabled = true;
+                        btnStartPatrol.disabled = true;
+                        btnResumePatrol.disabled = false;
+                        btnStopPatrol.disabled = false;
+                        break;
+                    case 'error':
+                        // Can try again
+                        break;
+                }
+            }
+
+            // Recording controls
+            startRecording() {
+                this.sendCommand({ action: 'start_recording' });
+            }
+
+            stopRecording() {
+                this.sendCommand({ action: 'stop_recording' });
+            }
+
+            savePath() {
+                const pathName = document.getElementById('pathNameInput').value.trim();
+                if (!pathName) {
+                    alert('Please enter a path name');
+                    return;
+                }
+                this.sendCommand({ action: 'save_path', path_name: pathName });
+                document.getElementById('pathNameInput').value = '';
+                // Refresh paths after saving
+                setTimeout(() => this.refreshPaths(), 500);
+            }
+
+            discardRecording() {
+                this.sendCommand({ action: 'discard_recording' });
+            }
+
+            // Path management
+            refreshPaths() {
+                this.sendCommand({ action: 'list_paths' });
+            }
+
+            updatePathList(paths) {
+                this.paths = paths;
+                const select = document.getElementById('pathSelect');
+                select.innerHTML = '<option value="">-- Select a path --</option>';
+
+                paths.forEach(path => {
+                    const option = document.createElement('option');
+                    option.value = path.name;
+                    option.textContent = `${path.name} (${path.waypoint_count} pts, ${path.recorded_date})`;
+                    select.appendChild(option);
+                });
+            }
+
+            onPathSelect() {
+                const pathName = document.getElementById('pathSelect').value;
+                if (pathName) {
+                    this.sendCommand({ action: 'get_map_image', path_name: pathName });
+                } else {
+                    this.clearMapPreview();
+                }
+            }
+
+            showMapPreview(base64Image) {
+                const preview = document.getElementById('mapPreview');
+                if (base64Image) {
+                    preview.innerHTML = `<img src="data:image/png;base64,${base64Image}" alt="Path Map">`;
+                } else {
+                    this.clearMapPreview();
+                }
+            }
+
+            clearMapPreview() {
+                const preview = document.getElementById('mapPreview');
+                preview.innerHTML = '<div class="map-placeholder">Select a path to preview map</div>';
+            }
+
+            // Patrol controls
+            startPatrol() {
+                const pathName = document.getElementById('pathSelect').value;
+                if (!pathName) {
+                    alert('Please select a path first');
+                    return;
+                }
+
+                const loopCount = parseInt(document.getElementById('loopCount').value);
+                const speedPercent = parseInt(document.getElementById('speedSlider').value) / 100;
+                const reverseMode = document.getElementById('reverseMode').checked;
+
+                this.sendCommand({
+                    action: 'start_patrol',
+                    path_name: pathName,
+                    loop_count: loopCount,
+                    speed_percent: speedPercent,
+                    reverse_mode: reverseMode
+                });
+            }
+
+            pausePatrol() {
+                this.sendCommand({ action: 'pause_patrol' });
+            }
+
+            resumePatrol() {
+                this.sendCommand({ action: 'resume_patrol' });
+            }
+
+            stopPatrol() {
+                this.sendCommand({ action: 'stop_patrol' });
+            }
+
+            updateSpeedLabel() {
+                const value = document.getElementById('speedSlider').value;
+                document.getElementById('speedValue').textContent = value;
+            }
+        }
+
+        class MapController {
+            constructor() {
+                this.map = null;
+                this.marker = null;
+                this.accuracyCircle = null;
+                this.followMode = true;
+                this.hasPosition = false;
+                this.lastLat = null;
+                this.lastLon = null;
+                this.pathLine = null;
+                this.pathPoints = [];
+                this.maxPathPoints = 500;
+
+                this.initMap();
+            }
+
+            initMap() {
+                // Default to a generic location until we get GPS fix
+                const defaultLat = 39.8283;  // Center of US
+                const defaultLon = -98.5795;
+                const defaultZoom = 4;
+
+                this.map = L.map('roverMap', {
+                    center: [defaultLat, defaultLon],
+                    zoom: defaultZoom,
+                    zoomControl: true
+                });
+
+                // Add OpenStreetMap tiles
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                }).addTo(this.map);
+
+                // Create custom rover icon
+                this.roverIcon = L.divIcon({
+                    className: 'rover-marker',
+                    html: `<div style="
+                        width: 24px;
+                        height: 24px;
+                        background: #00ff88;
+                        border: 3px solid #fff;
+                        border-radius: 50%;
+                        box-shadow: 0 0 10px rgba(0,255,136,0.5);
+                    "></div>`,
+                    iconSize: [24, 24],
+                    iconAnchor: [12, 12]
+                });
+
+                // Create marker (hidden until we get position)
+                this.marker = L.marker([defaultLat, defaultLon], {
+                    icon: this.roverIcon
+                });
+
+                // Create accuracy circle
+                this.accuracyCircle = L.circle([defaultLat, defaultLon], {
+                    radius: 10,
+                    color: '#00ff88',
+                    fillColor: '#00ff88',
+                    fillOpacity: 0.1,
+                    weight: 2
+                });
+
+                // Create path line
+                this.pathLine = L.polyline([], {
+                    color: '#0088ff',
+                    weight: 3,
+                    opacity: 0.7
+                });
+            }
+
+            updatePosition(lat, lon, alt, rtkState) {
+                // Update coordinate display
+                document.getElementById('mapLat').textContent = lat !== null ? lat.toFixed(7) : '--';
+                document.getElementById('mapLon').textContent = lon !== null ? lon.toFixed(7) : '--';
+                document.getElementById('mapAlt').textContent = alt !== null ? alt.toFixed(1) + 'm' : '--';
+
+                if (lat === null || lon === null) {
+                    return;
+                }
+
+                const position = [lat, lon];
+
+                // First valid position - add marker to map and zoom in
+                if (!this.hasPosition) {
+                    this.hasPosition = true;
+                    this.marker.addTo(this.map);
+                    this.accuracyCircle.addTo(this.map);
+                    this.pathLine.addTo(this.map);
+                    this.map.setView(position, 18);
+                }
+
+                // Update marker position
+                this.marker.setLatLng(position);
+                this.accuracyCircle.setLatLng(position);
+
+                // Update marker color based on RTK state
+                let color = '#ffc107';  // Default yellow
+                if (rtkState === 'FIXED') {
+                    color = '#00ff88';
+                } else if (rtkState === 'FLOAT') {
+                    color = '#0088ff';
+                } else if (rtkState === 'NO_FIX') {
+                    color = '#ff4444';
+                }
+
+                this.marker.setIcon(L.divIcon({
+                    className: 'rover-marker',
+                    html: `<div style="
+                        width: 24px;
+                        height: 24px;
+                        background: ${color};
+                        border: 3px solid #fff;
+                        border-radius: 50%;
+                        box-shadow: 0 0 10px ${color}80;
+                    "></div>`,
+                    iconSize: [24, 24],
+                    iconAnchor: [12, 12]
+                }));
+
+                // Add to path if position changed significantly (> 0.5m)
+                if (this.lastLat !== null && this.lastLon !== null) {
+                    const dist = this.haversineDistance(this.lastLat, this.lastLon, lat, lon);
+                    if (dist > 0.5) {
+                        this.pathPoints.push(position);
+                        if (this.pathPoints.length > this.maxPathPoints) {
+                            this.pathPoints.shift();
+                        }
+                        this.pathLine.setLatLngs(this.pathPoints);
+                        this.lastLat = lat;
+                        this.lastLon = lon;
+                    }
+                } else {
+                    this.lastLat = lat;
+                    this.lastLon = lon;
+                }
+
+                // Follow mode - keep rover centered
+                if (this.followMode) {
+                    this.map.setView(position, this.map.getZoom(), { animate: true });
+                }
+
+                // Update popup
+                this.marker.bindPopup(`
+                    <div class="rover-popup">
+                        <div class="status" style="color: ${color}">${rtkState || 'UNKNOWN'}</div>
+                        <div class="coords">${lat.toFixed(7)}, ${lon.toFixed(7)}</div>
+                    </div>
+                `);
+            }
+
+            haversineDistance(lat1, lon1, lat2, lon2) {
+                const R = 6371000; // Earth radius in meters
+                const dLat = (lat2 - lat1) * Math.PI / 180;
+                const dLon = (lon2 - lon1) * Math.PI / 180;
+                const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                          Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                          Math.sin(dLon/2) * Math.sin(dLon/2);
+                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                return R * c;
+            }
+
+            centerOnRover() {
+                if (this.hasPosition && this.lastLat !== null) {
+                    this.map.setView([this.lastLat, this.lastLon], 18, { animate: true });
+                }
+            }
+
+            toggleFollow() {
+                this.followMode = !this.followMode;
+                document.getElementById('followBtn').textContent =
+                    this.followMode ? 'Follow: ON' : 'Follow: OFF';
+                if (this.followMode) {
+                    this.centerOnRover();
+                }
+            }
+
+            clearPath() {
+                this.pathPoints = [];
+                this.pathLine.setLatLngs([]);
+            }
+        }
+
         // Initialize dashboard when page loads
         document.addEventListener('DOMContentLoaded', () => {
-            new GnssHealthDashboard();
+            const dashboard = new Rover1Dashboard();
+            patrol = new PatrolController(dashboard);
+            mapController = new MapController();
+            dashboard.setPatrolController(patrol);
         });
     </script>
 </body>

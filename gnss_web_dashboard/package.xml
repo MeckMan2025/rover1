@@ -3,17 +3,19 @@
 <package format="3">
   <name>gnss_web_dashboard</name>
   <version>1.0.0</version>
-  <description>Simple web dashboard for GNSS health monitoring</description>
-  
+  <description>Web dashboard for Rover1 monitoring and patrol control</description>
+
   <maintainer email="rover1@example.com">Rover1 Project</maintainer>
   <license>MIT</license>
-  
+
   <buildtool_depend>ament_python</buildtool_depend>
-  
+
   <depend>rclpy</depend>
   <depend>gnss_health_monitor</depend>
   <depend>sensor_msgs</depend>
   <depend>cv_bridge</depend>
+  <depend>rover1_patrol</depend>
+  <depend>std_srvs</depend>
   
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

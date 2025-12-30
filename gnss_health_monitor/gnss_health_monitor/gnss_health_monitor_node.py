@@ -444,31 +444,40 @@ class GnssHealthMonitorNode(Node):
             msg = GnssHealth()
             msg.header.stamp = self.get_clock().now().to_msg()
             msg.header.frame_id = "base_link"
-            
+
             # Satellite information
             msg.sat_visible = int(self.sat_visible)
             msg.sat_used = int(self.sat_used)
-            
+
             # RTCM statistics
             corr_age = self.rtcm_stats.get_age_seconds()
             msg.corr_age_s = float(corr_age) if corr_age != float('inf') else 999.9
             msg.ntrip_connected = corr_age <= self.params['rtcm_timeout_s']
             msg.rtcm_msgs_total = int(self.rtcm_stats.total_messages)
-            
+
             msgs_per_sec, bytes_per_sec = self.rtcm_stats.get_rates()
             msg.rtcm_msgs_per_sec = float(msgs_per_sec)
             msg.rtcm_bytes_per_sec = float(bytes_per_sec)
-            
-            # Accuracy and RTK state
+
+            # Position and accuracy from NavSatFix
             if self.last_navsat_msg:
+                # Position (WGS84)
+                msg.latitude = float(self.last_navsat_msg.latitude)
+                msg.longitude = float(self.last_navsat_msg.longitude)
+                msg.altitude = float(self.last_navsat_msg.altitude)
+
                 h_acc, v_acc = self.compute_accuracy_from_covariance(self.last_navsat_msg.position_covariance)
                 # Use -1.0 instead of NaN for invalid values
                 msg.h_acc_m = float(h_acc) if not math.isnan(h_acc) else -1.0
                 msg.v_acc_m = float(v_acc) if not math.isnan(v_acc) else -1.0
-                
+
                 # Set last update time
                 msg.last_update_time = self.last_navsat_time.to_msg()
             else:
+                # No fix - use NaN for position
+                msg.latitude = float('nan')
+                msg.longitude = float('nan')
+                msg.altitude = float('nan')
                 msg.h_acc_m = -1.0  # Use -1.0 to indicate no data
                 msg.v_acc_m = -1.0
                 # Create zero time
