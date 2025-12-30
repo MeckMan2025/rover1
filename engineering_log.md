@@ -1062,6 +1062,41 @@ libinput list-devices | grep -A5 "QDTECH"
 libinput debug-events --device /dev/input/eventX
 ```
 
+### 4.14 Phase 6 Indoor Autonomy Progress (Dec 29, 2025)
+**Status:** RTAB-Map working, Nav2 paused due to Pi 5/Jazzy instability
+
+**RTAB-Map (Visual SLAM) - WORKING:**
+- Installation: `ros-jazzy-rtabmap-ros` ✅
+- Launch file: `rtabmap.launch.py` ✅
+- TF bridge fix: `camera_optical_frame` → `ascamera_hp60c_ascamera_0` ✅
+- Visual odometry: 200-220 features tracked, std dev 0.001-0.005m
+- Map output: `/map` OccupancyGrid (5cm resolution, ~9m × 7.5m tested)
+
+**Nav2 (Navigation Stack) - PAUSED:**
+- Installation: `ros-jazzy-navigation2` ✅
+- Config: `nav2_params.yaml` with Regulated Pure Pursuit ✅
+- Launch: `nav2.launch.py` created ✅
+- **Issues on Pi 5 + Jazzy:**
+  - `bt_navigator`: Duplicate BT node ID errors (`ComputePathToPose already registered`)
+  - Lifecycle manager: Timeouts waiting for services (bond failures)
+  - Processes crash during configuration phase
+  - Suspected causes: ARM64 resource constraints, Nav2 1.3.10 bugs, DDS/SHM issues
+
+**Decision:** Pause Nav2 work. Focus on RTAB-Map + teleop. Revisit when Nav2 Jazzy stabilizes.
+
+**Workaround Available:**
+- `scripts/nav_test.py` - Uses `nav2_simple_commander` to bypass bt_navigator
+- Can test navigation when core servers (controller, planner) are stable
+
+**Files Created:**
+| File | Purpose |
+|------|---------|
+| `rover1_bringup/launch/rtabmap.launch.py` | RTAB-Map visual SLAM |
+| `rover1_bringup/launch/nav2.launch.py` | Nav2 stack (bt_navigator disabled) |
+| `rover1_bringup/config/nav2_params.yaml` | Nav2 parameters |
+| `scripts/nav_test.py` | Simple navigation test |
+| `.claude/CLAUDE.md` | Instructions for Claude Rover (tmux, roles) |
+
 ### 4.13 Camera Module Integration & Perception Planning (Dec 27, 2025)
 **Status:** PLANNING COMPLETE - Moving to Phase 5: Perception
 
