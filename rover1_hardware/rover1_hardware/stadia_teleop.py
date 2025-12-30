@@ -4,6 +4,7 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Joy
 from geometry_msgs.msg import Twist
+from std_msgs.msg import Float32
 
 class StadiaTeleop(Node):
     def __init__(self):
@@ -32,6 +33,11 @@ class StadiaTeleop(Node):
 
         self.subscription = self.create_subscription(Joy, '/joy', self.joy_callback, 10)
         self.publisher = self.create_publisher(Twist, '/cmd_vel', 10)
+
+        # Dynamic speed scaling (controlled from dashboard)
+        self.speed_scale = 1.0  # 0.1 to 1.0
+        self.speed_sub = self.create_subscription(
+            Float32, '/teleop/speed_scale', self.speed_scale_callback, 10)
 
         # State tracking for safety
         self.deadman_active = False
@@ -98,6 +104,13 @@ class StadiaTeleop(Node):
         # Not yet activated - return 0.0
         return 0.0
 
+    def speed_scale_callback(self, msg: Float32):
+        """Handle dynamic speed scaling from dashboard"""
+        new_scale = max(0.1, min(1.0, msg.data))  # Clamp to [0.1, 1.0]
+        if abs(new_scale - self.speed_scale) > 0.01:  # Only log if changed
+            self.speed_scale = new_scale
+            self.get_logger().info(f'Speed scale updated: {int(self.speed_scale * 100)}%')
+
     def joy_callback(self, msg):
         self.msg_count += 1
         twist = Twist()
@@ -148,14 +161,18 @@ class StadiaTeleop(Node):
             left_x = self.get_axis_value(self.AXIS_LEFT_X, msg.axes[self.AXIS_LEFT_X])
             right_x = self.get_axis_value(self.AXIS_RIGHT_X, msg.axes[self.AXIS_RIGHT_X])
 
+            # Apply speed scale to max velocities
+            scaled_linear = self.max_linear * self.speed_scale
+            scaled_angular = self.max_angular * self.speed_scale
+
             # LS Forward/Back -> linear.x
-            twist.linear.x = left_y * self.max_linear
+            twist.linear.x = left_y * scaled_linear
 
             # RS Left/Right -> linear.y (Strafe)
-            twist.linear.y = right_x * self.max_linear
+            twist.linear.y = right_x * scaled_linear
 
             # LS Left/Right -> angular.z (Rotate)
-            twist.angular.z = left_x * self.max_angular
+            twist.angular.z = left_x * scaled_angular
 
         # Always publish (zero twist when deadman released = immediate stop)
         self.publisher.publish(twist)

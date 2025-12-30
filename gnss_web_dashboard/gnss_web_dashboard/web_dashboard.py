@@ -27,6 +27,7 @@ from gnss_health_monitor.msg import GnssHealth
 from rover1_patrol.msg import PatrolStatus
 from rover1_patrol.srv import ListPaths, StartPatrol, SavePath
 from std_srvs.srv import Trigger
+from std_msgs.msg import Float32
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 import cv2
@@ -105,6 +106,10 @@ class Rover1WebDashboard(Node):
         self.power_status = None
         self.power_timer = self.create_timer(3.0, self.check_power_status)
         self.check_power_status()  # Initial check
+
+        # Teleop speed control publisher
+        self.teleop_speed_pub = self.create_publisher(Float32, '/teleop/speed_scale', 10)
+        self.teleop_speed = 1.0  # Track current speed for dashboard sync
 
         # Get package directory for serving static files
         try:
@@ -267,6 +272,8 @@ class Rover1WebDashboard(Node):
                 payload['power_status'] = self.power_status
             if self.latest_patrol_status:
                 payload['patrol'] = self.latest_patrol_status
+            # Include teleop speed for dashboard sync
+            payload['teleop_speed'] = self.teleop_speed
 
         if not payload:
             return
@@ -350,6 +357,8 @@ class Rover1WebDashboard(Node):
             return await self.call_trigger_service('resume_patrol')
         elif action == 'get_map_image':
             return self.get_map_image(cmd.get('path_name'))
+        elif action == 'set_teleop_speed':
+            return self.set_teleop_speed(cmd.get('speed_percent', 1.0))
         else:
             return {'success': False, 'message': f'Unknown action: {action}'}
 
@@ -448,6 +457,20 @@ class Rover1WebDashboard(Node):
             return {'success': True, 'image': img_data}
         except Exception as e:
             return {'success': False, 'message': str(e)}
+
+    def set_teleop_speed(self, speed_percent):
+        """Set teleop speed scale and publish to ROS topic"""
+        # Clamp to valid range [0.1, 1.0]
+        speed = max(0.1, min(1.0, float(speed_percent)))
+        self.teleop_speed = speed
+
+        # Publish to ROS topic
+        msg = Float32()
+        msg.data = speed
+        self.teleop_speed_pub.publish(msg)
+
+        self.get_logger().info(f'Teleop speed set to {int(speed * 100)}%')
+        return {'success': True, 'message': f'Teleop speed set to {int(speed * 100)}%'}
 
 
 class CustomHTTPHandler(SimpleHTTPRequestHandler):

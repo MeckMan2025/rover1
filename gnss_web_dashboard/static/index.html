@@ -93,6 +93,73 @@
             font-weight: bold;
         }
 
+        .teleop-controls {
+            max-width: 800px;
+            margin: 0 auto 30px auto;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+        }
+
+        .teleop-speed-control {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .teleop-speed-label {
+            font-size: 0.9rem;
+            color: rgba(255, 255, 255, 0.7);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            min-width: 120px;
+        }
+
+        .teleop-speed-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #00ff88;
+            min-width: 60px;
+            text-align: right;
+        }
+
+        .teleop-slider {
+            flex: 1;
+            -webkit-appearance: none;
+            height: 12px;
+            border-radius: 6px;
+            background: linear-gradient(to right,
+                rgba(255, 68, 68, 0.3) 0%,
+                rgba(255, 193, 7, 0.3) 50%,
+                rgba(0, 255, 136, 0.3) 100%);
+            outline: none;
+        }
+
+        .teleop-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #00ff88, #00cc6a);
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0, 255, 136, 0.4);
+            transition: transform 0.1s ease;
+        }
+
+        .teleop-slider::-webkit-slider-thumb:hover {
+            transform: scale(1.1);
+        }
+
+        .teleop-slider::-moz-range-thumb {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #00ff88, #00cc6a);
+            cursor: pointer;
+            border: none;
+        }
+
         .video-placeholder {
             position: absolute;
             top: 50%;
@@ -667,6 +734,17 @@
             </div>
         </div>
 
+        <!-- Teleop Speed Control -->
+        <div class="teleop-controls">
+            <div class="teleop-speed-control">
+                <span class="teleop-speed-label">Teleop Speed</span>
+                <input type="range" id="teleopSpeedSlider" class="teleop-slider"
+                       min="10" max="100" value="100"
+                       oninput="teleopController.updateSpeed(this.value)">
+                <span id="teleopSpeedValue" class="teleop-speed-value">100%</span>
+            </div>
+        </div>
+
         <!-- Street Map Section -->
         <div class="card map-card" style="max-width: 800px; margin: 0 auto 30px auto;">
             <div class="card-title">Rover Location</div>
@@ -889,6 +967,7 @@
         // Global controllers
         let patrol = null;
         let mapController = null;
+        let teleopController = null;
 
         class Rover1Dashboard {
             constructor() {
@@ -904,6 +983,10 @@
 
             setPatrolController(controller) {
                 this.patrolController = controller;
+            }
+
+            setTeleopController(controller) {
+                this.teleopController = controller;
             }
 
             connect() {
@@ -1015,6 +1098,11 @@
                 // Patrol Status
                 if (data.patrol) {
                     this.updatePatrolStatus(data.patrol);
+                }
+
+                // Teleop Speed sync
+                if (data.teleop_speed !== undefined && this.teleopController) {
+                    this.teleopController.syncFromServer(data.teleop_speed);
                 }
 
                 // Map location
@@ -1635,12 +1723,65 @@
             }
         }
 
+        class TeleopController {
+            constructor(dashboard) {
+                this.dashboard = dashboard;
+                this.currentSpeed = 100;  // Percentage (10-100)
+                this.debounceTimer = null;
+            }
+
+            updateSpeed(value) {
+                this.currentSpeed = parseInt(value);
+
+                // Update display immediately
+                document.getElementById('teleopSpeedValue').textContent = this.currentSpeed + '%';
+
+                // Update slider thumb color based on speed
+                const slider = document.getElementById('teleopSpeedSlider');
+                let color;
+                if (this.currentSpeed >= 70) {
+                    color = '#00ff88';
+                } else if (this.currentSpeed >= 40) {
+                    color = '#ffc107';
+                } else {
+                    color = '#ff4444';
+                }
+                document.getElementById('teleopSpeedValue').style.color = color;
+
+                // Debounce the WebSocket command to avoid flooding
+                clearTimeout(this.debounceTimer);
+                this.debounceTimer = setTimeout(() => {
+                    this.sendSpeedCommand();
+                }, 100);
+            }
+
+            sendSpeedCommand() {
+                const speedPercent = this.currentSpeed / 100;  // Convert to 0.1-1.0 range
+                this.dashboard.sendCommand({
+                    action: 'set_teleop_speed',
+                    speed_percent: speedPercent
+                });
+            }
+
+            syncFromServer(speedPercent) {
+                // Sync slider when server broadcasts current speed
+                const percent = Math.round(speedPercent * 100);
+                if (percent !== this.currentSpeed) {
+                    this.currentSpeed = percent;
+                    document.getElementById('teleopSpeedSlider').value = percent;
+                    document.getElementById('teleopSpeedValue').textContent = percent + '%';
+                }
+            }
+        }
+
         // Initialize dashboard when page loads
         document.addEventListener('DOMContentLoaded', () => {
             const dashboard = new Rover1Dashboard();
             patrol = new PatrolController(dashboard);
             mapController = new MapController();
+            teleopController = new TeleopController(dashboard);
             dashboard.setPatrolController(patrol);
+            dashboard.setTeleopController(teleopController);
         });
     </script>
 </body>
