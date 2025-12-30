@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<CycloneDDS xmlns="https://cdds.io/config">
+  <Domain id="any">
+    <General>
+      <!-- Increase max participants for rover's many nodes -->
+      <MaxParticipants>128</MaxParticipants>
+    </General>
+    <Internal>
+      <!-- Increase thread limits -->
+      <MaxParticipantsInThread>64</MaxParticipantsInThread>
+      <!-- Reduce memory pressure on Pi 5 -->
+      <SquashParticipants>true</SquashParticipants>
+    </Internal>
+    <Tracing>
+      <!-- Only log warnings and errors -->
+      <Verbosity>warning</Verbosity>
+    </Tracing>
+  </Domain>
+</CycloneDDS>

@@ -36,11 +36,13 @@ def generate_launch_description():
 
     # Default params file path
     default_params_file = PathJoinSubstitution([pkg_share, 'config', 'nav2_params.yaml'])
+    cyclonedds_config = PathJoinSubstitution([pkg_share, 'config', 'cyclonedds.xml'])
 
     return LaunchDescription([
         # Use CycloneDDS instead of FastRTPS to avoid shared memory issues on Pi 5
         # FastRTPS SHM transport fails with stale lock files after crashes
         SetEnvironmentVariable('RMW_IMPLEMENTATION', 'rmw_cyclonedds_cpp'),
+        SetEnvironmentVariable('CYCLONEDDS_URI', ['file://', cyclonedds_config]),
 
         # Arguments
         DeclareLaunchArgument(

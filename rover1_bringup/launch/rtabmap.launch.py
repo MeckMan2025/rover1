@@ -23,11 +23,16 @@ Usage:
 from launch import LaunchDescription
 from launch_ros.actions import Node
 from launch.actions import DeclareLaunchArgument, SetEnvironmentVariable
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch.conditions import IfCondition, UnlessCondition
+from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
+    # Package share for config files
+    pkg_share = FindPackageShare('rover1_bringup')
+    cyclonedds_config = PathJoinSubstitution([pkg_share, 'config', 'cyclonedds.xml'])
+
     # Launch arguments
     localization = LaunchConfiguration('localization', default='false')
     use_viz = LaunchConfiguration('use_viz', default='false')  # Disabled by default (needs display)
@@ -90,6 +95,7 @@ def generate_launch_description():
     return LaunchDescription([
         # Use CycloneDDS instead of FastRTPS to avoid shared memory issues on Pi 5
         SetEnvironmentVariable('RMW_IMPLEMENTATION', 'rmw_cyclonedds_cpp'),
+        SetEnvironmentVariable('CYCLONEDDS_URI', ['file://', cyclonedds_config]),
 
         # Arguments
         DeclareLaunchArgument(

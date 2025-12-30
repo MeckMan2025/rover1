@@ -20,9 +20,13 @@ def generate_launch_description():
     urdf_file = PathJoinSubstitution([desc_share, 'urdf', 'rover.urdf.xacro'])
     robot_description = ParameterValue(Command(['xacro ', urdf_file]), value_type=str)
     
+    # CycloneDDS config path
+    cyclonedds_config = PathJoinSubstitution([pkg_share, 'config', 'cyclonedds.xml'])
+
     return LaunchDescription([
         # Use CycloneDDS instead of FastRTPS to avoid shared memory issues on Pi 5
         SetEnvironmentVariable('RMW_IMPLEMENTATION', 'rmw_cyclonedds_cpp'),
+        SetEnvironmentVariable('CYCLONEDDS_URI', ['file://', cyclonedds_config]),
 
         DeclareLaunchArgument(
             'use_joy',
