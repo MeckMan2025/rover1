@@ -1062,6 +1062,43 @@ libinput list-devices | grep -A5 "QDTECH"
 libinput debug-events --device /dev/input/eventX
 ```
 
+### 4.12.1 Kiosk Mode Suspended - Monitor Mode (Dec 30, 2025)
+**Status:** Kiosk disabled, running htop on 7" display instead.
+
+**Problem:** Running Chromium in kiosk mode consumed significant CPU on the Pi 5, which was already running:
+- Full ROS 2 stack (rover base, RTAB-Map SLAM, Nav2, patrol system)
+- Web dashboard backend (WebSocket + HTTP servers)
+- Camera processing pipeline
+
+Additionally, during the active build phase, **Claude Rover (Claude Code CLI) runs directly on the Pi** for hardware testing and debugging. This requires CPU headroom that Chromium was consuming.
+
+**Solution - Monitor Mode:**
+- Disabled kiosk service: `sudo systemctl disable kiosk`
+- Created `scripts/monitor_setup.sh` to display htop on the 7" screen
+- htop provides system monitoring with near-zero CPU overhead
+- Dashboard accessed from Mac browser instead (`http://<rover-ip>:8080`)
+
+**Benefits:**
+- Frees ~10-20% CPU previously used by Chromium
+- Allows Claude Rover to run comfortably on the Pi during testing sessions
+- htop shows thermal throttling, CPU usage, memory - useful for debugging
+- Dashboard still fully functional from external browser
+
+**Commands:**
+```bash
+# Enable monitor mode (htop on display)
+./scripts/monitor_setup.sh
+
+# Disable monitor mode, re-enable kiosk
+./scripts/kiosk_setup.sh
+```
+
+**Future Plan:**
+Once codebase matures and continuous Claude Rover sessions are no longer needed, may revisit kiosk mode. Potential optimizations:
+- Reduce dashboard refresh rate
+- Use lighter browser (e.g., surf, netsurf)
+- Offload dashboard rendering to a separate device
+
 ### 4.14 Phase 6 Indoor Autonomy Progress (Dec 29, 2025)
 **Status:** RTAB-Map + Nav2 WORKING after DDS middleware debugging
 
