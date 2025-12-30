@@ -5,6 +5,11 @@ Waypoint Recorder Node for Teach & Repeat Patrol System
 Records robot poses at regular intervals while driving manually.
 Saves waypoints to YAML files for later patrol playback.
 
+HYBRID APPROACH (Dec 30, 2025):
+  - Uses wheel odometry to detect WHEN the rover has moved (immune to SLAM drift)
+  - Uses SLAM TF (map→base_link) for WHERE to record (globally consistent position)
+  - This prevents false waypoints when stationary due to SLAM localization noise
+
 Services:
   /patrol/start_recording - Begin recording waypoints
   /patrol/stop_recording - Stop recording (keeps in memory)
@@ -20,6 +25,7 @@ from rclpy.node import Node
 from rclpy.callback_groups import ReentrantCallbackGroup
 from std_srvs.srv import Trigger
 from geometry_msgs.msg import TransformStamped
+from nav_msgs.msg import Odometry
 from tf2_ros import Buffer, TransformListener, TransformException
 import yaml
 import os
@@ -41,10 +47,12 @@ class WaypointRecorder(Node):
         self.declare_parameter('min_distance', 0.30)  # 30cm = rover length
         self.declare_parameter('paths_directory', os.path.expanduser('~/paths'))
         self.declare_parameter('tf_timeout', 0.5)
+        self.declare_parameter('odom_topic', '/odom/wheel_odom')
 
         self.min_distance = self.get_parameter('min_distance').value
         self.paths_dir = Path(self.get_parameter('paths_directory').value)
         self.tf_timeout = self.get_parameter('tf_timeout').value
+        odom_topic = self.get_parameter('odom_topic').value
 
         # Ensure paths directory exists
         self.paths_dir.mkdir(parents=True, exist_ok=True)
@@ -52,9 +60,21 @@ class WaypointRecorder(Node):
         # Recording state
         self.recording = False
         self.waypoints = []
-        self.last_position = None
 
-        # TF2 setup
+        # Odometry-based distance tracking (hybrid approach)
+        # Accumulate distance from wheel encoders, record position from SLAM
+        self.accumulated_distance = 0.0
+        self.last_odom_time = None
+
+        # Subscribe to wheel odometry for motion detection
+        self.odom_sub = self.create_subscription(
+            Odometry,
+            odom_topic,
+            self.odom_callback,
+            10
+        )
+
+        # TF2 setup (for getting SLAM position when recording)
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
@@ -101,11 +121,65 @@ class WaypointRecorder(Node):
 
         self.get_logger().info(
             f'Waypoint Recorder ready. Min distance: {self.min_distance}m, '
-            f'Paths dir: {self.paths_dir}'
+            f'Paths dir: {self.paths_dir}, Odom topic: {odom_topic}'
+        )
+
+    def odom_callback(self, msg: Odometry):
+        """
+        Process wheel odometry to detect actual robot motion.
+
+        This is the TRIGGER for recording - we only record when wheels actually turn.
+        This prevents false waypoints from SLAM drift when stationary.
+        """
+        if not self.recording:
+            return
+
+        current_time = self.get_clock().now()
+
+        if self.last_odom_time is None:
+            self.last_odom_time = current_time
+            return
+
+        # Calculate time delta
+        dt = (current_time - self.last_odom_time).nanoseconds / 1e9
+        self.last_odom_time = current_time
+
+        if dt <= 0 or dt > 1.0:  # Skip invalid or stale data
+            return
+
+        # Get velocity from odometry (twist is in base_link frame)
+        vx = msg.twist.twist.linear.x
+        vy = msg.twist.twist.linear.y
+
+        # Calculate distance traveled in this time step
+        # For Mecanum, we have both forward (vx) and strafe (vy) motion
+        distance_step = math.sqrt(vx * vx + vy * vy) * dt
+
+        # Accumulate distance
+        self.accumulated_distance += distance_step
+
+        # Check if we've traveled far enough to record a waypoint
+        if self.accumulated_distance >= self.min_distance:
+            self.record_waypoint_from_slam()
+            self.accumulated_distance = 0.0  # Reset accumulator
+
+    def record_waypoint_from_slam(self):
+        """Record current SLAM position as a waypoint."""
+        transform = self.get_robot_pose()
+        if transform is None:
+            self.get_logger().warn('Cannot record waypoint: TF lookup failed')
+            return
+
+        pose = self.transform_to_pose(transform)
+        self.waypoints.append(pose)
+
+        self.get_logger().info(
+            f'Recorded waypoint {len(self.waypoints)}: '
+            f'({pose["x"]:.2f}, {pose["y"]:.2f}) [odom triggered]'
         )
 
     def get_robot_pose(self):
-        """Get current robot pose in map frame."""
+        """Get current robot pose in map frame from SLAM."""
         try:
             transform = self.tf_buffer.lookup_transform(
                 'map', 'base_link',
@@ -133,36 +207,9 @@ class WaypointRecorder(Node):
             'theta': float(theta)
         }
 
-    def distance_between(self, pose1: dict, pose2: dict) -> float:
-        """Calculate Euclidean distance between two poses."""
-        dx = pose1['x'] - pose2['x']
-        dy = pose1['y'] - pose2['y']
-        return math.sqrt(dx * dx + dy * dy)
-
     def timer_callback(self):
-        """Periodic callback for recording and status publishing."""
-        # Record waypoints if recording
-        if self.recording:
-            transform = self.get_robot_pose()
-            if transform is not None:
-                current_pose = self.transform_to_pose(transform)
-
-                if self.last_position is None:
-                    # First waypoint
-                    self.waypoints.append(current_pose)
-                    self.last_position = current_pose
-                    self.get_logger().info(f'Recorded waypoint 1: ({current_pose["x"]:.2f}, {current_pose["y"]:.2f})')
-                else:
-                    distance = self.distance_between(current_pose, self.last_position)
-                    if distance >= self.min_distance:
-                        self.waypoints.append(current_pose)
-                        self.last_position = current_pose
-                        self.get_logger().info(
-                            f'Recorded waypoint {len(self.waypoints)}: '
-                            f'({current_pose["x"]:.2f}, {current_pose["y"]:.2f})'
-                        )
-
-        # Publish status
+        """Periodic callback for status publishing."""
+        # Publish status (recording happens in odom_callback now)
         self.publish_status()
 
     def publish_status(self):
@@ -201,11 +248,12 @@ class WaypointRecorder(Node):
 
         self.recording = True
         self.waypoints = []
-        self.last_position = None
+        self.accumulated_distance = 0.0
+        self.last_odom_time = None
 
-        self.get_logger().info('Started recording waypoints')
+        self.get_logger().info('Started recording waypoints (odom-triggered)')
         response.success = True
-        response.message = 'Recording started'
+        response.message = 'Recording started (odometry-triggered)'
         return response
 
     def stop_recording_callback(self, request, response):
@@ -296,9 +344,10 @@ class WaypointRecorder(Node):
         else:
             self.get_logger().warn('Point cloud export service not available')
 
-        # Clear waypoints
+        # Clear waypoints and reset state
         self.waypoints = []
-        self.last_position = None
+        self.accumulated_distance = 0.0
+        self.last_odom_time = None
 
         response.success = True
         response.message = f'Path "{path_name}" saved with {path_data["waypoint_count"]} waypoints'
@@ -312,7 +361,8 @@ class WaypointRecorder(Node):
 
         self.recording = False
         self.waypoints = []
-        self.last_position = None
+        self.accumulated_distance = 0.0
+        self.last_odom_time = None
 
         if was_recording or had_waypoints:
             response.success = True
