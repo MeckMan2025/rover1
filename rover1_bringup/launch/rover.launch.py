@@ -1,11 +1,12 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
-from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument
+from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, SetEnvironmentVariable
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import PathJoinSubstitution, Command, LaunchConfiguration
 from launch_ros.substitutions import FindPackageShare
 from launch_ros.parameter_descriptions import ParameterValue
+
 
 def generate_launch_description():
     pkg_share = FindPackageShare('rover1_bringup')
@@ -20,6 +21,9 @@ def generate_launch_description():
     robot_description = ParameterValue(Command(['xacro ', urdf_file]), value_type=str)
     
     return LaunchDescription([
+        # Use CycloneDDS instead of FastRTPS to avoid shared memory issues on Pi 5
+        SetEnvironmentVariable('RMW_IMPLEMENTATION', 'rmw_cyclonedds_cpp'),
+
         DeclareLaunchArgument(
             'use_joy',
             default_value='true',

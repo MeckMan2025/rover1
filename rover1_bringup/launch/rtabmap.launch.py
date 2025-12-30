@@ -22,7 +22,7 @@ Usage:
 
 from launch import LaunchDescription
 from launch_ros.actions import Node
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, SetEnvironmentVariable
 from launch.substitutions import LaunchConfiguration
 from launch.conditions import IfCondition, UnlessCondition
 
@@ -88,6 +88,9 @@ def generate_launch_description():
     ]
 
     return LaunchDescription([
+        # Use CycloneDDS instead of FastRTPS to avoid shared memory issues on Pi 5
+        SetEnvironmentVariable('RMW_IMPLEMENTATION', 'rmw_cyclonedds_cpp'),
+
         # Arguments
         DeclareLaunchArgument(
             'localization',
