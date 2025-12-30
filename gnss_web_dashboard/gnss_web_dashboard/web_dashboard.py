@@ -16,6 +16,7 @@ import threading
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import os
 from pathlib import Path
+import subprocess
 
 from gnss_health_monitor.msg import GnssHealth
 from sensor_msgs.msg import Image
@@ -63,7 +64,12 @@ class GnssWebDashboard(Node):
             self.image_callback,
             rclpy.qos.qos_profile_sensor_data
         )
-        
+
+        # Power status monitoring (Pi 5 USB-C PD)
+        self.power_status = None
+        self.power_timer = self.create_timer(3.0, self.check_power_status)
+        self.check_power_status()  # Initial check
+
         # Get package directory for serving static files
         try:
             self.package_dir = Path(get_package_share_directory('gnss_web_dashboard'))
@@ -130,6 +136,65 @@ class GnssWebDashboard(Node):
         except Exception as e:
             self.get_logger().error(f"Image processing error: {e}")
 
+    def check_power_status(self):
+        """Check Pi power/throttle status via vcgencmd"""
+        try:
+            result = subprocess.run(
+                ['vcgencmd', 'get_throttled'],
+                capture_output=True,
+                text=True,
+                timeout=2.0
+            )
+            if result.returncode == 0:
+                # Output format: "throttled=0x0" or "throttled=0x50005"
+                output = result.stdout.strip()
+                if '=' in output:
+                    hex_val = output.split('=')[1]
+                    throttle_bits = int(hex_val, 16)
+
+                    # Decode throttle bits
+                    # Bit 0: Under-voltage detected
+                    # Bit 1: Arm frequency capped
+                    # Bit 2: Currently throttled
+                    # Bit 3: Soft temperature limit active
+                    under_voltage = bool(throttle_bits & 0x1)
+                    freq_capped = bool(throttle_bits & 0x2)
+                    throttled = bool(throttle_bits & 0x4)
+                    soft_temp_limit = bool(throttle_bits & 0x8)
+
+                    # Bits 16-19: same but "has occurred"
+                    under_voltage_occurred = bool(throttle_bits & 0x10000)
+                    freq_capped_occurred = bool(throttle_bits & 0x20000)
+                    throttled_occurred = bool(throttle_bits & 0x40000)
+                    soft_temp_occurred = bool(throttle_bits & 0x80000)
+
+                    # Determine overall status
+                    if under_voltage or throttled:
+                        status = 'RESTRICTED'
+                        status_color = 'critical'
+                    elif freq_capped or soft_temp_limit:
+                        status = 'THROTTLED'
+                        status_color = 'warning'
+                    elif under_voltage_occurred or throttled_occurred:
+                        status = 'RECOVERED'
+                        status_color = 'warning'
+                    else:
+                        status = 'OK'
+                        status_color = 'good'
+
+                    self.power_status = {
+                        'status': status,
+                        'status_color': status_color,
+                        'under_voltage': under_voltage,
+                        'throttled': throttled,
+                        'freq_capped': freq_capped,
+                        'soft_temp_limit': soft_temp_limit,
+                        'raw_hex': hex_val
+                    }
+        except Exception as e:
+            self.get_logger().warn(f"Power status check failed: {e}")
+            self.power_status = {'status': 'UNKNOWN', 'status_color': 'unknown'}
+
     def broadcast_data(self):
         """Prepare and broadcast combined health + image data"""
         if self.latest_health is None:
@@ -140,6 +205,8 @@ class GnssWebDashboard(Node):
             payload = self.latest_health.copy()
             if self.latest_image_base64:
                 payload['image'] = self.latest_image_base64
+            if self.power_status:
+                payload['power_status'] = self.power_status
             
         # Broadcast via the WebSocket thread's event loop
         if self.ws_loop:

@@ -234,6 +234,32 @@
         .battery-good { background: #0088ff; }
         .battery-low { background: #ffc107; }
         .battery-critical { background: #ff4444; }
+
+        .power-status-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 15px;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+        }
+
+        .power-icon {
+            font-size: 1.2rem;
+        }
+
+        .power-status-text {
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .power-ok { color: #00ff88; }
+        .power-warning { color: #ffc107; }
+        .power-critical { color: #ff4444; }
+        .power-unknown { color: rgba(255, 255, 255, 0.5); }
         
         .stats-grid {
             display: grid;
@@ -370,6 +396,10 @@
                     <div id="batteryFill" class="battery-fill battery-good" style="width: 0%"></div>
                 </div>
                 <div id="batteryStatus" class="metric-label" style="text-align: center; margin-top: 10px;">--</div>
+                <div class="power-status-indicator">
+                    <span class="power-icon" id="powerIcon">⚡</span>
+                    <span class="power-status-text power-unknown" id="powerStatus">USB-C: --</span>
+                </div>
             </div>
         </div>
         
@@ -457,6 +487,9 @@
 
                 // Battery Status
                 this.updateBatteryStatus(data.battery_voltage);
+
+                // Power Supply Status (USB-C PD)
+                this.updatePowerStatus(data.power_status);
             }
 
             updateVideoFeed(base64Data) {
@@ -589,7 +622,46 @@
                     statusEl.textContent = 'NO DATA';
                 }
             }
-            
+
+            updatePowerStatus(powerStatus) {
+                const iconEl = document.getElementById('powerIcon');
+                const statusEl = document.getElementById('powerStatus');
+
+                if (!powerStatus) {
+                    statusEl.textContent = 'USB-C: --';
+                    statusEl.className = 'power-status-text power-unknown';
+                    return;
+                }
+
+                const status = powerStatus.status;
+                let colorClass, displayText;
+
+                switch (status) {
+                    case 'OK':
+                        colorClass = 'power-ok';
+                        displayText = 'USB-C: OK';
+                        break;
+                    case 'RECOVERED':
+                        colorClass = 'power-warning';
+                        displayText = 'USB-C: RECOVERED';
+                        break;
+                    case 'THROTTLED':
+                        colorClass = 'power-warning';
+                        displayText = powerStatus.soft_temp_limit ? 'TEMP THROTTLED' : 'FREQ CAPPED';
+                        break;
+                    case 'RESTRICTED':
+                        colorClass = 'power-critical';
+                        displayText = powerStatus.under_voltage ? 'LOW VOLTAGE!' : 'THROTTLED!';
+                        break;
+                    default:
+                        colorClass = 'power-unknown';
+                        displayText = 'USB-C: UNKNOWN';
+                }
+
+                statusEl.textContent = displayText;
+                statusEl.className = `power-status-text ${colorClass}`;
+            }
+
             updateLastUpdateDisplay() {
                 const updateEl = document.getElementById('lastUpdate');
                 if (this.lastUpdateTime) {

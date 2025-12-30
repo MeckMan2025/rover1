@@ -26,6 +26,8 @@
   <exec_depend>rtabmap_viz</exec_depend>
 
   <!-- Nav2 for Autonomous Navigation (Phase 6) -->
+  <!-- CycloneDDS avoids FastRTPS shared memory issues on Pi 5 -->
+  <exec_depend>rmw_cyclonedds_cpp</exec_depend>
   <exec_depend>nav2_bringup</exec_depend>
   <exec_depend>nav2_bt_navigator</exec_depend>
   <exec_depend>nav2_controller</exec_depend>
