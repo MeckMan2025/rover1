@@ -1883,10 +1883,19 @@
                 this.dashboard = dashboard;
                 this.currentSpeed = 100;  // Percentage (10-100)
                 this.debounceTimer = null;
+                this.userAdjusting = false;  // Cooldown flag to prevent sync fighting
+                this.syncCooldownTimer = null;
             }
 
             updateSpeed(value) {
                 this.currentSpeed = parseInt(value);
+
+                // Block server sync while user is adjusting
+                this.userAdjusting = true;
+                clearTimeout(this.syncCooldownTimer);
+                this.syncCooldownTimer = setTimeout(() => {
+                    this.userAdjusting = false;
+                }, 1000);  // 1 second cooldown after last adjustment
 
                 // Update display immediately
                 document.getElementById('teleopSpeedValue').textContent = this.currentSpeed + '%';
@@ -1919,6 +1928,9 @@
             }
 
             syncFromServer(speedPercent) {
+                // Skip sync if user is actively adjusting (prevents fighting)
+                if (this.userAdjusting) return;
+
                 // Sync slider when server broadcasts current speed
                 const percent = Math.round(speedPercent * 100);
                 if (percent !== this.currentSpeed) {
