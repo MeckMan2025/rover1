@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  FastRTPS profile that disables Shared Memory transport.
+
+  Problem: On Pi 5, FastRTPS SHM transport leaves stale lock files in /dev/shm
+  after crashes, causing "Failed init_port fastrtps_port7002" errors.
+
+  Solution: Force UDP-only transport, bypassing SHM entirely.
+
+  Usage: Set FASTRTPS_DEFAULT_PROFILES_FILE to point to this file.
+-->
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+    <transport_descriptors>
+        <transport_descriptor>
+            <transport_id>udp_transport</transport_id>
+            <type>UDPv4</type>
+        </transport_descriptor>
+    </transport_descriptors>
+
+    <participant profile_name="participant_no_shm" is_default_profile="true">
+        <rtps>
+            <useBuiltinTransports>false</useBuiltinTransports>
+            <userTransports>
+                <transport_id>udp_transport</transport_id>
+            </userTransports>
+        </rtps>
+    </participant>
+</profiles>

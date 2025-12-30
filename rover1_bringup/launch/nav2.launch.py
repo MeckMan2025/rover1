@@ -7,7 +7,6 @@ Designed for Phase 6: Indoor Autonomy Demo.
 Prerequisites:
   - RTAB-Map must be running (provides /map and localization)
   - rover.launch.py provides base transforms and hardware
-  - CycloneDDS: sudo apt install ros-jazzy-rmw-cyclonedds-cpp
 
 Usage:
   ros2 launch rover1_bringup nav2.launch.py
@@ -36,13 +35,11 @@ def generate_launch_description():
 
     # Default params file path
     default_params_file = PathJoinSubstitution([pkg_share, 'config', 'nav2_params.yaml'])
-    cyclonedds_config = PathJoinSubstitution([pkg_share, 'config', 'cyclonedds.xml'])
+    fastrtps_config = PathJoinSubstitution([pkg_share, 'config', 'fastrtps_no_shm.xml'])
 
     return LaunchDescription([
-        # Use CycloneDDS instead of FastRTPS to avoid shared memory issues on Pi 5
-        # FastRTPS SHM transport fails with stale lock files after crashes
-        SetEnvironmentVariable('RMW_IMPLEMENTATION', 'rmw_cyclonedds_cpp'),
-        SetEnvironmentVariable('CYCLONEDDS_URI', ['file://', cyclonedds_config]),
+        # Use FastRTPS with shared memory disabled to avoid stale lock file issues
+        SetEnvironmentVariable('FASTRTPS_DEFAULT_PROFILES_FILE', fastrtps_config),
 
         # Arguments
         DeclareLaunchArgument(

@@ -31,7 +31,7 @@ from launch_ros.substitutions import FindPackageShare
 def generate_launch_description():
     # Package share for config files
     pkg_share = FindPackageShare('rover1_bringup')
-    cyclonedds_config = PathJoinSubstitution([pkg_share, 'config', 'cyclonedds.xml'])
+    fastrtps_config = PathJoinSubstitution([pkg_share, 'config', 'fastrtps_no_shm.xml'])
 
     # Launch arguments
     localization = LaunchConfiguration('localization', default='false')
@@ -93,9 +93,8 @@ def generate_launch_description():
     ]
 
     return LaunchDescription([
-        # Use CycloneDDS instead of FastRTPS to avoid shared memory issues on Pi 5
-        SetEnvironmentVariable('RMW_IMPLEMENTATION', 'rmw_cyclonedds_cpp'),
-        SetEnvironmentVariable('CYCLONEDDS_URI', ['file://', cyclonedds_config]),
+        # Use FastRTPS with shared memory disabled to avoid stale lock file issues
+        SetEnvironmentVariable('FASTRTPS_DEFAULT_PROFILES_FILE', fastrtps_config),
 
         # Arguments
         DeclareLaunchArgument(
