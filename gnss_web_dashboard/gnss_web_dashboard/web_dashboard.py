@@ -29,6 +29,7 @@ from rover1_patrol.srv import ListPaths, StartPatrol, SavePath
 from std_srvs.srv import Trigger
 from std_msgs.msg import Float32
 from sensor_msgs.msg import Image
+from geometry_msgs.msg import Twist
 from cv_bridge import CvBridge
 import cv2
 import base64
@@ -125,6 +126,11 @@ class Rover1WebDashboard(Node):
         self.teleop_speed_pub = self.create_publisher(Float32, '/teleop/speed_scale', 10)
         self.teleop_speed = 1.0  # Track current speed for dashboard sync
         self.pending_teleop_speed = None  # Thread-safe queue for cross-thread publishing
+
+        # Teleop velocity command publisher (for web-based driving)
+        self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.pending_cmd_vel = None  # Thread-safe queue for cross-thread publishing
+        self.teleop_active = False  # Track if web teleop is actively sending commands
 
         # Timer to publish pending teleop speed from main thread (thread-safe)
         self.create_timer(0.05, self.publish_pending_teleop)  # 20Hz check
@@ -383,6 +389,12 @@ class Rover1WebDashboard(Node):
             return self.set_teleop_speed(cmd.get('speed_percent', 1.0))
         elif action == 'get_pointcloud':
             return self.get_pointcloud(cmd.get('path_name'))
+        elif action == 'teleop':
+            return self.set_teleop_velocity(
+                cmd.get('linear_x', 0.0),
+                cmd.get('linear_y', 0.0),
+                cmd.get('angular_z', 0.0)
+            )
         else:
             return {'success': False, 'message': f'Unknown action: {action}'}
 
@@ -519,11 +531,12 @@ class Rover1WebDashboard(Node):
             return {'success': False, 'message': str(e)}
 
     def publish_pending_teleop(self):
-        """Publish pending teleop speed from main thread (thread-safe).
+        """Publish pending teleop commands from main thread (thread-safe).
 
         Called by timer at 20Hz. This ensures ROS publish happens on the
         main thread where the executor runs, avoiding cross-thread issues.
         """
+        # Publish teleop speed if pending
         if self.pending_teleop_speed is not None:
             speed = self.pending_teleop_speed
             self.pending_teleop_speed = None  # Clear before publish
@@ -532,6 +545,12 @@ class Rover1WebDashboard(Node):
             msg.data = speed
             self.teleop_speed_pub.publish(msg)
             self.get_logger().info(f'Teleop speed published: {int(speed * 100)}%')
+
+        # Publish cmd_vel if pending
+        if self.pending_cmd_vel is not None:
+            twist = self.pending_cmd_vel
+            self.pending_cmd_vel = None  # Clear before publish
+            self.cmd_vel_pub.publish(twist)
 
     def set_teleop_speed(self, speed_percent):
         """Set teleop speed scale (queued for thread-safe publishing).
@@ -546,6 +565,38 @@ class Rover1WebDashboard(Node):
         self.pending_teleop_speed = speed  # Queue for main thread to publish
 
         return {'success': True, 'message': f'Teleop speed set to {int(speed * 100)}%'}
+
+    def set_teleop_velocity(self, linear_x, linear_y, angular_z):
+        """Set teleop velocity command (queued for thread-safe publishing).
+
+        This is called from the WebSocket asyncio thread for web-based driving.
+        Velocities are scaled by the current teleop_speed setting.
+
+        Args:
+            linear_x: Forward/backward velocity (-1.0 to 1.0)
+            linear_y: Strafe left/right velocity (-1.0 to 1.0)
+            angular_z: Rotation velocity (-1.0 to 1.0)
+        """
+        # Base velocities (m/s and rad/s)
+        MAX_LINEAR_VEL = 0.5   # Max linear velocity in m/s
+        MAX_ANGULAR_VEL = 1.5  # Max angular velocity in rad/s
+
+        # Scale by teleop speed setting
+        scale = self.teleop_speed
+
+        # Create Twist message
+        twist = Twist()
+        twist.linear.x = float(linear_x) * MAX_LINEAR_VEL * scale
+        twist.linear.y = float(linear_y) * MAX_LINEAR_VEL * scale
+        twist.linear.z = 0.0
+        twist.angular.x = 0.0
+        twist.angular.y = 0.0
+        twist.angular.z = float(angular_z) * MAX_ANGULAR_VEL * scale
+
+        # Queue for main thread to publish
+        self.pending_cmd_vel = twist
+
+        return {'success': True}
 
 
 class CustomHTTPHandler(SimpleHTTPRequestHandler):

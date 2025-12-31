@@ -162,6 +162,146 @@
             border: none;
         }
 
+        /* Web Teleop Card Styles */
+        .teleop-card {
+            max-width: 500px;
+            margin: 0 auto 30px auto;
+        }
+
+        .teleop-drive-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            padding: 20px;
+        }
+
+        .teleop-row {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        .teleop-btn {
+            width: 70px;
+            height: 70px;
+            border: none;
+            border-radius: 12px;
+            font-size: 1.5rem;
+            font-weight: bold;
+            cursor: pointer;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+            transition: transform 0.1s ease, box-shadow 0.1s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 2px;
+        }
+
+        .teleop-btn-label {
+            font-size: 0.6rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            opacity: 0.8;
+        }
+
+        .teleop-btn-key {
+            font-size: 0.7rem;
+            opacity: 0.6;
+        }
+
+        .teleop-btn-forward {
+            background: linear-gradient(135deg, #00ff88, #00cc6a);
+            color: #000;
+        }
+
+        .teleop-btn-backward {
+            background: linear-gradient(135deg, #ff4444, #cc0000);
+            color: #fff;
+        }
+
+        .teleop-btn-rotate {
+            background: linear-gradient(135deg, #0088ff, #0066cc);
+            color: #fff;
+        }
+
+        .teleop-btn-strafe {
+            background: linear-gradient(135deg, #ffc107, #ff9800);
+            color: #000;
+        }
+
+        .teleop-btn-stop {
+            background: linear-gradient(135deg, #666, #444);
+            color: #fff;
+            width: 70px;
+            height: 70px;
+        }
+
+        .teleop-btn:active,
+        .teleop-btn.active {
+            transform: scale(0.95);
+            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .teleop-btn:hover:not(:active):not(.active) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .teleop-btn.active {
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
+        }
+
+        .teleop-help {
+            text-align: center;
+            margin-top: 15px;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            font-size: 0.85rem;
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        .teleop-help kbd {
+            display: inline-block;
+            padding: 2px 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            font-family: monospace;
+            margin: 0 2px;
+        }
+
+        .teleop-status {
+            text-align: center;
+            margin-top: 10px;
+            font-size: 0.9rem;
+        }
+
+        .teleop-status-active {
+            color: #00ff88;
+        }
+
+        .teleop-status-inactive {
+            color: rgba(255, 255, 255, 0.4);
+        }
+
+        @media (max-width: 480px) {
+            .teleop-btn {
+                width: 60px;
+                height: 60px;
+                font-size: 1.2rem;
+            }
+            .teleop-btn-stop {
+                width: 60px;
+                height: 60px;
+            }
+        }
+
         /* 3D Point Cloud Viewer Styles */
         .pointcloud-card {
             grid-column: 1 / -1;
@@ -842,6 +982,71 @@
             </div>
         </div>
 
+        <!-- Web Teleop Drive Controls -->
+        <div class="card teleop-card">
+            <div class="card-title">Drive Controls</div>
+            <div class="teleop-drive-container">
+                <!-- Top row: Strafe Left, Forward, Strafe Right -->
+                <div class="teleop-row">
+                    <button class="teleop-btn teleop-btn-strafe" id="btnStrafeLeft"
+                            data-action="strafe-left">
+                        <span>&#x2B05;</span>
+                        <span class="teleop-btn-label">Strafe</span>
+                        <span class="teleop-btn-key">[Q]</span>
+                    </button>
+                    <button class="teleop-btn teleop-btn-forward" id="btnForward"
+                            data-action="forward">
+                        <span>&#x2B06;</span>
+                        <span class="teleop-btn-label">Forward</span>
+                        <span class="teleop-btn-key">[W]</span>
+                    </button>
+                    <button class="teleop-btn teleop-btn-strafe" id="btnStrafeRight"
+                            data-action="strafe-right">
+                        <span>&#x27A1;</span>
+                        <span class="teleop-btn-label">Strafe</span>
+                        <span class="teleop-btn-key">[E]</span>
+                    </button>
+                </div>
+                <!-- Middle row: Rotate Left, Stop, Rotate Right -->
+                <div class="teleop-row">
+                    <button class="teleop-btn teleop-btn-rotate" id="btnRotateLeft"
+                            data-action="rotate-left">
+                        <span>&#x21BA;</span>
+                        <span class="teleop-btn-label">Rotate</span>
+                        <span class="teleop-btn-key">[S]</span>
+                    </button>
+                    <button class="teleop-btn teleop-btn-stop" id="btnStop"
+                            data-action="stop">
+                        <span>&#x23F9;</span>
+                        <span class="teleop-btn-label">Stop</span>
+                    </button>
+                    <button class="teleop-btn teleop-btn-rotate" id="btnRotateRight"
+                            data-action="rotate-right">
+                        <span>&#x21BB;</span>
+                        <span class="teleop-btn-label">Rotate</span>
+                        <span class="teleop-btn-key">[D]</span>
+                    </button>
+                </div>
+                <!-- Bottom row: Backward -->
+                <div class="teleop-row">
+                    <button class="teleop-btn teleop-btn-backward" id="btnBackward"
+                            data-action="backward">
+                        <span>&#x2B07;</span>
+                        <span class="teleop-btn-label">Backward</span>
+                        <span class="teleop-btn-key">[A]</span>
+                    </button>
+                </div>
+            </div>
+            <div class="teleop-help">
+                Keyboard: <kbd>W</kbd> Forward <kbd>A</kbd> Backward
+                <kbd>S</kbd> Rotate Left <kbd>D</kbd> Rotate Right
+                <kbd>Q</kbd> Strafe Left <kbd>E</kbd> Strafe Right
+            </div>
+            <div class="teleop-status" id="teleopStatus">
+                <span class="teleop-status-inactive">Ready - press buttons or use keyboard</span>
+            </div>
+        </div>
+
         <!-- Street Map Section -->
         <div class="card map-card" style="max-width: 800px; margin: 0 auto 30px auto;">
             <div class="card-title">Rover Location</div>
@@ -1108,6 +1313,7 @@
         let mapController = null;
         let teleopController = null;
         let pointcloudViewer = null;
+        let webTeleopController = null;
 
         class Rover1Dashboard {
             constructor() {
@@ -1963,6 +2169,228 @@
             }
         }
 
+        class WebTeleopController {
+            constructor(dashboard) {
+                this.dashboard = dashboard;
+                this.activeActions = new Set();
+                this.sendInterval = null;
+                this.lastSentTime = 0;
+                this.SEND_RATE_MS = 50;  // Send commands at 20Hz
+
+                // Key mappings (user specified: W=fwd, A=back, S=rot-left, D=rot-right, Q=strafe-left, E=strafe-right)
+                this.keyMap = {
+                    'KeyW': 'forward',
+                    'KeyA': 'backward',
+                    'KeyS': 'rotate-left',
+                    'KeyD': 'rotate-right',
+                    'KeyQ': 'strafe-left',
+                    'KeyE': 'strafe-right'
+                };
+
+                // Action to velocity mapping
+                this.actionVelocities = {
+                    'forward':      { linear_x:  1.0, linear_y:  0.0, angular_z:  0.0 },
+                    'backward':     { linear_x: -1.0, linear_y:  0.0, angular_z:  0.0 },
+                    'rotate-left':  { linear_x:  0.0, linear_y:  0.0, angular_z:  1.0 },
+                    'rotate-right': { linear_x:  0.0, linear_y:  0.0, angular_z: -1.0 },
+                    'strafe-left':  { linear_x:  0.0, linear_y:  1.0, angular_z:  0.0 },
+                    'strafe-right': { linear_x:  0.0, linear_y: -1.0, angular_z:  0.0 },
+                    'stop':         { linear_x:  0.0, linear_y:  0.0, angular_z:  0.0 }
+                };
+
+                this.setupKeyboardListeners();
+                this.setupTouchListeners();
+            }
+
+            setupKeyboardListeners() {
+                document.addEventListener('keydown', (e) => {
+                    // Ignore if typing in an input
+                    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+                    const action = this.keyMap[e.code];
+                    if (action && !this.activeActions.has(action)) {
+                        e.preventDefault();
+                        this.startAction(action);
+                        this.highlightButton(action, true);
+                    }
+                });
+
+                document.addEventListener('keyup', (e) => {
+                    const action = this.keyMap[e.code];
+                    if (action) {
+                        e.preventDefault();
+                        this.stopAction(action);
+                        this.highlightButton(action, false);
+                    }
+                });
+
+                // Stop all on window blur (e.g., switching tabs)
+                window.addEventListener('blur', () => this.stopAll());
+            }
+
+            setupTouchListeners() {
+                const buttons = document.querySelectorAll('.teleop-btn');
+
+                buttons.forEach(btn => {
+                    const action = btn.dataset.action;
+                    if (!action) return;
+
+                    // Touch events for mobile
+                    btn.addEventListener('touchstart', (e) => {
+                        e.preventDefault();
+                        if (action === 'stop') {
+                            this.stopAll();
+                        } else {
+                            this.startAction(action);
+                            btn.classList.add('active');
+                        }
+                    }, { passive: false });
+
+                    btn.addEventListener('touchend', (e) => {
+                        e.preventDefault();
+                        if (action !== 'stop') {
+                            this.stopAction(action);
+                            btn.classList.remove('active');
+                        }
+                    }, { passive: false });
+
+                    btn.addEventListener('touchcancel', (e) => {
+                        if (action !== 'stop') {
+                            this.stopAction(action);
+                            btn.classList.remove('active');
+                        }
+                    });
+
+                    // Mouse events for desktop clicking
+                    btn.addEventListener('mousedown', (e) => {
+                        if (action === 'stop') {
+                            this.stopAll();
+                        } else {
+                            this.startAction(action);
+                            btn.classList.add('active');
+                        }
+                    });
+
+                    btn.addEventListener('mouseup', (e) => {
+                        if (action !== 'stop') {
+                            this.stopAction(action);
+                            btn.classList.remove('active');
+                        }
+                    });
+
+                    btn.addEventListener('mouseleave', (e) => {
+                        if (action !== 'stop' && this.activeActions.has(action)) {
+                            this.stopAction(action);
+                            btn.classList.remove('active');
+                        }
+                    });
+                });
+
+                // Handle multi-touch - prevent default to avoid scrolling while driving
+                document.querySelector('.teleop-drive-container').addEventListener('touchmove', (e) => {
+                    e.preventDefault();
+                }, { passive: false });
+            }
+
+            highlightButton(action, active) {
+                const buttonMap = {
+                    'forward': 'btnForward',
+                    'backward': 'btnBackward',
+                    'rotate-left': 'btnRotateLeft',
+                    'rotate-right': 'btnRotateRight',
+                    'strafe-left': 'btnStrafeLeft',
+                    'strafe-right': 'btnStrafeRight'
+                };
+                const btnId = buttonMap[action];
+                if (btnId) {
+                    const btn = document.getElementById(btnId);
+                    if (btn) {
+                        if (active) {
+                            btn.classList.add('active');
+                        } else {
+                            btn.classList.remove('active');
+                        }
+                    }
+                }
+            }
+
+            startAction(action) {
+                this.activeActions.add(action);
+                this.updateStatus();
+                this.startSending();
+            }
+
+            stopAction(action) {
+                this.activeActions.delete(action);
+                this.updateStatus();
+                if (this.activeActions.size === 0) {
+                    this.stopSending();
+                    this.sendCommand({ linear_x: 0, linear_y: 0, angular_z: 0 });
+                }
+            }
+
+            stopAll() {
+                this.activeActions.clear();
+                document.querySelectorAll('.teleop-btn').forEach(btn => btn.classList.remove('active'));
+                this.updateStatus();
+                this.stopSending();
+                this.sendCommand({ linear_x: 0, linear_y: 0, angular_z: 0 });
+            }
+
+            startSending() {
+                if (this.sendInterval) return;
+                this.sendInterval = setInterval(() => this.sendCurrentVelocity(), this.SEND_RATE_MS);
+                this.sendCurrentVelocity();  // Send immediately
+            }
+
+            stopSending() {
+                if (this.sendInterval) {
+                    clearInterval(this.sendInterval);
+                    this.sendInterval = null;
+                }
+            }
+
+            sendCurrentVelocity() {
+                // Combine all active actions into a single velocity command
+                let linear_x = 0, linear_y = 0, angular_z = 0;
+
+                this.activeActions.forEach(action => {
+                    const vel = this.actionVelocities[action];
+                    if (vel) {
+                        linear_x += vel.linear_x;
+                        linear_y += vel.linear_y;
+                        angular_z += vel.angular_z;
+                    }
+                });
+
+                // Clamp values to [-1, 1]
+                linear_x = Math.max(-1, Math.min(1, linear_x));
+                linear_y = Math.max(-1, Math.min(1, linear_y));
+                angular_z = Math.max(-1, Math.min(1, angular_z));
+
+                this.sendCommand({ linear_x, linear_y, angular_z });
+            }
+
+            sendCommand(velocity) {
+                this.dashboard.sendCommand({
+                    action: 'teleop',
+                    linear_x: velocity.linear_x,
+                    linear_y: velocity.linear_y,
+                    angular_z: velocity.angular_z
+                });
+            }
+
+            updateStatus() {
+                const statusEl = document.getElementById('teleopStatus');
+                if (this.activeActions.size > 0) {
+                    const actions = Array.from(this.activeActions).join(' + ');
+                    statusEl.innerHTML = `<span class="teleop-status-active">DRIVING: ${actions.toUpperCase()}</span>`;
+                } else {
+                    statusEl.innerHTML = `<span class="teleop-status-inactive">Ready - press buttons or use keyboard</span>`;
+                }
+            }
+        }
+
         class PointCloudViewer {
             constructor() {
                 this.scene = null;
@@ -2218,6 +2646,7 @@
             patrol = new PatrolController(dashboard);
             mapController = new MapController();
             teleopController = new TeleopController(dashboard);
+            webTeleopController = new WebTeleopController(dashboard);
             pointcloudViewer = new PointCloudViewer();
             dashboard.setPatrolController(patrol);
             dashboard.setTeleopController(teleopController);
