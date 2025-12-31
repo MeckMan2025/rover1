@@ -18,9 +18,10 @@
             <Interfaces>
                 <NetworkInterface name="wlan0" priority="default" multicast="true" />
             </Interfaces>
-            <!-- Increase participant limit for complex launch -->
-            <MaxParticipants>120</MaxParticipants>
         </General>
+        <Discovery>
+            <MaxAutoParticipantIndex>120</MaxAutoParticipantIndex>
+        </Discovery>
         <Tracing>
             <Verbosity>warning</Verbosity>
         </Tracing>
