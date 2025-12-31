@@ -1013,7 +1013,7 @@
                             data-action="rotate-left">
                         <span>&#x21BA;</span>
                         <span class="teleop-btn-label">Rotate</span>
-                        <span class="teleop-btn-key">[S]</span>
+                        <span class="teleop-btn-key">[A]</span>
                     </button>
                     <button class="teleop-btn teleop-btn-stop" id="btnStop"
                             data-action="stop">
@@ -1033,13 +1033,13 @@
                             data-action="backward">
                         <span>&#x2B07;</span>
                         <span class="teleop-btn-label">Backward</span>
-                        <span class="teleop-btn-key">[A]</span>
+                        <span class="teleop-btn-key">[S]</span>
                     </button>
                 </div>
             </div>
             <div class="teleop-help">
-                Keyboard: <kbd>W</kbd> Forward <kbd>A</kbd> Backward
-                <kbd>S</kbd> Rotate Left <kbd>D</kbd> Rotate Right
+                Keyboard: <kbd>W</kbd> Forward <kbd>S</kbd> Backward
+                <kbd>A</kbd> Rotate Left <kbd>D</kbd> Rotate Right
                 <kbd>Q</kbd> Strafe Left <kbd>E</kbd> Strafe Right
             </div>
             <div class="teleop-status" id="teleopStatus">
@@ -2177,11 +2177,11 @@
                 this.lastSentTime = 0;
                 this.SEND_RATE_MS = 50;  // Send commands at 20Hz
 
-                // Key mappings (user specified: W=fwd, A=back, S=rot-left, D=rot-right, Q=strafe-left, E=strafe-right)
+                // Key mappings: W=fwd, S=back, A=rot-left, D=rot-right, Q=strafe-left, E=strafe-right
                 this.keyMap = {
                     'KeyW': 'forward',
-                    'KeyA': 'backward',
-                    'KeyS': 'rotate-left',
+                    'KeyS': 'backward',
+                    'KeyA': 'rotate-left',
                     'KeyD': 'rotate-right',
                     'KeyQ': 'strafe-left',
                     'KeyE': 'strafe-right'
