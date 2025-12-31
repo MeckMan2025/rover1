@@ -34,30 +34,25 @@ source /opt/ros/jazzy/setup.bash
 source scripts/load_env.sh
 source ~/ros2_ws/install/setup.bash
 
-# 4. Launch Full Autonomy Stack (Note: No 'screen' here, systemd logs to journalctl)
-echo ">>> Starting Rover1 Full Autonomy Stack..."
+# 4. Launch Essential Stack (Teleop + Camera + Odometry Patrol)
+# NOTE: RTAB-Map and Nav2 disabled - too heavy for Pi 5, causes instability
+# Use patrol_lite which includes simple_waypoint_follower (odometry-based)
+echo ">>> Starting Rover1 Essential Stack..."
 
 # Launch base rover in background
-echo ">>> [1/4] Launching rover base system..."
+echo ">>> [1/2] Launching rover base system..."
 ros2 launch rover1_bringup rover.launch.py &
 ROVER_PID=$!
-sleep 30
+sleep 20
 
-# Launch RTAB-Map SLAM
-echo ">>> [2/4] Launching RTAB-Map SLAM..."
-ros2 launch rover1_bringup rtabmap.launch.py &
-sleep 30
+# Launch lightweight patrol (waypoint recorder + simple follower + dashboard)
+echo ">>> [2/2] Launching lightweight patrol system..."
+ros2 launch rover1_bringup patrol_lite.launch.py &
+sleep 10
 
-# Launch Nav2 navigation stack
-echo ">>> [3/4] Launching Nav2 navigation..."
-ros2 launch rover1_bringup nav2.launch.py &
-sleep 60
-
-# Launch Patrol system
-echo ">>> [4/4] Launching Patrol system..."
-ros2 launch rover1_patrol patrol.launch.py &
-
-echo ">>> Full autonomy stack launched. Waiting on rover base process..."
+echo ">>> Essential stack launched (teleop + camera + odometry patrol)."
+echo ">>> RTAB-Map and Nav2 are DISABLED for stability."
+echo ">>> Dashboard available at http://rover1.local:8080"
 
 # Wait for rover (main process) - keeps systemd happy
 wait $ROVER_PID
