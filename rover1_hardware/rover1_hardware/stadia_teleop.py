@@ -146,35 +146,41 @@ class StadiaTeleop(Node):
                 f'Moved=[{mv[0]},{mv[1]},{mv[2]}] Active=[{act[0]},{act[1]},{act[2]}]'
             )
 
-        # Log deadman state changes
+        # Log deadman state changes and handle transitions
         if deadman_pressed != self.deadman_active:
             self.deadman_active = deadman_pressed
             if deadman_pressed:
                 self.get_logger().info('System Armed - move joysticks to enable axes')
             else:
                 self.get_logger().info('Deadman RELEASED - stopping')
+                # Publish ONE stop command, then go silent to allow other sources (dashboard)
+                self.publisher.publish(twist)
+                return
 
-        if deadman_pressed:
-            # Get axis values with per-axis activation check and deadzone filtering
-            # Unactivated axes return 0.0, activated axes return filtered value
-            left_y = self.get_axis_value(self.AXIS_LEFT_Y, msg.axes[self.AXIS_LEFT_Y])
-            left_x = self.get_axis_value(self.AXIS_LEFT_X, msg.axes[self.AXIS_LEFT_X])
-            right_x = self.get_axis_value(self.AXIS_RIGHT_X, msg.axes[self.AXIS_RIGHT_X])
+        # Only publish when deadman is pressed (allows dashboard control when not using controller)
+        if not deadman_pressed:
+            return
 
-            # Apply speed scale to max velocities
-            scaled_linear = self.max_linear * self.speed_scale
-            scaled_angular = self.max_angular * self.speed_scale
+        # Get axis values with per-axis activation check and deadzone filtering
+        # Unactivated axes return 0.0, activated axes return filtered value
+        left_y = self.get_axis_value(self.AXIS_LEFT_Y, msg.axes[self.AXIS_LEFT_Y])
+        left_x = self.get_axis_value(self.AXIS_LEFT_X, msg.axes[self.AXIS_LEFT_X])
+        right_x = self.get_axis_value(self.AXIS_RIGHT_X, msg.axes[self.AXIS_RIGHT_X])
 
-            # LS Forward/Back -> linear.x
-            twist.linear.x = left_y * scaled_linear
+        # Apply speed scale to max velocities
+        scaled_linear = self.max_linear * self.speed_scale
+        scaled_angular = self.max_angular * self.speed_scale
 
-            # RS Left/Right -> linear.y (Strafe)
-            twist.linear.y = right_x * scaled_linear
+        # LS Forward/Back -> linear.x
+        twist.linear.x = left_y * scaled_linear
 
-            # LS Left/Right -> angular.z (Rotate)
-            twist.angular.z = left_x * scaled_angular
+        # RS Left/Right -> linear.y (Strafe)
+        twist.linear.y = right_x * scaled_linear
 
-        # Always publish (zero twist when deadman released = immediate stop)
+        # LS Left/Right -> angular.z (Rotate)
+        twist.angular.z = left_x * scaled_angular
+
+        # Publish velocity command
         self.publisher.publish(twist)
 
 def main(args=None):
