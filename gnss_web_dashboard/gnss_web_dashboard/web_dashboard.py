@@ -110,6 +110,10 @@ class Rover1WebDashboard(Node):
         # Teleop speed control publisher
         self.teleop_speed_pub = self.create_publisher(Float32, '/teleop/speed_scale', 10)
         self.teleop_speed = 1.0  # Track current speed for dashboard sync
+        self.pending_teleop_speed = None  # Thread-safe queue for cross-thread publishing
+
+        # Timer to publish pending teleop speed from main thread (thread-safe)
+        self.create_timer(0.05, self.publish_pending_teleop)  # 20Hz check
 
         # Get package directory for serving static files
         try:
@@ -487,18 +491,33 @@ class Rover1WebDashboard(Node):
         except Exception as e:
             return {'success': False, 'message': str(e)}
 
+    def publish_pending_teleop(self):
+        """Publish pending teleop speed from main thread (thread-safe).
+
+        Called by timer at 20Hz. This ensures ROS publish happens on the
+        main thread where the executor runs, avoiding cross-thread issues.
+        """
+        if self.pending_teleop_speed is not None:
+            speed = self.pending_teleop_speed
+            self.pending_teleop_speed = None  # Clear before publish
+
+            msg = Float32()
+            msg.data = speed
+            self.teleop_speed_pub.publish(msg)
+            self.get_logger().info(f'Teleop speed published: {int(speed * 100)}%')
+
     def set_teleop_speed(self, speed_percent):
-        """Set teleop speed scale and publish to ROS topic"""
+        """Set teleop speed scale (queued for thread-safe publishing).
+
+        This is called from the WebSocket asyncio thread. We queue the
+        speed value for the main thread timer to publish, avoiding
+        cross-thread ROS publisher issues.
+        """
         # Clamp to valid range [0.1, 1.0]
         speed = max(0.1, min(1.0, float(speed_percent)))
         self.teleop_speed = speed
+        self.pending_teleop_speed = speed  # Queue for main thread to publish
 
-        # Publish to ROS topic
-        msg = Float32()
-        msg.data = speed
-        self.teleop_speed_pub.publish(msg)
-
-        self.get_logger().info(f'Teleop speed set to {int(speed * 100)}%')
         return {'success': True, 'message': f'Teleop speed set to {int(speed * 100)}%'}
 
 
