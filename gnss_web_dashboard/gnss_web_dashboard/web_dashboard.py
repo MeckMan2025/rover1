@@ -395,6 +395,10 @@ class Rover1WebDashboard(Node):
                 cmd.get('linear_y', 0.0),
                 cmd.get('angular_z', 0.0)
             )
+        elif action == 'shutdown':
+            return self.system_shutdown()
+        elif action == 'reboot':
+            return self.system_reboot()
         else:
             return {'success': False, 'message': f'Unknown action: {action}'}
 
@@ -597,6 +601,36 @@ class Rover1WebDashboard(Node):
         self.pending_cmd_vel = twist
 
         return {'success': True}
+
+    def system_shutdown(self):
+        """Initiate system shutdown."""
+        self.get_logger().warn('Shutdown requested via web dashboard!')
+        try:
+            # Use subprocess to call shutdown with a small delay
+            # This allows the response to be sent before shutdown begins
+            subprocess.Popen(
+                ['sudo', 'shutdown', '-h', '+0'],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            return {'success': True, 'message': 'Shutdown initiated. Goodbye!'}
+        except Exception as e:
+            self.get_logger().error(f'Shutdown failed: {e}')
+            return {'success': False, 'message': f'Shutdown failed: {e}'}
+
+    def system_reboot(self):
+        """Initiate system reboot."""
+        self.get_logger().warn('Reboot requested via web dashboard!')
+        try:
+            subprocess.Popen(
+                ['sudo', 'reboot'],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            return {'success': True, 'message': 'Reboot initiated. See you soon!'}
+        except Exception as e:
+            self.get_logger().error(f'Reboot failed: {e}')
+            return {'success': False, 'message': f'Reboot failed: {e}'}
 
 
 class CustomHTTPHandler(SimpleHTTPRequestHandler):

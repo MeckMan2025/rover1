@@ -302,6 +302,105 @@
             }
         }
 
+        /* Power Controls Card Styles */
+        .power-card {
+            max-width: 400px;
+            margin: 30px auto;
+            border: 1px solid rgba(255, 68, 68, 0.3);
+        }
+
+        .power-btn-group {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .power-btn {
+            padding: 15px 30px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .power-btn-shutdown {
+            background: linear-gradient(135deg, #ff4444, #cc0000);
+            color: #fff;
+        }
+
+        .power-btn-shutdown:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(255, 68, 68, 0.4);
+        }
+
+        .power-btn-reboot {
+            background: linear-gradient(135deg, #ffc107, #ff9800);
+            color: #000;
+        }
+
+        .power-btn-reboot:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(255, 193, 7, 0.4);
+        }
+
+        .power-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .power-confirm-dialog {
+            display: none;
+            margin-top: 20px;
+            padding: 20px;
+            background: rgba(255, 68, 68, 0.1);
+            border: 1px solid rgba(255, 68, 68, 0.3);
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .power-confirm-dialog.active {
+            display: block;
+        }
+
+        .power-confirm-msg {
+            margin-bottom: 15px;
+            font-size: 1.1rem;
+            color: #ff4444;
+        }
+
+        .power-confirm-btns {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        .power-confirm-yes {
+            background: #ff4444;
+            color: #fff;
+            padding: 10px 25px;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .power-confirm-no {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            padding: 10px 25px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
         /* 3D Point Cloud Viewer Styles */
         .pointcloud-card {
             grid-column: 1 / -1;
@@ -1297,6 +1396,26 @@
             </div>
         </div>
 
+        <!-- Power Controls Card -->
+        <div class="card power-card">
+            <div class="card-title">Power Controls</div>
+            <div class="power-btn-group">
+                <button class="power-btn power-btn-reboot" onclick="powerController.requestReboot()">
+                    <span>&#x21BB;</span> Reboot
+                </button>
+                <button class="power-btn power-btn-shutdown" onclick="powerController.requestShutdown()">
+                    <span>&#x23FB;</span> Shutdown
+                </button>
+            </div>
+            <div id="powerConfirmDialog" class="power-confirm-dialog">
+                <div class="power-confirm-msg" id="powerConfirmMsg">Are you sure?</div>
+                <div class="power-confirm-btns">
+                    <button class="power-confirm-yes" onclick="powerController.confirmAction()">Yes, do it</button>
+                    <button class="power-confirm-no" onclick="powerController.cancelAction()">Cancel</button>
+                </div>
+            </div>
+        </div>
+
         <div class="last-update" id="lastUpdate">
             Last updated: Never
         </div>
@@ -1314,6 +1433,7 @@
         let teleopController = null;
         let pointcloudViewer = null;
         let webTeleopController = null;
+        let powerController = null;
 
         class Rover1Dashboard {
             constructor() {
@@ -2391,6 +2511,59 @@
             }
         }
 
+        class PowerController {
+            constructor(dashboard) {
+                this.dashboard = dashboard;
+                this.pendingAction = null;  // 'shutdown' or 'reboot'
+            }
+
+            requestShutdown() {
+                this.pendingAction = 'shutdown';
+                this.showConfirm('Shut down the rover? You will need physical access to turn it back on.');
+            }
+
+            requestReboot() {
+                this.pendingAction = 'reboot';
+                this.showConfirm('Reboot the rover? It will be back online in about 60 seconds.');
+            }
+
+            showConfirm(message) {
+                document.getElementById('powerConfirmMsg').textContent = message;
+                document.getElementById('powerConfirmDialog').classList.add('active');
+            }
+
+            hideConfirm() {
+                document.getElementById('powerConfirmDialog').classList.remove('active');
+                this.pendingAction = null;
+            }
+
+            cancelAction() {
+                this.hideConfirm();
+            }
+
+            confirmAction() {
+                if (!this.pendingAction) return;
+
+                const action = this.pendingAction;
+                this.hideConfirm();
+
+                // Send command to server
+                this.dashboard.sendCommand({ action: action });
+
+                // Show feedback
+                const msg = action === 'shutdown'
+                    ? 'Shutting down... Goodbye!'
+                    : 'Rebooting... See you in ~60 seconds!';
+
+                document.getElementById('powerConfirmMsg').textContent = msg;
+                document.getElementById('powerConfirmDialog').classList.add('active');
+                document.querySelector('.power-confirm-btns').style.display = 'none';
+
+                // For reboot, the page will eventually reconnect
+                // For shutdown, user will need to close the page
+            }
+        }
+
         class PointCloudViewer {
             constructor() {
                 this.scene = null;
@@ -2647,6 +2820,7 @@
             mapController = new MapController();
             teleopController = new TeleopController(dashboard);
             webTeleopController = new WebTeleopController(dashboard);
+            powerController = new PowerController(dashboard);
             pointcloudViewer = new PointCloudViewer();
             dashboard.setPatrolController(patrol);
             dashboard.setTeleopController(teleopController);
