@@ -162,7 +162,7 @@
             border: none;
         }
 
-        /* Web Teleop Card Styles */
+        /* Web Teleop Card Styles - Two-thumb layout */
         .teleop-card {
             max-width: 500px;
             margin: 0 auto 30px auto;
@@ -170,21 +170,39 @@
 
         .teleop-drive-container {
             display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 10px;
+            justify-content: space-between;
+            align-items: stretch;
+            gap: 20px;
             padding: 20px;
+            touch-action: none;
+            -webkit-touch-callout: none;
         }
 
-        .teleop-row {
+        /* Left thumb zone - Forward/Backward stacked vertically */
+        .teleop-left-zone {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            flex: 1;
+        }
+
+        /* Right thumb zone - Rotate and Strafe in 2x2 grid */
+        .teleop-right-zone {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            flex: 1;
+        }
+
+        .teleop-right-row {
             display: flex;
             gap: 10px;
             justify-content: center;
         }
 
         .teleop-btn {
-            width: 70px;
-            height: 70px;
+            width: 80px;
+            height: 80px;
             border: none;
             border-radius: 12px;
             font-size: 1.5rem;
@@ -192,8 +210,9 @@
             cursor: pointer;
             user-select: none;
             -webkit-user-select: none;
-            touch-action: manipulation;
-            transition: transform 0.1s ease, box-shadow 0.1s ease;
+            -webkit-touch-callout: none;
+            touch-action: none;
+            transition: transform 0.05s ease, box-shadow 0.05s ease;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -201,8 +220,14 @@
             gap: 2px;
         }
 
+        /* Large buttons for left zone (forward/backward) */
+        .teleop-btn-large {
+            width: 100%;
+            height: 90px;
+        }
+
         .teleop-btn-label {
-            font-size: 0.6rem;
+            font-size: 0.65rem;
             font-weight: 500;
             text-transform: uppercase;
             letter-spacing: 0.5px;
@@ -234,26 +259,14 @@
             color: #000;
         }
 
-        .teleop-btn-stop {
-            background: linear-gradient(135deg, #666, #444);
-            color: #fff;
-            width: 70px;
-            height: 70px;
-        }
-
         .teleop-btn:active,
         .teleop-btn.active {
             transform: scale(0.95);
             box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
         }
 
-        .teleop-btn:hover:not(:active):not(.active) {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        }
-
         .teleop-btn.active {
-            box-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
+            box-shadow: 0 0 25px rgba(0, 255, 136, 0.6);
         }
 
         .teleop-help {
@@ -262,7 +275,7 @@
             padding: 10px;
             background: rgba(255, 255, 255, 0.05);
             border-radius: 8px;
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             color: rgba(255, 255, 255, 0.6);
         }
 
@@ -290,15 +303,27 @@
             color: rgba(255, 255, 255, 0.4);
         }
 
-        @media (max-width: 480px) {
+        .teleop-zone-label {
+            text-align: center;
+            font-size: 0.7rem;
+            color: rgba(255, 255, 255, 0.4);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 5px;
+        }
+
+        @media (max-width: 400px) {
             .teleop-btn {
-                width: 60px;
-                height: 60px;
+                width: 65px;
+                height: 65px;
                 font-size: 1.2rem;
             }
-            .teleop-btn-stop {
-                width: 60px;
-                height: 60px;
+            .teleop-btn-large {
+                height: 75px;
+            }
+            .teleop-drive-container {
+                gap: 10px;
+                padding: 15px;
             }
         }
 
@@ -1081,68 +1106,66 @@
             </div>
         </div>
 
-        <!-- Web Teleop Drive Controls -->
+        <!-- Web Teleop Drive Controls - Two-thumb layout -->
         <div class="card teleop-card">
             <div class="card-title">Drive Controls</div>
-            <div class="teleop-drive-container">
-                <!-- Top row: Strafe Left, Forward, Strafe Right -->
-                <div class="teleop-row">
-                    <button class="teleop-btn teleop-btn-strafe" id="btnStrafeLeft"
-                            data-action="strafe-left">
-                        <span>&#x2B05;</span>
-                        <span class="teleop-btn-label">Strafe</span>
-                        <span class="teleop-btn-key">[Q]</span>
-                    </button>
-                    <button class="teleop-btn teleop-btn-forward" id="btnForward"
+            <div class="teleop-drive-container" id="teleopContainer">
+                <!-- Left thumb zone: Forward/Backward -->
+                <div class="teleop-left-zone">
+                    <div class="teleop-zone-label">Left Thumb</div>
+                    <button class="teleop-btn teleop-btn-large teleop-btn-forward" id="btnForward"
                             data-action="forward">
                         <span>&#x2B06;</span>
                         <span class="teleop-btn-label">Forward</span>
                         <span class="teleop-btn-key">[W]</span>
                     </button>
-                    <button class="teleop-btn teleop-btn-strafe" id="btnStrafeRight"
-                            data-action="strafe-right">
-                        <span>&#x27A1;</span>
-                        <span class="teleop-btn-label">Strafe</span>
-                        <span class="teleop-btn-key">[E]</span>
-                    </button>
-                </div>
-                <!-- Middle row: Rotate Left, Stop, Rotate Right -->
-                <div class="teleop-row">
-                    <button class="teleop-btn teleop-btn-rotate" id="btnRotateLeft"
-                            data-action="rotate-left">
-                        <span>&#x21BA;</span>
-                        <span class="teleop-btn-label">Rotate</span>
-                        <span class="teleop-btn-key">[A]</span>
-                    </button>
-                    <button class="teleop-btn teleop-btn-stop" id="btnStop"
-                            data-action="stop">
-                        <span>&#x23F9;</span>
-                        <span class="teleop-btn-label">Stop</span>
-                    </button>
-                    <button class="teleop-btn teleop-btn-rotate" id="btnRotateRight"
-                            data-action="rotate-right">
-                        <span>&#x21BB;</span>
-                        <span class="teleop-btn-label">Rotate</span>
-                        <span class="teleop-btn-key">[D]</span>
-                    </button>
-                </div>
-                <!-- Bottom row: Backward -->
-                <div class="teleop-row">
-                    <button class="teleop-btn teleop-btn-backward" id="btnBackward"
+                    <button class="teleop-btn teleop-btn-large teleop-btn-backward" id="btnBackward"
                             data-action="backward">
                         <span>&#x2B07;</span>
                         <span class="teleop-btn-label">Backward</span>
                         <span class="teleop-btn-key">[S]</span>
                     </button>
                 </div>
+                <!-- Right thumb zone: Rotate and Strafe -->
+                <div class="teleop-right-zone">
+                    <div class="teleop-zone-label">Right Thumb</div>
+                    <div class="teleop-right-row">
+                        <button class="teleop-btn teleop-btn-rotate" id="btnRotateLeft"
+                                data-action="rotate-left">
+                            <span>&#x21BA;</span>
+                            <span class="teleop-btn-label">Rotate</span>
+                            <span class="teleop-btn-key">[A]</span>
+                        </button>
+                        <button class="teleop-btn teleop-btn-rotate" id="btnRotateRight"
+                                data-action="rotate-right">
+                            <span>&#x21BB;</span>
+                            <span class="teleop-btn-label">Rotate</span>
+                            <span class="teleop-btn-key">[D]</span>
+                        </button>
+                    </div>
+                    <div class="teleop-right-row">
+                        <button class="teleop-btn teleop-btn-strafe" id="btnStrafeLeft"
+                                data-action="strafe-left">
+                            <span>&#x2B05;</span>
+                            <span class="teleop-btn-label">Strafe</span>
+                            <span class="teleop-btn-key">[Q]</span>
+                        </button>
+                        <button class="teleop-btn teleop-btn-strafe" id="btnStrafeRight"
+                                data-action="strafe-right">
+                            <span>&#x27A1;</span>
+                            <span class="teleop-btn-label">Strafe</span>
+                            <span class="teleop-btn-key">[E]</span>
+                        </button>
+                    </div>
+                </div>
             </div>
             <div class="teleop-help">
-                Keyboard: <kbd>W</kbd> Forward <kbd>S</kbd> Backward
-                <kbd>A</kbd> Rotate Left <kbd>D</kbd> Rotate Right
-                <kbd>Q</kbd> Strafe Left <kbd>E</kbd> Strafe Right
+                <kbd>W</kbd>/<kbd>S</kbd> Fwd/Back
+                <kbd>A</kbd>/<kbd>D</kbd> Rotate
+                <kbd>Q</kbd>/<kbd>E</kbd> Strafe
             </div>
             <div class="teleop-status" id="teleopStatus">
-                <span class="teleop-status-inactive">Ready - press buttons or use keyboard</span>
+                <span class="teleop-status-inactive">Ready - use both thumbs for agile control</span>
             </div>
         </div>
 
@@ -2294,8 +2317,10 @@
                 this.dashboard = dashboard;
                 this.activeActions = new Set();
                 this.sendInterval = null;
-                this.lastSentTime = 0;
                 this.SEND_RATE_MS = 50;  // Send commands at 20Hz
+
+                // Track touches by identifier -> action mapping for proper multi-touch
+                this.activeTouches = new Map();
 
                 // Key mappings: W=fwd, S=back, A=rot-left, D=rot-right, Q=strafe-left, E=strafe-right
                 this.keyMap = {
@@ -2307,6 +2332,16 @@
                     'KeyE': 'strafe-right'
                 };
 
+                // Button ID to action mapping
+                this.buttonMap = {
+                    'btnForward': 'forward',
+                    'btnBackward': 'backward',
+                    'btnRotateLeft': 'rotate-left',
+                    'btnRotateRight': 'rotate-right',
+                    'btnStrafeLeft': 'strafe-left',
+                    'btnStrafeRight': 'strafe-right'
+                };
+
                 // Action to velocity mapping
                 this.actionVelocities = {
                     'forward':      { linear_x:  1.0, linear_y:  0.0, angular_z:  0.0 },
@@ -2314,19 +2349,17 @@
                     'rotate-left':  { linear_x:  0.0, linear_y:  0.0, angular_z:  1.0 },
                     'rotate-right': { linear_x:  0.0, linear_y:  0.0, angular_z: -1.0 },
                     'strafe-left':  { linear_x:  0.0, linear_y:  1.0, angular_z:  0.0 },
-                    'strafe-right': { linear_x:  0.0, linear_y: -1.0, angular_z:  0.0 },
-                    'stop':         { linear_x:  0.0, linear_y:  0.0, angular_z:  0.0 }
+                    'strafe-right': { linear_x:  0.0, linear_y: -1.0, angular_z:  0.0 }
                 };
 
                 this.setupKeyboardListeners();
-                this.setupTouchListeners();
+                this.setupMultiTouchListeners();
+                this.setupMouseListeners();
             }
 
             setupKeyboardListeners() {
                 document.addEventListener('keydown', (e) => {
-                    // Ignore if typing in an input
                     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-
                     const action = this.keyMap[e.code];
                     if (action && !this.activeActions.has(action)) {
                         e.preventDefault();
@@ -2344,76 +2377,136 @@
                     }
                 });
 
-                // Stop all on window blur (e.g., switching tabs)
                 window.addEventListener('blur', () => this.stopAll());
             }
 
-            setupTouchListeners() {
+            // PROPER MULTI-TOUCH: Container-level touch handling with touch identifier tracking
+            setupMultiTouchListeners() {
+                const container = document.getElementById('teleopContainer');
+                if (!container) return;
+
+                // Prevent all default touch behaviors on the container
+                container.addEventListener('touchstart', (e) => this.handleTouchStart(e), { passive: false });
+                container.addEventListener('touchmove', (e) => this.handleTouchMove(e), { passive: false });
+                container.addEventListener('touchend', (e) => this.handleTouchEnd(e), { passive: false });
+                container.addEventListener('touchcancel', (e) => this.handleTouchEnd(e), { passive: false });
+            }
+
+            // Find which button (if any) a touch point is over
+            getButtonAtPoint(x, y) {
+                const element = document.elementFromPoint(x, y);
+                if (!element) return null;
+
+                // Walk up to find the button
+                let btn = element.closest('.teleop-btn');
+                if (btn && btn.dataset.action) {
+                    return { button: btn, action: btn.dataset.action };
+                }
+                return null;
+            }
+
+            handleTouchStart(e) {
+                e.preventDefault();
+
+                for (const touch of e.changedTouches) {
+                    const result = this.getButtonAtPoint(touch.clientX, touch.clientY);
+                    if (result) {
+                        // Track this touch -> action
+                        this.activeTouches.set(touch.identifier, result.action);
+                        this.startAction(result.action);
+                        result.button.classList.add('active');
+                    }
+                }
+            }
+
+            handleTouchMove(e) {
+                e.preventDefault();
+
+                // Check if any touch has moved to a different button
+                for (const touch of e.changedTouches) {
+                    const oldAction = this.activeTouches.get(touch.identifier);
+                    const result = this.getButtonAtPoint(touch.clientX, touch.clientY);
+                    const newAction = result ? result.action : null;
+
+                    // Touch moved off its button
+                    if (oldAction && oldAction !== newAction) {
+                        this.stopAction(oldAction);
+                        this.highlightButton(oldAction, false);
+                        this.activeTouches.delete(touch.identifier);
+                    }
+
+                    // Touch moved onto a new button
+                    if (newAction && newAction !== oldAction) {
+                        this.activeTouches.set(touch.identifier, newAction);
+                        this.startAction(newAction);
+                        result.button.classList.add('active');
+                    }
+                }
+            }
+
+            handleTouchEnd(e) {
+                e.preventDefault();
+
+                for (const touch of e.changedTouches) {
+                    const action = this.activeTouches.get(touch.identifier);
+                    if (action) {
+                        this.activeTouches.delete(touch.identifier);
+
+                        // Only stop if no other touch is still on this action
+                        let stillTouched = false;
+                        for (const a of this.activeTouches.values()) {
+                            if (a === action) {
+                                stillTouched = true;
+                                break;
+                            }
+                        }
+
+                        if (!stillTouched) {
+                            this.stopAction(action);
+                            this.highlightButton(action, false);
+                        }
+                    }
+                }
+
+                // Safety: if no touches left, make sure we stop
+                if (this.activeTouches.size === 0 && this.activeActions.size > 0) {
+                    this.stopAll();
+                }
+            }
+
+            // Mouse support for desktop
+            setupMouseListeners() {
                 const buttons = document.querySelectorAll('.teleop-btn');
 
                 buttons.forEach(btn => {
                     const action = btn.dataset.action;
                     if (!action) return;
 
-                    // Touch events for mobile
-                    btn.addEventListener('touchstart', (e) => {
-                        e.preventDefault();
-                        if (action === 'stop') {
-                            this.stopAll();
-                        } else {
-                            this.startAction(action);
-                            btn.classList.add('active');
-                        }
-                    }, { passive: false });
-
-                    btn.addEventListener('touchend', (e) => {
-                        e.preventDefault();
-                        if (action !== 'stop') {
-                            this.stopAction(action);
-                            btn.classList.remove('active');
-                        }
-                    }, { passive: false });
-
-                    btn.addEventListener('touchcancel', (e) => {
-                        if (action !== 'stop') {
-                            this.stopAction(action);
-                            btn.classList.remove('active');
-                        }
-                    });
-
-                    // Mouse events for desktop clicking
                     btn.addEventListener('mousedown', (e) => {
-                        if (action === 'stop') {
-                            this.stopAll();
-                        } else {
-                            this.startAction(action);
-                            btn.classList.add('active');
-                        }
-                    });
+                        e.preventDefault();
+                        this.startAction(action);
+                        btn.classList.add('active');
 
-                    btn.addEventListener('mouseup', (e) => {
-                        if (action !== 'stop') {
+                        // Track mouse button state
+                        const handleMouseUp = () => {
                             this.stopAction(action);
                             btn.classList.remove('active');
-                        }
+                            document.removeEventListener('mouseup', handleMouseUp);
+                        };
+                        document.addEventListener('mouseup', handleMouseUp);
                     });
 
-                    btn.addEventListener('mouseleave', (e) => {
-                        if (action !== 'stop' && this.activeActions.has(action)) {
+                    btn.addEventListener('mouseleave', () => {
+                        if (this.activeActions.has(action)) {
                             this.stopAction(action);
                             btn.classList.remove('active');
                         }
                     });
                 });
-
-                // Handle multi-touch - prevent default to avoid scrolling while driving
-                document.querySelector('.teleop-drive-container').addEventListener('touchmove', (e) => {
-                    e.preventDefault();
-                }, { passive: false });
             }
 
             highlightButton(action, active) {
-                const buttonMap = {
+                const idMap = {
                     'forward': 'btnForward',
                     'backward': 'btnBackward',
                     'rotate-left': 'btnRotateLeft',
@@ -2421,36 +2514,34 @@
                     'strafe-left': 'btnStrafeLeft',
                     'strafe-right': 'btnStrafeRight'
                 };
-                const btnId = buttonMap[action];
-                if (btnId) {
-                    const btn = document.getElementById(btnId);
-                    if (btn) {
-                        if (active) {
-                            btn.classList.add('active');
-                        } else {
-                            btn.classList.remove('active');
-                        }
-                    }
+                const btn = document.getElementById(idMap[action]);
+                if (btn) {
+                    btn.classList.toggle('active', active);
                 }
             }
 
             startAction(action) {
-                this.activeActions.add(action);
-                this.updateStatus();
-                this.startSending();
+                if (!this.activeActions.has(action)) {
+                    this.activeActions.add(action);
+                    this.updateStatus();
+                    this.startSending();
+                }
             }
 
             stopAction(action) {
-                this.activeActions.delete(action);
-                this.updateStatus();
-                if (this.activeActions.size === 0) {
-                    this.stopSending();
-                    this.sendCommand({ linear_x: 0, linear_y: 0, angular_z: 0 });
+                if (this.activeActions.has(action)) {
+                    this.activeActions.delete(action);
+                    this.updateStatus();
+                    if (this.activeActions.size === 0) {
+                        this.stopSending();
+                        this.sendCommand({ linear_x: 0, linear_y: 0, angular_z: 0 });
+                    }
                 }
             }
 
             stopAll() {
                 this.activeActions.clear();
+                this.activeTouches.clear();
                 document.querySelectorAll('.teleop-btn').forEach(btn => btn.classList.remove('active'));
                 this.updateStatus();
                 this.stopSending();
@@ -2460,7 +2551,7 @@
             startSending() {
                 if (this.sendInterval) return;
                 this.sendInterval = setInterval(() => this.sendCurrentVelocity(), this.SEND_RATE_MS);
-                this.sendCurrentVelocity();  // Send immediately
+                this.sendCurrentVelocity();
             }
 
             stopSending() {
@@ -2471,7 +2562,6 @@
             }
 
             sendCurrentVelocity() {
-                // Combine all active actions into a single velocity command
                 let linear_x = 0, linear_y = 0, angular_z = 0;
 
                 this.activeActions.forEach(action => {
@@ -2483,7 +2573,6 @@
                     }
                 });
 
-                // Clamp values to [-1, 1]
                 linear_x = Math.max(-1, Math.min(1, linear_x));
                 linear_y = Math.max(-1, Math.min(1, linear_y));
                 angular_z = Math.max(-1, Math.min(1, angular_z));
@@ -2504,9 +2593,9 @@
                 const statusEl = document.getElementById('teleopStatus');
                 if (this.activeActions.size > 0) {
                     const actions = Array.from(this.activeActions).join(' + ');
-                    statusEl.innerHTML = `<span class="teleop-status-active">DRIVING: ${actions.toUpperCase()}</span>`;
+                    statusEl.innerHTML = `<span class="teleop-status-active">${actions.toUpperCase()}</span>`;
                 } else {
-                    statusEl.innerHTML = `<span class="teleop-status-inactive">Ready - press buttons or use keyboard</span>`;
+                    statusEl.innerHTML = `<span class="teleop-status-inactive">Ready - use both thumbs for agile control</span>`;
                 }
             }
         }
