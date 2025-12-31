@@ -1010,6 +1010,14 @@
                     <div class="section-title">Patrol Options</div>
                     <div class="patrol-options">
                         <div class="option-group">
+                            <label class="option-label">Auto Mode</label>
+                            <select id="autoMode" class="option-input">
+                                <option value="odometry">Odometry Only (Indoor)</option>
+                                <option value="gps">GPS Outdoor</option>
+                                <option value="nav2" disabled>Nav2 SLAM (Heavy CPU)</option>
+                            </select>
+                        </div>
+                        <div class="option-group">
                             <label class="option-label">Loop Count</label>
                             <select id="loopCount" class="option-input">
                                 <option value="0">Continuous</option>
@@ -1664,12 +1672,17 @@
                     return;
                 }
 
+                const autoMode = document.getElementById('autoMode').value;
                 const loopCount = parseInt(document.getElementById('loopCount').value);
                 const speedPercent = parseInt(document.getElementById('speedSlider').value) / 100;
                 const reverseMode = document.getElementById('reverseMode').checked;
 
+                // Store current mode for pause/resume/stop
+                this.currentAutoMode = autoMode;
+
                 this.sendCommand({
                     action: 'start_patrol',
+                    auto_mode: autoMode,
                     path_name: pathName,
                     loop_count: loopCount,
                     speed_percent: speedPercent,
@@ -1678,15 +1691,24 @@
             }
 
             pausePatrol() {
-                this.sendCommand({ action: 'pause_patrol' });
+                this.sendCommand({
+                    action: 'pause_patrol',
+                    auto_mode: this.currentAutoMode || 'odometry'
+                });
             }
 
             resumePatrol() {
-                this.sendCommand({ action: 'resume_patrol' });
+                this.sendCommand({
+                    action: 'resume_patrol',
+                    auto_mode: this.currentAutoMode || 'odometry'
+                });
             }
 
             stopPatrol() {
-                this.sendCommand({ action: 'stop_patrol' });
+                this.sendCommand({
+                    action: 'stop_patrol',
+                    auto_mode: this.currentAutoMode || 'odometry'
+                });
             }
 
             updateSpeedLabel() {
