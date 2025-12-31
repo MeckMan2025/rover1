@@ -94,6 +94,18 @@ def generate_launch_description():
             }]
         ),
 
+        # Patrol Manager (provides list_paths service for dashboard)
+        Node(
+            package='rover1_patrol',
+            executable='patrol_manager.py',
+            name='patrol_manager',
+            output='screen',
+            parameters=[{
+                'paths_directory': paths_dir,
+                'stuck_timeout': 30.0
+            }]
+        ),
+
         # Web Dashboard
         Node(
             package='gnss_web_dashboard',
