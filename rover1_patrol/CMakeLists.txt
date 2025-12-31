@@ -31,6 +31,8 @@ install(PROGRAMS
   rover1_patrol/map_snapshot.py
   rover1_patrol/velocity_scaler.py
   rover1_patrol/pointcloud_exporter.py
+  rover1_patrol/simple_waypoint_follower.py
+  rover1_patrol/gps_waypoint_follower.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
