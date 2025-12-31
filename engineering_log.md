@@ -1,7 +1,7 @@
 # Rover1 Engineering Journal & Technical Specifications
 
 **Maintainer:** MeckMan2025
-**Last Updated:** 2025-12-29
+**Last Updated:** 2025-12-30
 **Purpose:** Living documentation of the hardware verification, driver protocols, and system architecture for the Rover1 autonomous vehicle. This document serves as the sole source of truth for AI agents and engineering rebuilds.
 
 ---
@@ -1239,6 +1239,133 @@ ros2 lifecycle get /controller_server
 3. **UDP loopback is underrated:** Reliable, simple, "good enough" for most robotics
 4. **Clean slate debugging:** When stuck, `rm -f /dev/shm/*` and restart fresh
 5. **Document what works:** This bug took hours to diagnose; now it's a 5-minute fix
+
+### 4.16 CycloneDDS + Tailscale Multicast Conflict (Dec 30, 2025)
+**Status:** RESOLVED - Tailscale disabled, CycloneDDS interface pinning added for future protection
+
+**Problem Summary:**
+Teleop was jerky and unreliable despite CPU usage being normal (~30-50%). Commands would stutter, and the rover would move in unpredictable bursts rather than smooth motion.
+
+**Symptoms Observed:**
+| Check | Result |
+|-------|--------|
+| /cmd_vel rate | 34-36 Hz (normal when discoverable) |
+| /joy rate | 15.5 Hz (low, should be 20+) |
+| I2C devices | Working (0x34 motors, 0x6A IMU) |
+| Bluetooth | Connected |
+| CPU usage | ~35% (not overloaded) |
+| DDS discovery | **Intermittent failures** |
+
+**Root Cause Analysis:**
+
+CycloneDDS was joining DDS multicast groups on **both** network interfaces:
+```
+wlan0:      49 members in 239.255.0.1 (DDS multicast)
+tailscale0: 33 members in 239.255.0.1 (DDS multicast) ← PROBLEM!
+```
+
+**Why This Caused Jerkiness:**
+1. DDS uses multicast (239.255.0.1) for node discovery and topic advertisement
+2. Without explicit interface binding, CycloneDDS joins multicast on ALL interfaces
+3. Tailscale creates a `tailscale0` interface for its VPN tunnel
+4. DDS traffic was being **split** between wlan0 and tailscale0
+5. Some messages went to wlan0, others to tailscale0
+6. Nodes couldn't reliably discover each other → intermittent message drops
+7. Dropped /cmd_vel messages → jerky, stuttering motion
+
+**Diagnostic Commands Used:**
+```bash
+# Check multicast group membership - THE KEY DIAGNOSTIC
+netstat -gn | grep 239.255
+
+# Check DDS participant counts
+ros2 node list | wc -l
+
+# Check topic rates
+ros2 topic hz /cmd_vel
+ros2 topic hz /joy
+```
+
+**The Fix (Two-Part Solution):**
+
+**Part 1: Immediate Fix - Disable Tailscale**
+```bash
+sudo systemctl stop tailscaled
+sudo systemctl disable tailscaled
+sudo systemctl restart rover1.service
+```
+
+**Part 2: Permanent Protection - CycloneDDS Interface Pinning**
+
+Created `rover1_bringup/config/cyclonedds_wlan0.xml`:
+```xml
+<?xml version="1.0" encoding="UTF-8" ?>
+<CycloneDDS xmlns="https://cdds.io/config">
+    <Domain>
+        <General>
+            <Interfaces>
+                <NetworkInterface name="wlan0" priority="default" multicast="true" />
+            </Interfaces>
+        </General>
+        <Discovery>
+            <MaxAutoParticipantIndex>120</MaxAutoParticipantIndex>
+        </Discovery>
+        <Tracing>
+            <Verbosity>warning</Verbosity>
+        </Tracing>
+    </Domain>
+</CycloneDDS>
+```
+
+Added to `.env`:
+```bash
+CYCLONEDDS_URI=file://$HOME/ros2_ws/src/rover1/rover1_bringup/config/cyclonedds_wlan0.xml
+RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+```
+
+**Verification After Fix:**
+```bash
+# Should show ONLY wlan0 now
+netstat -gn | grep 239.255
+# Expected: Only wlan0 entries, no tailscale0
+
+# Teleop should be smooth
+ros2 topic hz /cmd_vel  # Expect 50+ Hz, stable
+```
+
+**Lessons Learned:**
+
+1. **VPN interfaces cause DDS chaos:** Tailscale, OpenVPN, WireGuard all create virtual interfaces. DDS will try to use them unless explicitly told not to.
+
+2. **Always pin CycloneDDS to a specific interface:** Even if not using a VPN today, adding one later will break ROS 2 in mysterious ways.
+
+3. **Multicast group membership is the key diagnostic:** `netstat -gn | grep 239.255` immediately reveals the interface split problem.
+
+4. **Jerkiness ≠ CPU overload:** When teleop is jerky but CPU is fine, suspect network/DDS issues first.
+
+5. **CycloneDDS config syntax matters:**
+   - `<MaxParticipants>` under `<General>` = INVALID (will error)
+   - `<MaxAutoParticipantIndex>` under `<Discovery>` = CORRECT
+
+**Configuration Files Changed:**
+| File | Change |
+|------|--------|
+| `rover1_bringup/config/cyclonedds_wlan0.xml` | Created - pins DDS to wlan0 |
+| `.env` | Added CYCLONEDDS_URI and RMW_IMPLEMENTATION |
+
+**Future Pitfall Avoidance:**
+
+If adding any VPN or network overlay in the future:
+1. Check `netstat -gn | grep 239.255` for multicast split
+2. Ensure CYCLONEDDS_URI is set in environment
+3. Verify only wlan0 (or eth0) appears in multicast groups
+4. Test teleop smoothness immediately after network changes
+
+**Related Issues:**
+- Section 4.15 documents FastRTPS SHM issues (different DDS problem, same symptom category)
+- Both issues manifest as "jerky teleop" but have completely different root causes
+
+---
 
 ### 4.13 Camera Module Integration & Perception Planning (Dec 27, 2025)
 **Status:** PLANNING COMPLETE - Moving to Phase 5: Perception
