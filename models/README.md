@@ -45,8 +45,34 @@ hailortcli parse-hef yolov8s.hef
 python3 -c "from hailo_platform import HEF; h = HEF('yolov8s.hef'); print('Model loaded successfully')"
 ```
 
+## Hailo Python SDK Installation
+
+The `hailo_platform` Python package is required for inference. It's not on PyPI - download from Hailo Developer Zone.
+
+**1. Download the wheel:**
+- Visit https://hailo.ai/developer-zone/software-downloads/ (account required)
+- Download: `hailort-4.23.0-cp312-cp312-linux_aarch64.whl` (for Pi 5 / Python 3.12)
+
+**2. Install:**
+```bash
+pip3 install ~/hailort-4.23.0-cp312-cp312-linux_aarch64.whl
+```
+
+**3. Verify installation:**
+```bash
+# Check Hailo device is visible
+hailortcli scan
+
+# Get device info (serial, firmware version)
+hailortcli fw-control identify
+
+# Verify Python SDK works
+python3 -c "from hailo_platform import HEF; print('Hailo SDK OK')"
+```
+
 ## Notes
 
 - HEF files are large (typically 10-50MB) and are gitignored
 - The model must be compiled specifically for Hailo-8L (not Hailo-8)
 - The dog_follower node will run in mock mode if the model is missing
+- **Important:** PyHailoRT requires numpy 1.x (numpy 2.x is not supported)
