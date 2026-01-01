@@ -1,7 +1,7 @@
 # Rover1 Engineering Journal & Technical Specifications
 
 **Maintainer:** MeckMan2025
-**Last Updated:** 2025-12-30
+**Last Updated:** 2026-01-01
 **Purpose:** Living documentation of the hardware verification, driver protocols, and system architecture for the Rover1 autonomous vehicle. This document serves as the sole source of truth for AI agents and engineering rebuilds.
 
 ---
@@ -65,9 +65,9 @@ Standard Hiwonder protocols (broadcast speed) failed. Direct register addressing
 - **Touch Controller:** QDTECH MPI7002 (USB HID)
 - **Connection:** USB (Power + Touch) + HDMI (Video)
 - **Driver:** `libinput` (Linux built-in)
-- **Kiosk Mode:** Cage (Wayland compositor) + Chromium in fullscreen
-- **Dashboard URL:** `http://localhost:8080` (rover web dashboard)
-- **Systemd Service:** `kiosk.service` (starts after `rover1.service`)
+- **Current Mode:** htop system monitor (CPU-efficient during active development)
+- **Kiosk Mode:** DISABLED - Chromium consumed too much CPU alongside ROS stack + Claude Rover sessions
+- **Dashboard Access:** `http://rover1.local:8080` (accessed from external browser)
 
 ### 1.6 Vision System (Perception)
 - **Camera Module:** Nuwa-HP60C (ASJ ZNX_NVT)
@@ -1382,6 +1382,100 @@ If adding any VPN or network overlay in the future:
 4. **Safety Interface:** Monitoring camera node heartbeats in `rover_monitor.sh` v3.0.
 
 **Next Steps:** Unpack SDK and verify camera stream frequency (target 15-20 Hz for autonomous navigation).
+
+---
+
+### 4.17 Project Architecture Overview (Jan 1, 2026)
+**Status:** DOCUMENTED - Full codebase architecture summary for reference
+
+**Purpose:** Comprehensive overview of the rover1 project architecture, package structure, and component interactions for onboarding and reference.
+
+---
+
+#### Package Structure
+
+| Package | Purpose |
+|---------|---------|
+| `rover1_bringup` | Launch files & configs (rover, RTAB-Map, GPS, patrol) |
+| `rover1_hardware` | Drivers: motors (Hiwonder), IMU (BerryIMU), teleop (Stadia), battery, GNSS bridge |
+| `rover1_patrol` | Teach & repeat waypoint system (record, playback, GPS/odom modes) |
+| `rover1_vision` | AI-based vision: Dog follower using Hailo-8L + YOLOv8s |
+| `rover1_description` | URDF robot model definition |
+| `gnss_health_monitor` | GPS/RTK/NTRIP status aggregation for dashboard |
+| `gnss_web_dashboard` | Flask/WebSocket web interface (camera, controls, status) |
+
+---
+
+#### Hardware Integration Summary
+
+| Component | Interface | Driver/Node |
+|-----------|-----------|-------------|
+| Motors (Hiwonder HAT) | I2C @ 0x34 | `hiwonder_driver.py` |
+| IMU (BerryIMU v3) | I2C @ 0x6A | `berry_imu_driver.py` |
+| GNSS (u-blox ZED-F9R) | USB | `ublox_dgnss` + `fix_to_nmea.py` |
+| Camera (Nuwa HP60C) | USB (UVC) | `ascamera` ROS 2 driver |
+| AI Accelerator (Hailo-8L) | PCIe | `hailo_platform` Python SDK |
+| Controller (Stadia) | Bluetooth | `joy_node` + `stadia_teleop.py` |
+| Display (7" Hosyond) | HDMI + USB | htop (kiosk disabled for CPU) |
+
+---
+
+#### Key Architecture Decisions
+
+1. **Hybrid Patrol Recording:** Motion detection from wheel odometry (drift-immune), position from SLAM TF (globally consistent)
+2. **FastRTPS with SHM Disabled:** Avoids Pi 5 stale lock file issues in `/dev/shm/`
+3. **Custom Motor Protocol:** Direct I2C register addressing (registers 51-54) vs broadcast
+4. **Two-Phase Joystick Activation:** Prevents Stadia controller axis drift on startup
+5. **Multi-Threaded Dashboard:** ReentrantCallbackGroup + WebSocket for real-time updates
+6. **CycloneDDS Interface Pinning:** Prevents multicast split with VPN interfaces
+
+---
+
+#### Data Flow Architecture
+
+```
+INPUT LAYER:
+  Stadia Controller → /joy → stadia_teleop → /cmd_vel
+  Dog Follower (Hailo) → /cmd_vel (when enabled)
+  Patrol System → simple_waypoint_follower → /cmd_vel
+
+MOTION CONTROL:
+  /cmd_vel → mecanum_kinematics → /wheel_speeds_raw → hiwonder_driver → Motors
+
+FEEDBACK LOOP:
+  Encoders → /wheel_encoders → mecanum_kinematics → /odom/wheel_odom
+  IMU → /imu/data → EKF fusion
+  Wheel Odom + IMU → robot_localization (EKF) → /odometry/local → TF tree
+
+PERCEPTION:
+  Camera → /ascamera/.../rgb0/image → RTAB-Map (SLAM) → /map
+  Camera → Hailo (YOLOv8s) → dog_follower → /cmd_vel
+
+LOCALIZATION:
+  GPS → /fix → navsat_transform → /odometry/gps
+  RTAB-Map → /odom (visual odometry) → EKF global
+
+MONITORING:
+  All status → gnss_health_monitor → /gnss/health
+  All status → web_dashboard → http://rover1.local:8080
+  ROS topics → foxglove_bridge → ws://rover1.local:8765
+```
+
+---
+
+#### Current System Status (Jan 1, 2026)
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Base Hardware | ✅ WORKING | Motors, IMU, encoders, battery |
+| Teleop (Stadia) | ✅ WORKING | Bluetooth, dead-man switch |
+| RTAB-Map (SLAM) | ✅ WORKING | Visual odometry, mapping |
+| Patrol Lite | ✅ WORKING | Odometry-based waypoint following |
+| GPS/RTK | ✅ WORKING | Iowa RTN NTRIP, RTK float/fixed |
+| Dog Follower | ✅ WORKING | Hailo-8L + YOLOv8s |
+| Web Dashboard | ✅ WORKING | Access from external browser |
+| Nav2 | ⏸️ PAUSED | Crashes during lifecycle bringup on Pi 5/Jazzy |
+| Kiosk Mode | ❌ DISABLED | CPU overhead; using htop on display |
 
 ---
 

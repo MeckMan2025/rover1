@@ -25,7 +25,8 @@ __pycache__/
 notes_private.md
 journal_private.md
 
-# Camera SDK Bloat
+# Camera SDK Bloat (vendor reference code, not project code)
 Camera_Specs/ascam_ros2_ws/src.zip
 Camera_Specs/ascam_ros2_ws/src/yahboomcar_slam/
 Camera_Specs/ascam_ros2_ws/src/yahboomcar_mediapipe/
+Camera_Specs/ros2_ws/
