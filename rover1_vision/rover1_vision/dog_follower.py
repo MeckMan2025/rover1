@@ -219,11 +219,14 @@ class DogFollower(Node):
                 self.hailo_hef, configure_params
             )[0]
 
+            # Activate the network group (required before inference)
+            self.hailo_network_group.activate()
+
             # Get input/output stream info
             self.input_vstream_info = self.hailo_hef.get_input_vstream_infos()[0]
             self.output_vstream_info = self.hailo_hef.get_output_vstream_infos()
 
-            self.get_logger().info(f'Hailo model loaded successfully')
+            self.get_logger().info('Hailo model loaded and activated successfully')
             self.get_logger().info(f'Input shape: {self.input_vstream_info.shape}')
             self.get_logger().info(f'Output layers: {len(self.output_vstream_info)}')
 
@@ -591,7 +594,7 @@ class DogFollower(Node):
                     x1 = max(0, min(orig_w, x1))
                     y1 = max(0, min(orig_h, y1))
                     x2 = max(0, min(orig_w, x2))
-                    y2 = max(0, min(orig_w, y2))
+                    y2 = max(0, min(orig_h, y2))
 
                     # Skip invalid boxes
                     if x2 <= x1 or y2 <= y1:
@@ -736,6 +739,12 @@ class DogFollower(Node):
     def destroy_node(self):
         """Cleanup on shutdown."""
         self.stop_robot()
+        # Deactivate network group before releasing device
+        if self.hailo_network_group is not None:
+            try:
+                self.hailo_network_group.deactivate()
+            except Exception:
+                pass
         if self.hailo_device is not None:
             try:
                 self.hailo_device.release()
