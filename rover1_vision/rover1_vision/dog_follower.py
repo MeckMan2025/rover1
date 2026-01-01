@@ -118,9 +118,12 @@ class DogFollower(Node):
         self.hailo_device = None
         self.hailo_hef = None
         self.hailo_network_group = None
-        self.activated_network_group = None  # Must store to prevent GC
+        self.activated_network_group = None
         self.input_vstream_info = None
         self.output_vstream_info = None
+        self.input_vstream_params = None
+        self.output_vstream_params = None
+        self.infer_pipeline = None  # Persistent inference pipeline
         self._init_hailo()
 
         # Publishers
@@ -195,7 +198,7 @@ class DogFollower(Node):
         self.publish_status('idle')
 
     def _init_hailo(self):
-        """Initialize Hailo-8L inference engine."""
+        """Initialize Hailo-8L inference engine with persistent vstreams."""
         if not HAILO_AVAILABLE:
             self.get_logger().warn('Hailo SDK not available - running in mock mode')
             return
@@ -220,15 +223,31 @@ class DogFollower(Node):
                 self.hailo_hef, configure_params
             )[0]
 
-            # Activate the network group (required before inference)
-            # Must store the returned object to prevent garbage collection
+            # Enter activation context and keep it open for node lifetime
             self.activated_network_group = self.hailo_network_group.activate()
+            self.activated_network_group.__enter__()
 
             # Get input/output stream info
             self.input_vstream_info = self.hailo_hef.get_input_vstream_infos()[0]
             self.output_vstream_info = self.hailo_hef.get_output_vstream_infos()
 
-            self.get_logger().info('Hailo model loaded and activated successfully')
+            # Create persistent vstream params
+            self.input_vstream_params = InputVStreamParams.make_from_network_group(
+                self.hailo_network_group, quantized=True, format_type=FormatType.UINT8
+            )
+            self.output_vstream_params = OutputVStreamParams.make_from_network_group(
+                self.hailo_network_group, quantized=False, format_type=FormatType.FLOAT32
+            )
+
+            # Create persistent inference pipeline and enter its context
+            self.infer_pipeline = InferVStreams(
+                self.hailo_network_group,
+                self.input_vstream_params,
+                self.output_vstream_params
+            )
+            self.infer_pipeline.__enter__()
+
+            self.get_logger().info('Hailo model loaded and vstreams activated successfully')
             self.get_logger().info(f'Input shape: {self.input_vstream_info.shape}')
             self.get_logger().info(f'Output layers: {len(self.output_vstream_info)}')
 
@@ -489,7 +508,7 @@ class DogFollower(Node):
 
     def run_inference(self, image: np.ndarray) -> list:
         """
-        Run YOLOv8 inference on Hailo-8L.
+        Run YOLOv8 inference on Hailo-8L using persistent pipeline.
 
         Args:
             image: BGR image from camera (640x480)
@@ -497,9 +516,8 @@ class DogFollower(Node):
         Returns:
             List of detections: [[x1, y1, x2, y2, confidence, class_id], ...]
         """
-        if self.hailo_device is None or self.hailo_network_group is None:
+        if self.hailo_device is None or self.infer_pipeline is None:
             # Mock mode - return empty detections
-            # In real deployment, this would be replaced with actual inference
             return self._mock_inference(image)
 
         try:
@@ -508,25 +526,14 @@ class DogFollower(Node):
             h, w = image.shape[:2]
             input_image = cv2.resize(image, (self.YOLO_INPUT_SIZE, self.YOLO_INPUT_SIZE))
             input_image = cv2.cvtColor(input_image, cv2.COLOR_BGR2RGB)
-            input_image = input_image.astype(np.uint8)  # Keep as UINT8, no normalization
+            input_image = input_image.astype(np.uint8)
 
             # Reshape for batch processing
             input_data = np.expand_dims(input_image, axis=0)
 
-            # Create VStream params - use quantized mode for UINT8 input
-            input_params = InputVStreamParams.make_from_network_group(
-                self.hailo_network_group, quantized=True,
-                format_type=FormatType.UINT8
-            )
-            output_params = OutputVStreamParams.make_from_network_group(
-                self.hailo_network_group, quantized=False,
-                format_type=FormatType.FLOAT32
-            )
-
-            # Run inference
-            with InferVStreams(self.hailo_network_group, input_params, output_params) as infer_pipeline:
-                input_dict = {self.input_vstream_info.name: input_data}
-                output_dict = infer_pipeline.infer(input_dict)
+            # Run inference using persistent pipeline (no context manager needed)
+            input_dict = {self.input_vstream_info.name: input_data}
+            output_dict = self.infer_pipeline.infer(input_dict)
 
             # Post-process YOLOv8 output
             detections = self._postprocess_yolov8(output_dict, w, h)
@@ -741,17 +748,28 @@ class DogFollower(Node):
     def destroy_node(self):
         """Cleanup on shutdown."""
         self.stop_robot()
-        # Deactivate the activated network group before releasing device
-        if self.activated_network_group is not None:
+
+        # Close persistent inference pipeline context
+        if self.infer_pipeline is not None:
             try:
-                self.activated_network_group.deactivate()
+                self.infer_pipeline.__exit__(None, None, None)
             except Exception:
                 pass
+
+        # Exit activation context
+        if self.activated_network_group is not None:
+            try:
+                self.activated_network_group.__exit__(None, None, None)
+            except Exception:
+                pass
+
+        # Release device
         if self.hailo_device is not None:
             try:
                 self.hailo_device.release()
             except Exception:
                 pass
+
         super().destroy_node()
 
 
