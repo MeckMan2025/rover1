@@ -28,6 +28,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data, QoSProfile, ReliabilityPolicy
 from rclpy.callback_groups import ReentrantCallbackGroup, MutuallyExclusiveCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 
 from sensor_msgs.msg import Image
 from geometry_msgs.msg import Twist
@@ -549,8 +550,13 @@ def main(args=None):
     rclpy.init(args=args)
     node = DogFollower()
 
+    # MultiThreadedExecutor required for ReentrantCallbackGroup
+    # Allows service calls to execute while image callbacks are running
+    executor = MultiThreadedExecutor()
+    executor.add_node(node)
+
     try:
-        rclpy.spin(node)
+        executor.spin()
     except KeyboardInterrupt:
         pass
     finally:
