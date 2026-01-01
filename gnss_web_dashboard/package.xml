@@ -13,10 +13,16 @@
   <depend>rclpy</depend>
   <depend>gnss_health_monitor</depend>
   <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
   <depend>cv_bridge</depend>
   <depend>rover1_patrol</depend>
   <depend>std_srvs</depend>
-  
+  <depend>ament_index_python</depend>
+
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>python3-websockets</exec_depend>
+
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
   
