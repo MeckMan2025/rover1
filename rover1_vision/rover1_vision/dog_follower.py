@@ -554,51 +554,50 @@ class DogFollower(Node):
         """
         Post-process Hailo NMS output format.
 
-        The YOLOv8s HEF model has built-in NMS (yolov8_nms_postprocess).
-        Output shape: (num_classes, 5, max_detections_per_class) = (80, 5, 100)
-        Where 5 = [ymin, xmin, ymax, xmax, score] in normalized coordinates (0-1)
+        Output structure (nested lists, NOT uniform array):
+          outputs[name][batch][class_id] = array of detections for that class
+          Each detection: [ymin, xmin, ymax, xmax, score] in normalized coords (0-1)
 
-        This is NOT raw YOLO tensor format - it's already NMS-processed.
+        Each class can have a variable number of detections (or none),
+        so we can't convert the whole output to a numpy array directly.
         """
         detections = []
 
         try:
-            # Get the output tensor
             output_name = list(outputs.keys())[0]
             output = outputs[output_name]
 
-            # Handle both list and ndarray output formats
-            # Persistent InferVStreams pipeline may return list instead of ndarray
-            if isinstance(output, list):
-                output = np.array(output)
+            # output is a nested list: [batch][class_id][detection]
+            # Access batch 0
+            batch_output = output[0] if isinstance(output, list) else output[0]
 
-            # Remove batch dimension if present
-            if len(output.shape) == 4:
-                output = output[0]
-
-            # Expected shape: (80, 5, 100) for YOLOv8 with 80 COCO classes
-            # 80 = number of classes
-            # 5 = [ymin, xmin, ymax, xmax, score]
-            # 100 = max detections per class
-            num_classes = output.shape[0]
+            num_classes = len(batch_output)
 
             for class_id in range(num_classes):
-                class_output = output[class_id]  # Shape: (5, 100)
+                class_detections = batch_output[class_id]
 
-                # Iterate over detections for this class
-                for det_idx in range(class_output.shape[1]):
-                    # Hailo NMS format: [ymin, xmin, ymax, xmax, score]
-                    ymin = class_output[0, det_idx]
-                    xmin = class_output[1, det_idx]
-                    ymax = class_output[2, det_idx]
-                    xmax = class_output[3, det_idx]
-                    score = class_output[4, det_idx]
+                # Skip if no detections for this class
+                if class_detections is None or len(class_detections) == 0:
+                    continue
 
-                    # Skip empty detections (score 0 or below threshold)
+                # Convert to numpy if needed (each class array is homogeneous)
+                if isinstance(class_detections, list):
+                    class_detections = np.array(class_detections)
+
+                # Handle both (N, 5) and (5,) shapes
+                if len(class_detections.shape) == 1:
+                    class_detections = class_detections.reshape(1, -1)
+
+                for det in class_detections:
+                    if len(det) < 5:
+                        continue
+
+                    ymin, xmin, ymax, xmax, score = det[:5]
+
                     if score < self.confidence_threshold:
                         continue
 
-                    # Convert from normalized (0-1) to pixel coordinates
+                    # Convert normalized coords to pixels
                     x1 = int(xmin * orig_w)
                     y1 = int(ymin * orig_h)
                     x2 = int(xmax * orig_w)
@@ -610,7 +609,6 @@ class DogFollower(Node):
                     x2 = max(0, min(orig_w, x2))
                     y2 = max(0, min(orig_h, y2))
 
-                    # Skip invalid boxes
                     if x2 <= x1 or y2 <= y1:
                         continue
 
