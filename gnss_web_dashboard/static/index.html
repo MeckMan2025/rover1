@@ -426,6 +426,101 @@
             cursor: pointer;
         }
 
+        /* Dog Follower Card Styles */
+        .dog-follower-card {
+            max-width: 400px;
+            margin: 30px auto;
+            border: 1px solid rgba(0, 255, 136, 0.3);
+        }
+
+        .dog-follower-btn-group {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 15px;
+        }
+
+        .dog-follower-btn {
+            padding: 15px 30px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .dog-follower-btn-start {
+            background: linear-gradient(135deg, #00ff88, #00cc6a);
+            color: #000;
+        }
+
+        .dog-follower-btn-start:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0, 255, 136, 0.4);
+        }
+
+        .dog-follower-btn-stop {
+            background: linear-gradient(135deg, #ff4444, #cc0000);
+            color: #fff;
+        }
+
+        .dog-follower-btn-stop:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(255, 68, 68, 0.4);
+        }
+
+        .dog-follower-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .dog-follower-status {
+            text-align: center;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .dog-follower-status.idle {
+            background: rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        .dog-follower-status.searching {
+            background: rgba(255, 193, 7, 0.2);
+            color: #ffc107;
+            animation: pulse 1.5s infinite;
+        }
+
+        .dog-follower-status.following {
+            background: rgba(0, 255, 136, 0.2);
+            color: #00ff88;
+            animation: pulse 1s infinite;
+        }
+
+        .dog-follower-status.lost_target {
+            background: rgba(255, 152, 0, 0.2);
+            color: #ff9800;
+        }
+
+        .dog-follower-status.teleop_override {
+            background: rgba(255, 68, 68, 0.2);
+            color: #ff4444;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
         /* 3D Point Cloud Viewer Styles */
         .pointcloud-card {
             grid-column: 1 / -1;
@@ -1419,6 +1514,22 @@
             </div>
         </div>
 
+        <!-- Dog Follower Card -->
+        <div class="card dog-follower-card">
+            <div class="card-title">Dog Follower</div>
+            <div class="dog-follower-btn-group">
+                <button id="btnDogFollowStart" class="dog-follower-btn dog-follower-btn-start"
+                        onclick="dogFollower.enable()">
+                    <span>&#x1F43E;</span> Start Following
+                </button>
+                <button id="btnDogFollowStop" class="dog-follower-btn dog-follower-btn-stop"
+                        onclick="dogFollower.disable()" disabled>
+                    <span>&#x23F9;</span> Stop
+                </button>
+            </div>
+            <div id="dogFollowerStatus" class="dog-follower-status idle">IDLE</div>
+        </div>
+
         <!-- Power Controls Card -->
         <div class="card power-card">
             <div class="card-title">Power Controls</div>
@@ -1457,6 +1568,7 @@
         let pointcloudViewer = null;
         let webTeleopController = null;
         let powerController = null;
+        let dogFollower = null;
 
         class Rover1Dashboard {
             constructor() {
@@ -1592,6 +1704,11 @@
                 // Teleop Speed sync
                 if (data.teleop_speed !== undefined && this.teleopController) {
                     this.teleopController.syncFromServer(data.teleop_speed);
+                }
+
+                // Dog Follower Status
+                if (data.dog_follower_status !== undefined && dogFollower) {
+                    dogFollower.updateStatus(data.dog_follower_status);
                 }
 
                 // Map location
@@ -2653,6 +2770,48 @@
             }
         }
 
+        class DogFollowerController {
+            constructor(dashboard) {
+                this.dashboard = dashboard;
+                this.enabled = false;
+                this.currentStatus = 'idle';
+            }
+
+            enable() {
+                this.dashboard.sendCommand({ action: 'dog_follow_enable' });
+            }
+
+            disable() {
+                this.dashboard.sendCommand({ action: 'dog_follow_disable' });
+            }
+
+            updateStatus(status) {
+                this.currentStatus = status;
+                this.enabled = (status !== 'idle' && status !== 'teleop_override');
+
+                // Update button states
+                const btnStart = document.getElementById('btnDogFollowStart');
+                const btnStop = document.getElementById('btnDogFollowStop');
+
+                btnStart.disabled = this.enabled;
+                btnStop.disabled = !this.enabled;
+
+                // Update status badge
+                const statusEl = document.getElementById('dogFollowerStatus');
+                statusEl.className = 'dog-follower-status ' + status.replace('_', '-');
+
+                // Status text with friendly names
+                const statusText = {
+                    'idle': 'IDLE',
+                    'searching': 'SEARCHING FOR DOG...',
+                    'following': 'FOLLOWING DOG',
+                    'lost_target': 'TARGET LOST',
+                    'teleop_override': 'TELEOP OVERRIDE'
+                };
+                statusEl.textContent = statusText[status] || status.toUpperCase();
+            }
+        }
+
         class PointCloudViewer {
             constructor() {
                 this.scene = null;
@@ -2910,6 +3069,7 @@
             teleopController = new TeleopController(dashboard);
             webTeleopController = new WebTeleopController(dashboard);
             powerController = new PowerController(dashboard);
+            dogFollower = new DogFollowerController(dashboard);
             pointcloudViewer = new PointCloudViewer();
             dashboard.setPatrolController(patrol);
             dashboard.setTeleopController(teleopController);

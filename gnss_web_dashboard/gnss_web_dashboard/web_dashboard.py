@@ -27,7 +27,7 @@ from gnss_health_monitor.msg import GnssHealth
 from rover1_patrol.msg import PatrolStatus
 from rover1_patrol.srv import ListPaths, StartPatrol, SavePath
 from std_srvs.srv import Trigger
-from std_msgs.msg import Float32
+from std_msgs.msg import Float32, String
 from sensor_msgs.msg import Image
 from geometry_msgs.msg import Twist
 from cv_bridge import CvBridge
@@ -100,6 +100,21 @@ class Rover1WebDashboard(Node):
 
         # Track current auto mode for patrol operations
         self.current_auto_mode = 'odometry'  # Default to lightweight mode
+
+        # Dog Follower service clients
+        self.dog_follower_clients = {
+            'enable': self.create_client(Trigger, '/dog_follower/enable'),
+            'disable': self.create_client(Trigger, '/dog_follower/disable'),
+        }
+
+        # Dog Follower status tracking
+        self.latest_dog_follower_status = 'idle'
+        self.dog_follower_sub = self.create_subscription(
+            String,
+            '/dog_follower/status',
+            self.dog_follower_status_callback,
+            10
+        )
 
         # Camera integration
         self.bridge = CvBridge()
@@ -188,6 +203,15 @@ class Rover1WebDashboard(Node):
                 'error_message': msg.error_message,
                 'recorded_waypoint_count': msg.recorded_waypoint_count,
             }
+
+        # Broadcast to all connected WebSocket clients
+        if self.ws_clients:
+            self.broadcast_data()
+
+    def dog_follower_status_callback(self, msg: String):
+        """Process incoming dog follower status messages"""
+        with self.health_lock:
+            self.latest_dog_follower_status = msg.data
 
         # Broadcast to all connected WebSocket clients
         if self.ws_clients:
@@ -298,6 +322,8 @@ class Rover1WebDashboard(Node):
                 payload['patrol'] = self.latest_patrol_status
             # Include teleop speed for dashboard sync
             payload['teleop_speed'] = self.teleop_speed
+            # Include dog follower status
+            payload['dog_follower_status'] = self.latest_dog_follower_status
 
         if not payload:
             return
@@ -399,6 +425,10 @@ class Rover1WebDashboard(Node):
             return self.system_shutdown()
         elif action == 'reboot':
             return self.system_reboot()
+        elif action == 'dog_follow_enable':
+            return await self.call_dog_follower_service('enable')
+        elif action == 'dog_follow_disable':
+            return await self.call_dog_follower_service('disable')
         else:
             return {'success': False, 'message': f'Unknown action: {action}'}
 
@@ -410,6 +440,25 @@ class Rover1WebDashboard(Node):
 
         if not client.wait_for_service(timeout_sec=1.0):
             return {'success': False, 'message': f'Service {service_name} not available'}
+
+        request = Trigger.Request()
+        future = client.call_async(request)
+
+        # Wait for result in a non-blocking way
+        while not future.done():
+            await asyncio.sleep(0.1)
+
+        result = future.result()
+        return {'success': result.success, 'message': result.message}
+
+    async def call_dog_follower_service(self, service_name):
+        """Call a dog follower Trigger service and return the result"""
+        client = self.dog_follower_clients.get(service_name)
+        if not client:
+            return {'success': False, 'message': f'Dog follower service {service_name} not found'}
+
+        if not client.wait_for_service(timeout_sec=1.0):
+            return {'success': False, 'message': 'Dog follower node not running'}
 
         request = Trigger.Request()
         future = client.call_async(request)

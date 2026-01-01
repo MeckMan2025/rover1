@@ -15,6 +15,7 @@ def generate_launch_description():
     # Launch Arguments
     use_joy = LaunchConfiguration('use_joy', default='true')
     use_foxglove = LaunchConfiguration('use_foxglove', default='true')
+    enable_dog_follower = LaunchConfiguration('enable_dog_follower', default='true')
 
     # Process URDF
     urdf_file = PathJoinSubstitution([desc_share, 'urdf', 'rover.urdf.xacro'])
@@ -36,6 +37,11 @@ def generate_launch_description():
             'use_foxglove',
             default_value='true',
             description='Whether to start the Foxglove Bridge'
+        ),
+        DeclareLaunchArgument(
+            'enable_dog_follower',
+            default_value='true',
+            description='Whether to start the Dog Follower vision node'
         ),
 
         # Robot State Publisher (TF Tree)
@@ -116,7 +122,26 @@ def generate_launch_description():
                 'pub_tfTree': False   # We handle TF in our own URDF for better control
             }]
         ),
-        
+
+        # Dog Follower (Vision-based dog detection and following using Hailo-8L)
+        Node(
+            condition=IfCondition(enable_dog_follower),
+            package='rover1_vision',
+            executable='dog_follower',
+            name='dog_follower',
+            output='screen',
+            parameters=[{
+                'model_path': '/home/andrewmeckley/ros2_ws/src/rover1/models/yolov8s.hef',
+                'confidence_threshold': 0.5,
+                'linear_speed': 0.2,
+                'angular_speed': 0.5,
+                'target_box_area_ratio': 0.15,
+                'center_tolerance': 0.1,
+                'detection_timeout': 1.0,
+                'teleop_override_timeout': 0.5,
+            }]
+        ),
+
         # EKF Sensor Fusion (Local: Odom -> Base_Link)
         Node(
             package='robot_localization',
