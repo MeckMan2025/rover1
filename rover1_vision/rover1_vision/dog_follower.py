@@ -118,6 +118,7 @@ class DogFollower(Node):
         self.hailo_device = None
         self.hailo_hef = None
         self.hailo_network_group = None
+        self.activated_network_group = None  # Must store to prevent GC
         self.input_vstream_info = None
         self.output_vstream_info = None
         self._init_hailo()
@@ -220,7 +221,8 @@ class DogFollower(Node):
             )[0]
 
             # Activate the network group (required before inference)
-            self.hailo_network_group.activate()
+            # Must store the returned object to prevent garbage collection
+            self.activated_network_group = self.hailo_network_group.activate()
 
             # Get input/output stream info
             self.input_vstream_info = self.hailo_hef.get_input_vstream_infos()[0]
@@ -739,10 +741,10 @@ class DogFollower(Node):
     def destroy_node(self):
         """Cleanup on shutdown."""
         self.stop_robot()
-        # Deactivate network group before releasing device
-        if self.hailo_network_group is not None:
+        # Deactivate the activated network group before releasing device
+        if self.activated_network_group is not None:
             try:
-                self.hailo_network_group.deactivate()
+                self.activated_network_group.deactivate()
             except Exception:
                 pass
         if self.hailo_device is not None:
