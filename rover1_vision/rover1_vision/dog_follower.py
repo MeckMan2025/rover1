@@ -277,6 +277,17 @@ class DogFollower(Node):
         # Run inference
         detections = self.run_inference(cv_image)
 
+        # Debug logging - verify detections are being produced
+        if len(detections) > 0:
+            # Log top detection info
+            top = max(detections, key=lambda d: d[4])  # Highest confidence
+            class_names = {0: 'person', 16: 'dog', 15: 'cat'}  # Common classes
+            class_name = class_names.get(int(top[5]), f'class_{int(top[5])}')
+            self.get_logger().info(
+                f'Detected {len(detections)} objects. '
+                f'Top: {class_name} (conf={top[4]:.2f})'
+            )
+
         # Find best dog detection
         dog = self.find_best_dog(detections, cv_image.shape)
 
@@ -307,19 +318,20 @@ class DogFollower(Node):
             return self._mock_inference(image)
 
         try:
-            # Preprocess: resize and normalize for YOLOv8
+            # Preprocess: resize for YOLOv8
+            # IMPORTANT: Hailo model expects UINT8 input (0-255), NOT normalized float
             h, w = image.shape[:2]
             input_image = cv2.resize(image, (self.YOLO_INPUT_SIZE, self.YOLO_INPUT_SIZE))
             input_image = cv2.cvtColor(input_image, cv2.COLOR_BGR2RGB)
-            input_image = input_image.astype(np.float32) / 255.0
+            input_image = input_image.astype(np.uint8)  # Keep as UINT8, no normalization
 
             # Reshape for batch processing
             input_data = np.expand_dims(input_image, axis=0)
 
-            # Create VStream params
+            # Create VStream params - use quantized mode for UINT8 input
             input_params = InputVStreamParams.make_from_network_group(
-                self.hailo_network_group, quantized=False,
-                format_type=FormatType.FLOAT32
+                self.hailo_network_group, quantized=True,
+                format_type=FormatType.UINT8
             )
             output_params = OutputVStreamParams.make_from_network_group(
                 self.hailo_network_group, quantized=False,
@@ -348,63 +360,69 @@ class DogFollower(Node):
 
     def _postprocess_yolov8(self, outputs: dict, orig_w: int, orig_h: int) -> list:
         """
-        Post-process YOLOv8 outputs to get detection boxes.
+        Post-process Hailo NMS output format.
 
-        YOLOv8 output format varies by model variant. This handles the common
-        format of [batch, num_detections, 85] where 85 = 4 (box) + 1 (obj) + 80 (classes)
+        The YOLOv8s HEF model has built-in NMS (yolov8_nms_postprocess).
+        Output shape: (num_classes, 5, max_detections_per_class) = (80, 5, 100)
+        Where 5 = [ymin, xmin, ymax, xmax, score] in normalized coordinates (0-1)
+
+        This is NOT raw YOLO tensor format - it's already NMS-processed.
         """
         detections = []
 
         try:
-            # Get the output tensor (name varies by model)
+            # Get the output tensor
             output_name = list(outputs.keys())[0]
             output = outputs[output_name]
 
-            # Handle different output formats
-            if len(output.shape) == 3:
-                # Shape: [batch, num_boxes, 85]
-                output = output[0]  # Remove batch dimension
+            # Remove batch dimension if present
+            if len(output.shape) == 4:
+                output = output[0]
 
-            # Scale factors for original image
-            scale_x = orig_w / self.YOLO_INPUT_SIZE
-            scale_y = orig_h / self.YOLO_INPUT_SIZE
+            # Expected shape: (80, 5, 100) for YOLOv8 with 80 COCO classes
+            # 80 = number of classes
+            # 5 = [ymin, xmin, ymax, xmax, score]
+            # 100 = max detections per class
+            num_classes = output.shape[0]
 
-            for detection in output:
-                if len(detection) < 6:
-                    continue
+            for class_id in range(num_classes):
+                class_output = output[class_id]  # Shape: (5, 100)
 
-                # YOLOv8 format: [x_center, y_center, width, height, conf, class_scores...]
-                x_center, y_center, width, height = detection[:4]
-                confidence = detection[4]
-                class_scores = detection[5:]
+                # Iterate over detections for this class
+                for det_idx in range(class_output.shape[1]):
+                    # Hailo NMS format: [ymin, xmin, ymax, xmax, score]
+                    ymin = class_output[0, det_idx]
+                    xmin = class_output[1, det_idx]
+                    ymax = class_output[2, det_idx]
+                    xmax = class_output[3, det_idx]
+                    score = class_output[4, det_idx]
 
-                if confidence < self.confidence_threshold:
-                    continue
+                    # Skip empty detections (score 0 or below threshold)
+                    if score < self.confidence_threshold:
+                        continue
 
-                class_id = int(np.argmax(class_scores))
-                class_conf = class_scores[class_id]
+                    # Convert from normalized (0-1) to pixel coordinates
+                    x1 = int(xmin * orig_w)
+                    y1 = int(ymin * orig_h)
+                    x2 = int(xmax * orig_w)
+                    y2 = int(ymax * orig_h)
 
-                # Combine objectness and class confidence
-                final_conf = confidence * class_conf
-                if final_conf < self.confidence_threshold:
-                    continue
+                    # Clip to image bounds
+                    x1 = max(0, min(orig_w, x1))
+                    y1 = max(0, min(orig_h, y1))
+                    x2 = max(0, min(orig_w, x2))
+                    y2 = max(0, min(orig_w, y2))
 
-                # Convert to corner format and scale to original image
-                x1 = int((x_center - width / 2) * scale_x)
-                y1 = int((y_center - height / 2) * scale_y)
-                x2 = int((x_center + width / 2) * scale_x)
-                y2 = int((y_center + height / 2) * scale_y)
+                    # Skip invalid boxes
+                    if x2 <= x1 or y2 <= y1:
+                        continue
 
-                # Clip to image bounds
-                x1 = max(0, min(orig_w, x1))
-                y1 = max(0, min(orig_h, y1))
-                x2 = max(0, min(orig_w, x2))
-                y2 = max(0, min(orig_h, y2))
-
-                detections.append([x1, y1, x2, y2, final_conf, class_id])
+                    detections.append([x1, y1, x2, y2, float(score), class_id])
 
         except Exception as e:
-            self.get_logger().debug(f'Postprocess error: {e}')
+            self.get_logger().error(f'Postprocess error: {e}')
+            import traceback
+            self.get_logger().error(traceback.format_exc())
 
         return detections
 
