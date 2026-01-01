@@ -36,21 +36,17 @@ source ~/ros2_ws/install/setup.bash
 
 # 4. Launch Essential Stack (Teleop + Camera + Odometry Patrol)
 # NOTE: RTAB-Map and Nav2 disabled - too heavy for Pi 5, causes instability
-# Use patrol_lite which includes simple_waypoint_follower (odometry-based)
+# Use patrol_lite which includes rover.launch.py + adds patrol nodes
 echo ">>> Starting Rover1 Essential Stack..."
 
-# Launch base rover in background
-echo ">>> [1/2] Launching rover base system..."
-ros2 launch rover1_bringup rover.launch.py &
-ROVER_PID=$!
-sleep 20
-
-# Launch lightweight patrol (waypoint recorder + simple follower + dashboard)
-echo ">>> [2/2] Launching lightweight patrol system..."
+# Launch patrol_lite (includes rover.launch.py + patrol nodes)
+# NOTE: Do NOT launch rover.launch.py separately - patrol_lite includes it
+echo ">>> Launching patrol_lite (base rover + patrol system)..."
 ros2 launch rover1_bringup patrol_lite.launch.py &
-sleep 10
+ROVER_PID=$!
+sleep 30
 
-echo ">>> Essential stack launched (teleop + camera + odometry patrol)."
+echo ">>> Essential stack launched (teleop + camera + odometry patrol + dog follower)."
 echo ">>> RTAB-Map and Nav2 are DISABLED for stability."
 echo ">>> Dashboard available at http://rover1.local:8080"
 

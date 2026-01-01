@@ -106,11 +106,6 @@ def generate_launch_description():
             }]
         ),
 
-        # Web Dashboard
-        Node(
-            package='gnss_web_dashboard',
-            executable='web_dashboard',
-            name='rover1_web_dashboard',
-            output='screen'
-        ),
+        # NOTE: Web Dashboard is launched by rover.launch.py (included above)
+        # Do not add it here to avoid duplicate nodes
     ])
