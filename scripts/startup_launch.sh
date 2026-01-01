@@ -41,12 +41,20 @@ echo ">>> Checking for updates..."
 cd ~/ros2_ws/src/rover1
 git pull || echo "Warning: Git pull failed (offline or conflict), continuing anyway..."
 
-# 3. Environment & Workspace (Proper order for custom message visibility)
+# 3. Check and Install Dependencies (rosdep)
+echo ">>> Checking dependencies..."
+source /opt/ros/jazzy/setup.bash
+cd ~/ros2_ws
+rosdep install --from-paths src --ignore-src -r -y 2>&1 | grep -v "^#All" || true
+echo ">>> Dependencies up to date."
+
+# 4. Environment & Workspace (Proper order for custom message visibility)
+cd ~/ros2_ws/src/rover1
 source /opt/ros/jazzy/setup.bash
 source scripts/load_env.sh
 source ~/ros2_ws/install/setup.bash
 
-# 4. Launch Essential Stack (Teleop + Camera + Odometry Patrol)
+# 5. Launch Essential Stack (Teleop + Camera + Odometry Patrol)
 # NOTE: RTAB-Map and Nav2 disabled - too heavy for Pi 5, causes instability
 # Use patrol_lite which includes rover.launch.py + adds patrol nodes
 echo ">>> Starting Rover1 Essential Stack..."

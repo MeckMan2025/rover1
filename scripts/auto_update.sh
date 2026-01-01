@@ -19,14 +19,16 @@ if [ $? -eq 0 ]; then
     if [ "$HEADHASH" != "$UPSTREAMHASH" ]; then
         echo "Update found. Pulling..."
         git pull
-        
-        # Optional: Revert local changes to tracked files to ensure clean pull
-        # git reset --hard origin/main
-        
-        # Rebuild if package.xml changed? 
-        # For now, just pull. User might need to rebuild manually or we can trigger it.
-        echo "Update applied."
-        
+
+        # Check and install any new dependencies
+        echo "Checking dependencies..."
+        source /opt/ros/jazzy/setup.bash
+        cd ~/ros2_ws
+        rosdep install --from-paths src --ignore-src -r -y 2>&1 | grep -v "^#All" || true
+        cd $WORKSPACE_DIR
+
+        echo "Update applied. Dependencies checked."
+
         # Optional: Restart rover service if running
         # sudo systemctl restart rover1.service
     else
