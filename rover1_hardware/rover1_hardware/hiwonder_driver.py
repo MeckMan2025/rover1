@@ -4,6 +4,7 @@ from rclpy.node import Node
 from std_msgs.msg import Int32MultiArray
 import smbus2 as smbus
 import struct
+import time
 
 class HiwonderDriver(Node):
     def __init__(self):
@@ -47,6 +48,12 @@ class HiwonderDriver(Node):
         # Encoder Reader
         self.create_timer(0.05, self.encoder_callback) # 20Hz
         self.encoder_pub = self.create_publisher(Int32MultiArray, 'wheel_encoders', 10)
+
+        # Error tracking for fault visibility
+        self.encoder_error_count = 0
+        self.motor_error_count = 0
+        self.last_encoder_warn_time = 0.0
+        self.last_motor_warn_time = 0.0
         
     def encoder_callback(self):
         if self.bus is None: return
@@ -79,8 +86,13 @@ class HiwonderDriver(Node):
             self.encoder_pub.publish(msg)
             
         except Exception as e:
-            # self.get_logger().warn(f'Encoder Read Error: {e}')
-            pass
+            self.encoder_error_count += 1
+            now = time.time()
+            if now - self.last_encoder_warn_time > 10.0:
+                self.get_logger().warn(
+                    f'Encoder read errors: {self.encoder_error_count} total, last: {e}'
+                )
+                self.last_encoder_warn_time = now
 
     def watchdog_callback(self):
         # If no message for 0.5s, stop motors
@@ -101,7 +113,13 @@ class HiwonderDriver(Node):
         try:
             self.bus.write_byte_data(self.address, register, val)
         except Exception as e:
-            self.get_logger().error(f'I2C Write Error (Reg {register}): {e}')
+            self.motor_error_count += 1
+            now = time.time()
+            if now - self.last_motor_warn_time > 10.0:
+                self.get_logger().error(
+                    f'Motor write errors: {self.motor_error_count} total, last: Reg {register}: {e}'
+                )
+                self.last_motor_warn_time = now
 
     def stop_motors(self):
         if self.bus is not None:

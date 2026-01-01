@@ -40,6 +40,10 @@ class BerryIMUDriver(Node):
         self.gb = [0.0, 0.0, 0.0] # Gyro Bias X, Y, Z
         self.ab = [0.0, 0.0, 0.0] # Accel Bias (Not typically subtracted blindly, but useful)
 
+        # Error tracking for fault visibility
+        self.i2c_error_count = 0
+        self.last_warn_time = 0.0
+
         self.get_logger().info(f'Initializing BerryIMU on Bus {self.bus_num}...')
         
         try:
@@ -172,7 +176,13 @@ class BerryIMUDriver(Node):
             self.publisher_.publish(msg)
 
         except Exception as e:
-            self.get_logger().warn(f'I2C Cycle Fail: {e}')
+            self.i2c_error_count += 1
+            now = time.time()
+            if now - self.last_warn_time > 10.0:
+                self.get_logger().warn(
+                    f'IMU I2C errors: {self.i2c_error_count} total, last: {e}'
+                )
+                self.last_warn_time = now
 
 def main(args=None):
     rclpy.init(args=args)

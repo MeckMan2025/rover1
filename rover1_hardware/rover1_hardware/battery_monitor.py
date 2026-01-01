@@ -27,7 +27,11 @@ class BatteryMonitor(Node):
             
         # Publisher
         self.publisher_ = self.create_publisher(Float32, 'battery_voltage', 10)
-        
+
+        # Error tracking for fault visibility
+        self.read_error_count = 0
+        self.last_warn_time = 0.0
+
         # Timer
         self.timer = self.create_timer(1.0/rate, self.timer_callback)
         
@@ -47,7 +51,13 @@ class BatteryMonitor(Node):
                 # Periodic log for confirmation
                 self.get_logger().debug(f"Published voltage: {voltage:.2f}V")
         except Exception as e:
-            self.get_logger().warn(f"Failed to read battery voltage: {e}")
+            self.read_error_count += 1
+            now = time.time()
+            if now - self.last_warn_time > 30.0:
+                self.get_logger().warn(
+                    f'Battery read errors: {self.read_error_count} total, last: {e}'
+                )
+                self.last_warn_time = now
 
 def main(args=None):
     rclpy.init(args=args)
