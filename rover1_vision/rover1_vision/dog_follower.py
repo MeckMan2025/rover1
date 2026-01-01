@@ -567,6 +567,11 @@ class DogFollower(Node):
             output_name = list(outputs.keys())[0]
             output = outputs[output_name]
 
+            # Handle both list and ndarray output formats
+            # Persistent InferVStreams pipeline may return list instead of ndarray
+            if isinstance(output, list):
+                output = np.array(output)
+
             # Remove batch dimension if present
             if len(output.shape) == 4:
                 output = output[0]
