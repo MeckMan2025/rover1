@@ -5,9 +5,13 @@ Dog Follower Node - Uses Hailo-8L for YOLOv8 dog detection and follows detected 
 This node uses the Hailo-8L AI accelerator to run real-time YOLOv8 inference,
 detecting dogs (COCO class 16) and generating velocity commands to follow them.
 
+TWO-STATE DESIGN:
+  - Detection: Controls whether Hailo inference runs and annotated images are published
+  - Following: Controls whether the rover moves to follow detected dogs (requires detection on)
+
 SAFETY FEATURES:
-  - Disabled by default, must be explicitly enabled via service
-  - Auto-disables if teleop sends /cmd_vel (teleop override)
+  - Both detection and following disabled by default
+  - Auto-disables following if teleop sends /cmd_vel (teleop override)
   - Stops if no dog detected for configurable timeout
   - Velocity limits enforced in hardware
 
@@ -16,12 +20,15 @@ Subscribes:
   - /cmd_vel (geometry_msgs/Twist) - for teleop override detection
 
 Publishes:
-  - /cmd_vel (geometry_msgs/Twist) - when enabled and following
+  - /cmd_vel (geometry_msgs/Twist) - when following enabled
   - /dog_follower/status (std_msgs/String) - status updates
+  - /dog_follower/annotated_image (sensor_msgs/Image) - when detection enabled
 
 Services:
-  - /dog_follower/enable (std_srvs/Trigger) - start following
-  - /dog_follower/disable (std_srvs/Trigger) - stop following
+  - /dog_follower/detection_enable (std_srvs/Trigger) - turn on detection/visualization
+  - /dog_follower/detection_disable (std_srvs/Trigger) - turn off detection (fails if following)
+  - /dog_follower/enable (std_srvs/Trigger) - start following (auto-enables detection)
+  - /dog_follower/disable (std_srvs/Trigger) - stop following (keeps detection on)
 """
 
 import rclpy
@@ -61,6 +68,12 @@ class DogFollower(Node):
     # YOLOv8 input size
     YOLO_INPUT_SIZE = 640
 
+    # Colors for bounding box visualization (BGR format)
+    COLOR_DOG_TARGET = (0, 255, 0)      # Bright green - active target being followed
+    COLOR_DOG_DETECTED = (0, 200, 0)    # Darker green - detected but not target
+    COLOR_STATUS_ACTIVE = (0, 255, 0)   # Green - detection/following active
+    COLOR_STATUS_IDLE = (128, 128, 128) # Gray - idle
+
     def __init__(self):
         super().__init__('dog_follower')
 
@@ -69,9 +82,11 @@ class DogFollower(Node):
         self.timer_cb_group = MutuallyExclusiveCallbackGroup()
 
         self.bridge = CvBridge()
-        self.enabled = False
+        self.detection_enabled = False  # Controls Hailo inference and annotated image
+        self.following_enabled = False  # Controls whether rover follows (requires detection)
         self.last_detection_time = None
         self.current_status = 'idle'
+        self.current_target_dog = None  # Track which dog we're following for visualization
 
         # Thread safety for cmd_vel detection
         self.cmd_vel_lock = threading.Lock()
@@ -110,6 +125,9 @@ class DogFollower(Node):
         # Publishers
         self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.status_pub = self.create_publisher(String, '/dog_follower/status', 10)
+        self.annotated_image_pub = self.create_publisher(
+            Image, '/dog_follower/annotated_image', 10
+        )
 
         # Subscribers
         self.image_sub = self.create_subscription(
@@ -132,7 +150,19 @@ class DogFollower(Node):
             cmd_vel_qos
         )
 
-        # Services
+        # Services - Detection control
+        self.detection_enable_srv = self.create_service(
+            Trigger, '/dog_follower/detection_enable',
+            self.detection_enable_callback,
+            callback_group=self.service_cb_group
+        )
+        self.detection_disable_srv = self.create_service(
+            Trigger, '/dog_follower/detection_disable',
+            self.detection_disable_callback,
+            callback_group=self.service_cb_group
+        )
+
+        # Services - Following control
         self.enable_srv = self.create_service(
             Trigger, '/dog_follower/enable',
             self.enable_callback,
@@ -202,14 +232,53 @@ class DogFollower(Node):
             self.get_logger().warn('Running in mock mode')
             self.hailo_device = None
 
+    def detection_enable_callback(self, request, response):
+        """Enable detection (Hailo inference + annotated image publishing)."""
+        if self.detection_enabled:
+            response.success = True
+            response.message = 'Detection already enabled'
+            return response
+
+        self.detection_enabled = True
+        self.current_status = 'detecting'
+        self.current_target_dog = None
+
+        response.success = True
+        response.message = 'Detection enabled - Hailo inference active'
+        self.get_logger().info('Detection ENABLED')
+        self.publish_status('detecting')
+        return response
+
+    def detection_disable_callback(self, request, response):
+        """Disable detection (stops Hailo inference)."""
+        if self.following_enabled:
+            response.success = False
+            response.message = 'Cannot disable detection while following is active. Stop following first.'
+            return response
+
+        self.detection_enabled = False
+        self.current_status = 'idle'
+        self.current_target_dog = None
+
+        response.success = True
+        response.message = 'Detection disabled'
+        self.get_logger().info('Detection DISABLED')
+        self.publish_status('idle')
+        return response
+
     def enable_callback(self, request, response):
-        """Enable dog following."""
-        if self.enabled:
+        """Enable dog following (auto-enables detection if needed)."""
+        if self.following_enabled:
             response.success = False
             response.message = 'Dog follower already enabled'
             return response
 
-        self.enabled = True
+        # Auto-enable detection if not already enabled
+        if not self.detection_enabled:
+            self.detection_enabled = True
+            self.get_logger().info('Detection auto-enabled for following')
+
+        self.following_enabled = True
         self.last_detection_time = self.get_clock().now()
         self.current_status = 'searching'
 
@@ -220,20 +289,27 @@ class DogFollower(Node):
         return response
 
     def disable_callback(self, request, response):
-        """Disable dog following."""
-        was_enabled = self.enabled
-        self.enabled = False
+        """Disable dog following (keeps detection on for visualization)."""
+        was_enabled = self.following_enabled
+        self.following_enabled = False
         self.stop_robot()
-        self.current_status = 'idle'
+        self.current_target_dog = None
+
+        # Keep detection on so user can still see bounding boxes
+        if self.detection_enabled:
+            self.current_status = 'detecting'
+            self.publish_status('detecting')
+        else:
+            self.current_status = 'idle'
+            self.publish_status('idle')
 
         response.success = True
         if was_enabled:
-            response.message = 'Dog follower disabled'
+            response.message = 'Dog follower disabled (detection still active)'
             self.get_logger().info('Dog follower DISABLED')
         else:
             response.message = 'Dog follower was not enabled'
 
-        self.publish_status('idle')
         return response
 
     def cmd_vel_callback(self, msg: Twist):
@@ -263,8 +339,9 @@ class DogFollower(Node):
                 self.last_external_cmd_time = now
 
     def image_callback(self, msg: Image):
-        """Process camera images and detect dogs."""
-        if not self.enabled:
+        """Process camera images - run detection when enabled, follow when enabled."""
+        # If detection is off, do nothing (dashboard uses raw camera feed)
+        if not self.detection_enabled:
             return
 
         try:
@@ -274,22 +351,36 @@ class DogFollower(Node):
             self.get_logger().error(f'CV Bridge error: {e}')
             return
 
-        # Run inference
+        # Run inference (only when detection is enabled)
         detections = self.run_inference(cv_image)
 
-        # Debug logging - verify detections are being produced
-        if len(detections) > 0:
-            # Log top detection info
-            top = max(detections, key=lambda d: d[4])  # Highest confidence
-            class_names = {0: 'person', 16: 'dog', 15: 'cat'}  # Common classes
-            class_name = class_names.get(int(top[5]), f'class_{int(top[5])}')
+        # Filter to dogs only for visualization
+        dog_detections = [d for d in detections if int(d[5]) == self.DOG_CLASS_ID]
+
+        # Find best dog (for following and target highlight)
+        dog = self.find_best_dog(detections, cv_image.shape)
+        self.current_target_dog = dog  # Store for visualization
+
+        # Debug logging - only log dog detections
+        if len(dog_detections) > 0:
+            top = max(dog_detections, key=lambda d: d[4])
             self.get_logger().info(
-                f'Detected {len(detections)} objects. '
-                f'Top: {class_name} (conf={top[4]:.2f})'
+                f'Detected {len(dog_detections)} dog(s). '
+                f'Best: conf={top[4]:.2f}'
             )
 
-        # Find best dog detection
-        dog = self.find_best_dog(detections, cv_image.shape)
+        # Draw bounding boxes on dogs only and publish annotated image
+        annotated = self.draw_detections(cv_image, dog_detections, target_dog=dog)
+        try:
+            annotated_msg = self.bridge.cv2_to_imgmsg(annotated, 'bgr8')
+            annotated_msg.header = msg.header  # Preserve timestamp
+            self.annotated_image_pub.publish(annotated_msg)
+        except Exception as e:
+            self.get_logger().error(f'Failed to publish annotated image: {e}')
+
+        # Only do following logic if following is enabled
+        if not self.following_enabled:
+            return
 
         if dog is not None:
             self.last_detection_time = self.get_clock().now()
@@ -301,6 +392,95 @@ class DogFollower(Node):
             if self.current_status == 'following':
                 self.current_status = 'searching'
                 self.publish_status('searching')
+
+    def draw_detections(self, image: np.ndarray, detections: list,
+                        target_dog: dict = None) -> np.ndarray:
+        """
+        Draw bounding boxes and labels on detected dogs.
+
+        Args:
+            image: BGR image to annotate
+            detections: List of dog detections [x1, y1, x2, y2, conf, class_id]
+            target_dog: The dog being followed (highlighted differently), or None
+
+        Returns:
+            Annotated image copy
+        """
+        annotated = image.copy()
+
+        for det in detections:
+            x1, y1, x2, y2, conf, class_id = det
+            x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+
+            # Check if this is the target dog being followed
+            is_target = False
+            if target_dog is not None and self.following_enabled:
+                is_target = self._is_same_detection(det, target_dog)
+
+            # Color and thickness based on whether this is the active target
+            if is_target:
+                color = self.COLOR_DOG_TARGET
+                thickness = 3
+                label = f'DOG {conf:.2f} [TARGET]'
+            else:
+                color = self.COLOR_DOG_DETECTED
+                thickness = 2
+                label = f'dog {conf:.2f}'
+
+            # Draw bounding box
+            cv2.rectangle(annotated, (x1, y1), (x2, y2), color, thickness)
+
+            # Draw label background
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 0.5
+            font_thickness = 1
+            (label_w, label_h), baseline = cv2.getTextSize(
+                label, font, font_scale, font_thickness
+            )
+
+            # Label background rectangle (above the box)
+            cv2.rectangle(
+                annotated,
+                (x1, y1 - label_h - 8),
+                (x1 + label_w + 4, y1),
+                color,
+                -1  # Filled
+            )
+
+            # Label text (white on colored background)
+            cv2.putText(
+                annotated, label,
+                (x1 + 2, y1 - 4),
+                font, font_scale,
+                (255, 255, 255),
+                font_thickness
+            )
+
+        # Draw status overlay in top-left corner
+        if self.following_enabled:
+            status_text = f'Dog Follower: {self.current_status.upper()}'
+            status_color = self.COLOR_STATUS_ACTIVE
+        else:
+            status_text = 'Detection: ON'
+            status_color = self.COLOR_DOG_DETECTED
+
+        cv2.putText(
+            annotated, status_text,
+            (10, 25),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+            status_color, 2
+        )
+
+        return annotated
+
+    def _is_same_detection(self, det: list, dog: dict) -> bool:
+        """Check if detection matches the target dog (by bbox center proximity)."""
+        x1, y1, x2, y2 = det[:4]
+        tx1, ty1, tx2, ty2 = dog['bbox']
+        # Simple center proximity check
+        cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+        tcx, tcy = (tx1 + tx2) / 2, (ty1 + ty2) / 2
+        return abs(cx - tcx) < 20 and abs(cy - tcy) < 20
 
     def run_inference(self, image: np.ndarray) -> list:
         """
@@ -501,11 +681,11 @@ class DogFollower(Node):
 
     def safety_check(self):
         """
-        Periodic safety checks:
+        Periodic safety checks (only when following is enabled):
         1. Stop if no dog detected for too long
-        2. Auto-disable if teleop is active
+        2. Auto-disable following if teleop is active
         """
-        if not self.enabled:
+        if not self.following_enabled:
             return
 
         now = self.get_clock().now()
@@ -515,8 +695,8 @@ class DogFollower(Node):
             if self.last_external_cmd_time is not None:
                 elapsed = (now - self.last_external_cmd_time).nanoseconds / 1e9
                 if elapsed < self.teleop_override_timeout:
-                    self.get_logger().warn('Teleop override detected - disabling dog follower')
-                    self.enabled = False
+                    self.get_logger().warn('Teleop override detected - disabling following')
+                    self.following_enabled = False
                     self.stop_robot()
                     self.current_status = 'teleop_override'
                     self.publish_status('teleop_override')

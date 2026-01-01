@@ -103,12 +103,15 @@ class Rover1WebDashboard(Node):
 
         # Dog Follower service clients
         self.dog_follower_clients = {
+            'detection_enable': self.create_client(Trigger, '/dog_follower/detection_enable'),
+            'detection_disable': self.create_client(Trigger, '/dog_follower/detection_disable'),
             'enable': self.create_client(Trigger, '/dog_follower/enable'),
             'disable': self.create_client(Trigger, '/dog_follower/disable'),
         }
 
         # Dog Follower status tracking
         self.latest_dog_follower_status = 'idle'
+        self.detection_enabled = False  # Track if we should use annotated feed
         self.dog_follower_sub = self.create_subscription(
             String,
             '/dog_follower/status',
@@ -123,12 +126,23 @@ class Rover1WebDashboard(Node):
         self.fps_limit = 10.0
         self.interval = 1.0 / self.fps_limit
 
-        # Subscribe to camera RGB feed
-        # Topic as identified from ascamera_node defaults + namespace
-        self.image_sub = self.create_subscription(
+        # Track which feed we're using
+        self.using_annotated_feed = False
+        self.last_annotated_time = 0
+
+        # Subscribe to annotated camera feed (with bounding boxes) - preferred when detection is on
+        self.annotated_image_sub = self.create_subscription(
+            Image,
+            '/dog_follower/annotated_image',
+            self.annotated_image_callback,
+            rclpy.qos.qos_profile_sensor_data
+        )
+
+        # Subscribe to raw camera RGB feed - fallback when detection is off
+        self.raw_image_sub = self.create_subscription(
             Image,
             '/ascamera_hp60c/camera_publisher/rgb0/image',
-            self.image_callback,
+            self.raw_image_callback,
             rclpy.qos.qos_profile_sensor_data
         )
 
@@ -217,34 +231,45 @@ class Rover1WebDashboard(Node):
         if self.ws_clients:
             self.broadcast_data()
 
-    def image_callback(self, msg: Image):
-        """Process incoming camera images and encode for web"""
+    def annotated_image_callback(self, msg: Image):
+        """Process annotated camera images (with bounding boxes) - preferred feed."""
+        self.last_annotated_time = time.time()
+        self.using_annotated_feed = True
+        self._process_image(msg)
+
+    def raw_image_callback(self, msg: Image):
+        """Process raw camera images - fallback when detection is off."""
+        # Only use raw feed if we haven't received annotated feed recently (1 second)
+        if self.last_annotated_time > 0 and (time.time() - self.last_annotated_time) < 1.0:
+            return  # Annotated feed is active, skip raw
+        self.using_annotated_feed = False
+        self._process_image(msg)
+
+    def _process_image(self, msg: Image):
+        """Common image processing for both feeds."""
         now = time.time()
         if now - self.last_img_time < self.interval:
             return
-            
+
         try:
             # Convert ROS Image to OpenCV BGR
             cv_img = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-            
-            # Downscale for performance if needed (already 640x480 usually)
-            # cv_img = cv2.resize(cv_img, (320, 240)) 
-            
+
             # Encode as JPEG
             # Quality 40-60 is a good balance for bandwidth vs clarity
             _, buffer = cv2.imencode('.jpg', cv_img, [cv2.IMWRITE_JPEG_QUALITY, 50])
-            
+
             # Convert to Base64 string
             base64_img = base64.b64encode(buffer).decode('utf-8')
-            
+
             with self.health_lock:
                 self.latest_image_base64 = base64_img
                 self.last_img_time = now
-                
+
             # Broadcast immediately on image update if health is already there
             if self.ws_clients:
                 self.broadcast_data()
-                
+
         except Exception as e:
             self.get_logger().error(f"Image processing error: {e}")
 
@@ -322,8 +347,10 @@ class Rover1WebDashboard(Node):
                 payload['patrol'] = self.latest_patrol_status
             # Include teleop speed for dashboard sync
             payload['teleop_speed'] = self.teleop_speed
-            # Include dog follower status
+            # Include dog follower status and detection state
             payload['dog_follower_status'] = self.latest_dog_follower_status
+            payload['detection_enabled'] = self.detection_enabled
+            payload['using_ai_feed'] = self.using_annotated_feed
 
         if not payload:
             return
@@ -425,8 +452,21 @@ class Rover1WebDashboard(Node):
             return self.system_shutdown()
         elif action == 'reboot':
             return self.system_reboot()
+        elif action == 'detection_enable':
+            result = await self.call_dog_follower_service('detection_enable')
+            if result.get('success'):
+                self.detection_enabled = True
+            return result
+        elif action == 'detection_disable':
+            result = await self.call_dog_follower_service('detection_disable')
+            if result.get('success'):
+                self.detection_enabled = False
+            return result
         elif action == 'dog_follow_enable':
-            return await self.call_dog_follower_service('enable')
+            result = await self.call_dog_follower_service('enable')
+            if result.get('success'):
+                self.detection_enabled = True  # Following auto-enables detection
+            return result
         elif action == 'dog_follow_disable':
             return await self.call_dog_follower_service('disable')
         else:

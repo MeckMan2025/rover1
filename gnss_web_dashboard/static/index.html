@@ -516,6 +516,105 @@
             color: #ff4444;
         }
 
+        .dog-follower-status.detecting {
+            background: rgba(0, 136, 255, 0.2);
+            color: #0088ff;
+        }
+
+        /* Detection Toggle Row */
+        .detection-toggle-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 20px;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+        }
+
+        .detection-label {
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        /* Toggle Switch */
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 26px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.2);
+            transition: 0.3s;
+            border-radius: 26px;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+        }
+
+        .toggle-switch input:checked + .toggle-slider {
+            background-color: #00ff88;
+        }
+
+        .toggle-switch input:checked + .toggle-slider:before {
+            transform: translateX(24px);
+        }
+
+        /* Feed Indicator */
+        .feed-indicator {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.85rem;
+            padding: 4px 10px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .feed-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.4);
+        }
+
+        .feed-indicator.ai-feed .feed-dot {
+            background: #00ff88;
+            box-shadow: 0 0 6px #00ff88;
+        }
+
+        .feed-indicator.ai-feed .feed-text {
+            color: #00ff88;
+        }
+
+        .feed-text {
+            color: rgba(255, 255, 255, 0.6);
+        }
+
         @keyframes pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.7; }
@@ -1517,9 +1616,24 @@
         <!-- Dog Follower Card -->
         <div class="card dog-follower-card">
             <div class="card-title">Dog Follower</div>
+
+            <!-- Detection Toggle -->
+            <div class="detection-toggle-row">
+                <span class="detection-label">Detection</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="detectionToggle" onchange="dogFollower.toggleDetection(this.checked)">
+                    <span class="toggle-slider"></span>
+                </label>
+                <span class="feed-indicator" id="feedIndicator">
+                    <span class="feed-dot"></span>
+                    <span class="feed-text">Raw Feed</span>
+                </span>
+            </div>
+
+            <!-- Following Controls -->
             <div class="dog-follower-btn-group">
                 <button id="btnDogFollowStart" class="dog-follower-btn dog-follower-btn-start"
-                        onclick="dogFollower.enable()">
+                        onclick="dogFollower.enable()" disabled>
                     <span>&#x1F43E;</span> Start Following
                 </button>
                 <button id="btnDogFollowStop" class="dog-follower-btn dog-follower-btn-stop"
@@ -1709,6 +1823,14 @@
                 // Dog Follower Status
                 if (data.dog_follower_status !== undefined && dogFollower) {
                     dogFollower.updateStatus(data.dog_follower_status);
+                }
+
+                // Dog Follower Detection/Feed state
+                if (dogFollower && (data.detection_enabled !== undefined || data.using_ai_feed !== undefined)) {
+                    dogFollower.syncFromServer(
+                        data.detection_enabled || false,
+                        data.using_ai_feed || false
+                    );
                 }
 
                 // Map location
@@ -2773,8 +2895,18 @@
         class DogFollowerController {
             constructor(dashboard) {
                 this.dashboard = dashboard;
-                this.enabled = false;
+                this.detectionEnabled = false;
+                this.followingEnabled = false;
                 this.currentStatus = 'idle';
+                this.usingAiFeed = false;
+            }
+
+            toggleDetection(enabled) {
+                if (enabled) {
+                    this.dashboard.sendCommand({ action: 'detection_enable' });
+                } else {
+                    this.dashboard.sendCommand({ action: 'detection_disable' });
+                }
             }
 
             enable() {
@@ -2787,14 +2919,26 @@
 
             updateStatus(status) {
                 this.currentStatus = status;
-                this.enabled = (status !== 'idle' && status !== 'teleop_override');
+                // Following is active for searching, following, lost_target states
+                this.followingEnabled = ['searching', 'following', 'lost_target'].includes(status);
+                // Detection is on if not idle (detecting, searching, following, etc.)
+                const detectionOn = (status !== 'idle' && status !== 'teleop_override');
+
+                // Update toggle state (but don't trigger onchange)
+                const toggle = document.getElementById('detectionToggle');
+                if (toggle.checked !== detectionOn) {
+                    toggle.checked = detectionOn;
+                }
+                this.detectionEnabled = detectionOn;
 
                 // Update button states
                 const btnStart = document.getElementById('btnDogFollowStart');
                 const btnStop = document.getElementById('btnDogFollowStop');
 
-                btnStart.disabled = this.enabled;
-                btnStop.disabled = !this.enabled;
+                // Start button: enabled when detection is on but not following
+                btnStart.disabled = !this.detectionEnabled || this.followingEnabled;
+                // Stop button: enabled when following is active
+                btnStop.disabled = !this.followingEnabled;
 
                 // Update status badge
                 const statusEl = document.getElementById('dogFollowerStatus');
@@ -2803,12 +2947,46 @@
                 // Status text with friendly names
                 const statusText = {
                     'idle': 'IDLE',
+                    'detecting': 'DETECTION ACTIVE',
                     'searching': 'SEARCHING FOR DOG...',
                     'following': 'FOLLOWING DOG',
                     'lost_target': 'TARGET LOST',
                     'teleop_override': 'TELEOP OVERRIDE'
                 };
                 statusEl.textContent = statusText[status] || status.toUpperCase();
+            }
+
+            updateFeedIndicator(usingAiFeed) {
+                this.usingAiFeed = usingAiFeed;
+                const indicator = document.getElementById('feedIndicator');
+                const text = indicator.querySelector('.feed-text');
+
+                if (usingAiFeed) {
+                    indicator.classList.add('ai-feed');
+                    text.textContent = 'AI Feed';
+                } else {
+                    indicator.classList.remove('ai-feed');
+                    text.textContent = 'Raw Feed';
+                }
+            }
+
+            // Sync state from server (called when receiving data)
+            syncFromServer(detectionEnabled, usingAiFeed) {
+                this.detectionEnabled = detectionEnabled;
+                this.usingAiFeed = usingAiFeed;
+
+                // Update toggle without triggering onchange
+                const toggle = document.getElementById('detectionToggle');
+                if (toggle.checked !== detectionEnabled) {
+                    toggle.checked = detectionEnabled;
+                }
+
+                // Update feed indicator
+                this.updateFeedIndicator(usingAiFeed);
+
+                // Update start button based on detection state
+                const btnStart = document.getElementById('btnDogFollowStart');
+                btnStart.disabled = !detectionEnabled || this.followingEnabled;
             }
         }
 
