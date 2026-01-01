@@ -1,6 +1,18 @@
 #!/bin/bash
 # Rover1 Master Startup Script
 # Designed for Systemd Autostart
+#
+# =============================================================================
+# LAUNCH HIERARCHY (do not launch multiple files that include each other!)
+#
+#   patrol_lite.launch.py  <- USE THIS (includes everything below)
+#       └── rover.launch.py (base system: motors, camera, teleop, dog_follower)
+#
+#   rtabmap.launch.py <- For SLAM (includes rover.launch.py)
+#   nav2.launch.py    <- For Nav2 (includes rover.launch.py) - UNSTABLE on Pi5
+#
+# NEVER launch rover.launch.py AND patrol_lite.launch.py together!
+# =============================================================================
 
 set -e
 
@@ -49,6 +61,23 @@ sleep 30
 echo ">>> Essential stack launched (teleop + camera + odometry patrol + dog follower)."
 echo ">>> RTAB-Map and Nav2 are DISABLED for stability."
 echo ">>> Dashboard available at http://rover1.local:8080"
+
+# Sanity check for duplicate nodes
+echo ">>> Running duplicate node check..."
+sleep 5  # Let nodes fully register
+DUPES=$(ros2 node list 2>/dev/null | sort | uniq -c | grep -v "^ *1 " || true)
+if [ -n "$DUPES" ]; then
+    echo "==========================================="
+    echo "WARNING: DUPLICATE NODES DETECTED!"
+    echo "==========================================="
+    echo "$DUPES"
+    echo ""
+    echo "This may cause service calls to hang."
+    echo "Check launch file includes for conflicts."
+    echo "==========================================="
+else
+    echo ">>> Node check passed - no duplicates."
+fi
 
 # Wait for rover (main process) - keeps systemd happy
 wait $ROVER_PID
