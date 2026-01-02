@@ -130,7 +130,7 @@ class DogFollower(Node):
         self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.status_pub = self.create_publisher(String, '/dog_follower/status', 10)
         self.annotated_image_pub = self.create_publisher(
-            Image, '/dog_follower/annotated_image', 10
+            Image, '/dog_follower/annotated_image', qos_profile_sensor_data
         )
 
         # Subscribers
