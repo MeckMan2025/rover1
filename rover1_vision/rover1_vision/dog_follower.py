@@ -78,8 +78,11 @@ class DogFollower(Node):
         super().__init__('dog_follower')
 
         # Callback groups for concurrent handling
+        # Services use reentrant so multiple can run concurrently
         self.service_cb_group = ReentrantCallbackGroup()
+        # Timer and subscriptions use mutually exclusive to prevent blocking services
         self.timer_cb_group = MutuallyExclusiveCallbackGroup()
+        self.subscription_cb_group = MutuallyExclusiveCallbackGroup()
 
         self.bridge = CvBridge()
         self.detection_enabled = False  # Controls Hailo inference and annotated image
@@ -153,7 +156,8 @@ class DogFollower(Node):
             Image,
             '/ascamera_hp60c/camera_publisher/rgb0/image',
             self.image_callback,
-            qos_profile_sensor_data
+            qos_profile_sensor_data,
+            callback_group=self.subscription_cb_group
         )
 
         # Subscribe to cmd_vel to detect teleop override
@@ -166,7 +170,8 @@ class DogFollower(Node):
             Twist,
             '/cmd_vel',
             self.cmd_vel_callback,
-            cmd_vel_qos
+            cmd_vel_qos,
+            callback_group=self.subscription_cb_group
         )
 
         # Services - Detection control
@@ -818,6 +823,9 @@ class DogFollower(Node):
                     self.get_logger().warn('Teleop override detected - disabling following')
                     self.following_enabled = False
                     self.stop_robot()
+                    # Clean up recovery state to prevent loops
+                    self.last_dog_was_close = False
+                    self.recovery_scan_start_time = None
                     self.current_status = 'teleop_override'
                     self.publish_status('teleop_override')
                     # Reset external cmd time
