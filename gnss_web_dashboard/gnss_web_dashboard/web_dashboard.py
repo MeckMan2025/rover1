@@ -107,6 +107,7 @@ class Rover1WebDashboard(Node):
             'detection_disable': self.create_client(Trigger, '/dog_follower/detection_disable'),
             'enable': self.create_client(Trigger, '/dog_follower/enable'),
             'disable': self.create_client(Trigger, '/dog_follower/disable'),
+            'reset': self.create_client(Trigger, '/dog_follower/reset'),
         }
 
         # Dog Follower status tracking
@@ -469,6 +470,11 @@ class Rover1WebDashboard(Node):
             return result
         elif action == 'dog_follow_disable':
             return await self.call_dog_follower_service('disable')
+        elif action == 'dog_follow_reset':
+            result = await self.call_dog_follower_service('reset')
+            if result.get('success'):
+                self.detection_enabled = False  # Reset clears detection
+            return result
         else:
             return {'success': False, 'message': f'Unknown action: {action}'}
 

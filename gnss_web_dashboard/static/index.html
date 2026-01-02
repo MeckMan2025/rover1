@@ -724,6 +724,22 @@
             color: #ff4444;
         }
 
+        .dog-follower-quick .quick-status.recovery-scan {
+            background: rgba(255, 193, 7, 0.2);
+            color: #ffc107;
+            animation: pulse 0.8s infinite;
+        }
+
+        .dog-follower-quick .quick-btn-reset {
+            background: linear-gradient(135deg, #666, #444);
+            color: #fff;
+        }
+
+        .dog-follower-quick .quick-btn-reset:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 3px 10px rgba(100, 100, 100, 0.4);
+        }
+
         @keyframes pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.7; }
@@ -1416,6 +1432,10 @@
                     onclick="dogFollower.disable()" disabled>
                 &#x23F9; Stop
             </button>
+            <button id="btnDogFollowResetQuick" class="quick-btn quick-btn-reset"
+                    onclick="dogFollower.reset()">
+                &#x21BB; Reset
+            </button>
             <span id="dogFollowerStatusQuick" class="quick-status idle">IDLE</span>
         </div>
 
@@ -1741,37 +1761,6 @@
                     </div>
                 </div>
             </div>
-        </div>
-
-        <!-- Dog Follower Card -->
-        <div class="card dog-follower-card">
-            <div class="card-title">Dog Follower</div>
-
-            <!-- Detection Toggle -->
-            <div class="detection-toggle-row">
-                <span class="detection-label">Detection</span>
-                <label class="toggle-switch">
-                    <input type="checkbox" id="detectionToggle" onchange="dogFollower.toggleDetection(this.checked)">
-                    <span class="toggle-slider"></span>
-                </label>
-                <span class="feed-indicator" id="feedIndicator">
-                    <span class="feed-dot"></span>
-                    <span class="feed-text">Raw Feed</span>
-                </span>
-            </div>
-
-            <!-- Following Controls -->
-            <div class="dog-follower-btn-group">
-                <button id="btnDogFollowStart" class="dog-follower-btn dog-follower-btn-start"
-                        onclick="dogFollower.enable()" disabled>
-                    <span>&#x1F43E;</span> Start Following
-                </button>
-                <button id="btnDogFollowStop" class="dog-follower-btn dog-follower-btn-stop"
-                        onclick="dogFollower.disable()" disabled>
-                    <span>&#x23F9;</span> Stop
-                </button>
-            </div>
-            <div id="dogFollowerStatus" class="dog-follower-status idle">IDLE</div>
         </div>
 
         <!-- Power Controls Card -->
@@ -3047,29 +3036,23 @@
                 this.dashboard.sendCommand({ action: 'dog_follow_disable' });
             }
 
+            reset() {
+                this.dashboard.sendCommand({ action: 'dog_follow_reset' });
+            }
+
             updateStatus(status) {
                 this.currentStatus = status;
-                // Following is active for searching, following, lost_target states
-                this.followingEnabled = ['searching', 'following', 'lost_target'].includes(status);
-                // Detection is on if not idle (detecting, searching, following, etc.)
+                // Following is active for searching, following, lost_target, recovery_scan states
+                this.followingEnabled = ['searching', 'following', 'lost_target', 'recovery_scan'].includes(status);
+                // Detection is on if not idle or teleop_override
                 const detectionOn = (status !== 'idle' && status !== 'teleop_override');
 
-                // Update both toggle states (main and quick)
-                const toggle = document.getElementById('detectionToggle');
+                // Update toggle state (quick controls only)
                 const toggleQuick = document.getElementById('detectionToggleQuick');
-                if (toggle && toggle.checked !== detectionOn) {
-                    toggle.checked = detectionOn;
-                }
                 if (toggleQuick && toggleQuick.checked !== detectionOn) {
                     toggleQuick.checked = detectionOn;
                 }
                 this.detectionEnabled = detectionOn;
-
-                // Update button states (main controls)
-                const btnStart = document.getElementById('btnDogFollowStart');
-                const btnStop = document.getElementById('btnDogFollowStop');
-                if (btnStart) btnStart.disabled = !this.detectionEnabled || this.followingEnabled;
-                if (btnStop) btnStop.disabled = !this.followingEnabled;
 
                 // Update button states (quick controls)
                 const btnStartQuick = document.getElementById('btnDogFollowStartQuick');
@@ -3084,24 +3067,10 @@
                     'searching': 'SEARCHING...',
                     'following': 'FOLLOWING',
                     'lost_target': 'LOST',
-                    'teleop_override': 'OVERRIDE'
-                };
-                const statusTextFull = {
-                    'idle': 'IDLE',
-                    'detecting': 'DETECTION ACTIVE',
-                    'searching': 'SEARCHING FOR DOG...',
-                    'following': 'FOLLOWING DOG',
-                    'lost_target': 'TARGET LOST',
-                    'teleop_override': 'TELEOP OVERRIDE'
+                    'teleop_override': 'OVERRIDE',
+                    'recovery_scan': 'SCANNING...'
                 };
                 const statusClass = status.replace('_', '-');
-
-                // Update main status badge
-                const statusEl = document.getElementById('dogFollowerStatus');
-                if (statusEl) {
-                    statusEl.className = 'dog-follower-status ' + statusClass;
-                    statusEl.textContent = statusTextFull[status] || status.toUpperCase();
-                }
 
                 // Update quick status badge
                 const statusElQuick = document.getElementById('dogFollowerStatusQuick');
@@ -3112,17 +3081,8 @@
             }
 
             updateFeedIndicator(usingAiFeed) {
+                // Feed indicator removed - no-op for compatibility
                 this.usingAiFeed = usingAiFeed;
-                const indicator = document.getElementById('feedIndicator');
-                const text = indicator.querySelector('.feed-text');
-
-                if (usingAiFeed) {
-                    indicator.classList.add('ai-feed');
-                    text.textContent = 'AI Feed';
-                } else {
-                    indicator.classList.remove('ai-feed');
-                    text.textContent = 'Raw Feed';
-                }
             }
 
             // Sync state from server (called when receiving data)
@@ -3130,23 +3090,14 @@
                 this.detectionEnabled = detectionEnabled;
                 this.usingAiFeed = usingAiFeed;
 
-                // Update both toggles without triggering onchange
-                const toggle = document.getElementById('detectionToggle');
+                // Update toggle without triggering onchange (quick controls only)
                 const toggleQuick = document.getElementById('detectionToggleQuick');
-                if (toggle && toggle.checked !== detectionEnabled) {
-                    toggle.checked = detectionEnabled;
-                }
                 if (toggleQuick && toggleQuick.checked !== detectionEnabled) {
                     toggleQuick.checked = detectionEnabled;
                 }
 
-                // Update feed indicator
-                this.updateFeedIndicator(usingAiFeed);
-
-                // Update start buttons based on detection state (main and quick)
-                const btnStart = document.getElementById('btnDogFollowStart');
+                // Update start button based on detection state (quick controls only)
                 const btnStartQuick = document.getElementById('btnDogFollowStartQuick');
-                if (btnStart) btnStart.disabled = !detectionEnabled || this.followingEnabled;
                 if (btnStartQuick) btnStartQuick.disabled = !detectionEnabled || this.followingEnabled;
             }
         }

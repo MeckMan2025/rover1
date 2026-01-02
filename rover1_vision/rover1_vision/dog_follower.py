@@ -192,6 +192,11 @@ class DogFollower(Node):
             self.disable_callback,
             callback_group=self.service_cb_group
         )
+        self.reset_srv = self.create_service(
+            Trigger, '/dog_follower/reset',
+            self.reset_callback,
+            callback_group=self.service_cb_group
+        )
 
         # Safety timer - checks for lost target and teleop override
         self.safety_timer = self.create_timer(
@@ -353,6 +358,38 @@ class DogFollower(Node):
         else:
             response.message = 'Dog follower was not enabled'
 
+        return response
+
+    def reset_callback(self, request, response):
+        """Reset all dog follower state to clean idle. Use after teleop override."""
+        # Stop any motion
+        self.stop_robot()
+
+        # Reset all state flags
+        self.detection_enabled = False
+        self.following_enabled = False
+        self.current_status = 'idle'
+        self.current_target_dog = None
+
+        # Reset tracking state
+        self.last_detection_time = None
+        self.last_dog_bbox = None
+        self.last_dog_bbox_time = None
+        self.last_dog_frame_position = None
+        self.last_dog_was_close = False
+        self.recovery_rotation_direction = 0.0
+        self.recovery_scan_start_time = None
+
+        # Reset teleop override state
+        with self.cmd_vel_lock:
+            self.last_external_cmd_time = None
+            self.our_last_publish_time = None
+
+        self.publish_status('idle')
+
+        response.success = True
+        response.message = 'Dog follower reset to idle - all state cleared'
+        self.get_logger().info('Dog follower RESET - all state cleared')
         return response
 
     def cmd_vel_callback(self, msg: Twist):
