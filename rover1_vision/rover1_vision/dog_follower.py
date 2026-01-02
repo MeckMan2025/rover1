@@ -93,6 +93,12 @@ class DogFollower(Node):
         self.last_dog_bbox_time = None
         self.bbox_persist_duration = 1.0  # Match the 1s following timeout
 
+        # Tracking for predictive recovery when dog walks past
+        self.last_dog_frame_position = None  # 'left', 'center', 'right'
+        self.last_dog_was_close = False  # Was dog in "too close" zone before losing detection
+        self.recovery_rotation_direction = 0.0  # Which way to rotate when scanning
+        self.recovery_scan_start_time = None  # When we started recovery scan
+
         # Thread safety for cmd_vel detection
         self.cmd_vel_lock = threading.Lock()
         self.last_external_cmd_time = None
@@ -108,6 +114,8 @@ class DogFollower(Node):
         self.declare_parameter('center_tolerance', 0.1)  # 10% of frame width deadzone
         self.declare_parameter('detection_timeout', 1.0)  # Stop if no dog for 1s
         self.declare_parameter('teleop_override_timeout', 0.5)  # Disable if teleop active
+        self.declare_parameter('too_close_area_ratio', 0.40)  # Stop approaching when dog fills 40% of frame
+        self.declare_parameter('recovery_scan_timeout', 3.0)  # Give up recovery scan after 3s
 
         # Load parameters
         self.model_path = self.get_parameter('model_path').value
@@ -118,6 +126,8 @@ class DogFollower(Node):
         self.center_tolerance = self.get_parameter('center_tolerance').value
         self.detection_timeout = self.get_parameter('detection_timeout').value
         self.teleop_override_timeout = self.get_parameter('teleop_override_timeout').value
+        self.too_close_area_ratio = self.get_parameter('too_close_area_ratio').value
+        self.recovery_scan_timeout = self.get_parameter('recovery_scan_timeout').value
 
         # Initialize Hailo inference engine
         self.hailo_device = None
@@ -399,6 +409,20 @@ class DogFollower(Node):
             self.last_dog_bbox = dog['bbox']
             self.last_dog_bbox_time = self.get_clock().now()
 
+            # Track dog's position in frame for recovery prediction
+            frame_third = cv_image.shape[1] / 3
+            if dog['center_x'] < frame_third:
+                self.last_dog_frame_position = 'left'
+            elif dog['center_x'] > frame_third * 2:
+                self.last_dog_frame_position = 'right'
+            else:
+                self.last_dog_frame_position = 'center'
+
+            # Check if dog is in "too close" zone
+            frame_area = cv_image.shape[0] * cv_image.shape[1]
+            area_ratio = dog['area'] / frame_area
+            self.last_dog_was_close = area_ratio > self.too_close_area_ratio
+
         # Use cached bbox for visualization if detection dropped briefly
         display_dog = dog
         if dog is None and self.last_dog_bbox_time is not None:
@@ -437,6 +461,9 @@ class DogFollower(Node):
 
         if dog is not None:
             self.last_detection_time = self.get_clock().now()
+            # Reset recovery state - we found the dog again
+            self.last_dog_was_close = False
+            self.recovery_scan_start_time = None
             self.follow_dog(dog, cv_image.shape)
             if self.current_status != 'following':
                 self.current_status = 'following'
@@ -714,16 +741,20 @@ class DogFollower(Node):
             # Clamp to max speed
             twist.angular.z = np.clip(twist.angular.z, -self.angular_speed, self.angular_speed)
 
-        # Linear control (distance) - FORWARD ONLY (no backward motion)
-        # When dog is close, we rotate to track but don't back up (avoids furniture collisions)
-        # When dog moves away, we follow forward
+        # Linear control (distance) - FORWARD ONLY, STOP if too close
+        # When dog is very close (>40% of frame), stop to avoid losing detection
+        # When dog is at target distance, stay still
+        # When dog moves away, follow forward
         area_deadzone = 0.03  # 3% area variation is acceptable
-        if distance_error > area_deadzone:
+        if area_ratio > self.too_close_area_ratio:
+            # Dog is very close - stop forward motion, rotate only to track
+            twist.linear.x = 0.0
+        elif distance_error > area_deadzone:
             # Dog is too far (small in frame) - move forward to follow
             twist.linear.x = distance_error * self.linear_speed * 5.0
             # Clamp to max forward speed
             twist.linear.x = min(twist.linear.x, self.linear_speed)
-        # When dog is close (distance_error <= 0), linear.x stays 0 - rotate only to track
+        # When dog is close but not too close, linear.x stays 0 - rotate only
 
         # Mark this as our publish time (for teleop detection)
         with self.cmd_vel_lock:
@@ -760,11 +791,48 @@ class DogFollower(Node):
         if self.last_detection_time is not None:
             elapsed = (now - self.last_detection_time).nanoseconds / 1e9
             if elapsed > self.detection_timeout:
-                self.stop_robot()
-                if self.current_status != 'lost_target':
-                    self.current_status = 'lost_target'
-                    self.publish_status('lost_target')
-                    self.get_logger().info('Target lost - stopping')
+                # If we lost dog after it was very close, try predictive rotation recovery
+                if self.last_dog_was_close and self.current_status not in ['recovery_scan', 'lost_target']:
+                    self.current_status = 'recovery_scan'
+                    self.recovery_scan_start_time = now
+                    # Rotate toward last known position
+                    if self.last_dog_frame_position == 'left':
+                        self.recovery_rotation_direction = self.angular_speed  # Rotate left (positive)
+                    elif self.last_dog_frame_position == 'right':
+                        self.recovery_rotation_direction = -self.angular_speed  # Rotate right (negative)
+                    else:
+                        # Was centered - default to rotating right
+                        self.recovery_rotation_direction = -self.angular_speed
+                    self.publish_status('recovery_scan')
+                    self.get_logger().info(f'Dog lost after close contact - scanning {self.last_dog_frame_position}')
+
+                # Handle recovery scan state
+                if self.current_status == 'recovery_scan':
+                    # Check if recovery scan timed out
+                    if self.recovery_scan_start_time is not None:
+                        scan_elapsed = (now - self.recovery_scan_start_time).nanoseconds / 1e9
+                        if scan_elapsed > self.recovery_scan_timeout:
+                            # Give up recovery - go to lost_target
+                            self.stop_robot()
+                            self.current_status = 'lost_target'
+                            self.publish_status('lost_target')
+                            self.last_dog_was_close = False  # Reset for next time
+                            self.get_logger().info('Recovery scan timeout - target lost')
+                            return
+
+                    # Continue recovery rotation
+                    twist = Twist()
+                    twist.angular.z = self.recovery_rotation_direction
+                    with self.cmd_vel_lock:
+                        self.our_last_publish_time = self.get_clock().now()
+                    self.cmd_vel_pub.publish(twist)
+                else:
+                    # Normal lost target - stop
+                    self.stop_robot()
+                    if self.current_status != 'lost_target':
+                        self.current_status = 'lost_target'
+                        self.publish_status('lost_target')
+                        self.get_logger().info('Target lost - stopping')
 
     def stop_robot(self):
         """Publish zero velocity to stop the robot."""
