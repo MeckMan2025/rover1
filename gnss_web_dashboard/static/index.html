@@ -615,6 +615,115 @@
             color: rgba(255, 255, 255, 0.6);
         }
 
+        /* Dog Follower Quick Controls - Compact strip below camera */
+        .dog-follower-quick {
+            max-width: 800px;
+            margin: 0 auto 20px auto;
+            padding: 12px 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(0, 255, 136, 0.3);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .dog-follower-quick .quick-label {
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .dog-follower-quick .quick-toggle-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .dog-follower-quick .quick-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .dog-follower-quick .quick-btn-start {
+            background: linear-gradient(135deg, #00ff88, #00cc6a);
+            color: #000;
+        }
+
+        .dog-follower-quick .quick-btn-start:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 3px 10px rgba(0, 255, 136, 0.4);
+        }
+
+        .dog-follower-quick .quick-btn-stop {
+            background: linear-gradient(135deg, #ff4444, #cc0000);
+            color: #fff;
+        }
+
+        .dog-follower-quick .quick-btn-stop:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 3px 10px rgba(255, 68, 68, 0.4);
+        }
+
+        .dog-follower-quick .quick-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .dog-follower-quick .quick-status {
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .dog-follower-quick .quick-status.idle {
+            background: rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .dog-follower-quick .quick-status.detecting {
+            background: rgba(0, 136, 255, 0.2);
+            color: #0088ff;
+        }
+
+        .dog-follower-quick .quick-status.searching {
+            background: rgba(255, 193, 7, 0.2);
+            color: #ffc107;
+            animation: pulse 1.5s infinite;
+        }
+
+        .dog-follower-quick .quick-status.following {
+            background: rgba(0, 255, 136, 0.2);
+            color: #00ff88;
+            animation: pulse 1s infinite;
+        }
+
+        .dog-follower-quick .quick-status.lost-target {
+            background: rgba(255, 152, 0, 0.2);
+            color: #ff9800;
+        }
+
+        .dog-follower-quick .quick-status.teleop-override {
+            background: rgba(255, 68, 68, 0.2);
+            color: #ff4444;
+        }
+
         @keyframes pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.7; }
@@ -1287,6 +1396,27 @@
                 <div id="hudSat" style="color: #0088ff;">SAT: --</div>
                 <div id="hudVolt" style="color: #00ff88;">VOLT: -- V</div>
             </div>
+        </div>
+
+        <!-- Dog Follower Quick Controls -->
+        <div class="dog-follower-quick">
+            <span class="quick-label">Dog Follower</span>
+            <div class="quick-toggle-group">
+                <span style="font-size: 0.85rem; color: rgba(255,255,255,0.6);">Detect</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="detectionToggleQuick" onchange="dogFollower.toggleDetection(this.checked)">
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+            <button id="btnDogFollowStartQuick" class="quick-btn quick-btn-start"
+                    onclick="dogFollower.enable()" disabled>
+                &#x1F43E; Follow
+            </button>
+            <button id="btnDogFollowStopQuick" class="quick-btn quick-btn-stop"
+                    onclick="dogFollower.disable()" disabled>
+                &#x23F9; Stop
+            </button>
+            <span id="dogFollowerStatusQuick" class="quick-status idle">IDLE</span>
         </div>
 
         <!-- Teleop Speed Control -->
@@ -2924,28 +3054,39 @@
                 // Detection is on if not idle (detecting, searching, following, etc.)
                 const detectionOn = (status !== 'idle' && status !== 'teleop_override');
 
-                // Update toggle state (but don't trigger onchange)
+                // Update both toggle states (main and quick)
                 const toggle = document.getElementById('detectionToggle');
-                if (toggle.checked !== detectionOn) {
+                const toggleQuick = document.getElementById('detectionToggleQuick');
+                if (toggle && toggle.checked !== detectionOn) {
                     toggle.checked = detectionOn;
+                }
+                if (toggleQuick && toggleQuick.checked !== detectionOn) {
+                    toggleQuick.checked = detectionOn;
                 }
                 this.detectionEnabled = detectionOn;
 
-                // Update button states
+                // Update button states (main controls)
                 const btnStart = document.getElementById('btnDogFollowStart');
                 const btnStop = document.getElementById('btnDogFollowStop');
+                if (btnStart) btnStart.disabled = !this.detectionEnabled || this.followingEnabled;
+                if (btnStop) btnStop.disabled = !this.followingEnabled;
 
-                // Start button: enabled when detection is on but not following
-                btnStart.disabled = !this.detectionEnabled || this.followingEnabled;
-                // Stop button: enabled when following is active
-                btnStop.disabled = !this.followingEnabled;
-
-                // Update status badge
-                const statusEl = document.getElementById('dogFollowerStatus');
-                statusEl.className = 'dog-follower-status ' + status.replace('_', '-');
+                // Update button states (quick controls)
+                const btnStartQuick = document.getElementById('btnDogFollowStartQuick');
+                const btnStopQuick = document.getElementById('btnDogFollowStopQuick');
+                if (btnStartQuick) btnStartQuick.disabled = !this.detectionEnabled || this.followingEnabled;
+                if (btnStopQuick) btnStopQuick.disabled = !this.followingEnabled;
 
                 // Status text with friendly names
                 const statusText = {
+                    'idle': 'IDLE',
+                    'detecting': 'DETECTING',
+                    'searching': 'SEARCHING...',
+                    'following': 'FOLLOWING',
+                    'lost_target': 'LOST',
+                    'teleop_override': 'OVERRIDE'
+                };
+                const statusTextFull = {
                     'idle': 'IDLE',
                     'detecting': 'DETECTION ACTIVE',
                     'searching': 'SEARCHING FOR DOG...',
@@ -2953,7 +3094,21 @@
                     'lost_target': 'TARGET LOST',
                     'teleop_override': 'TELEOP OVERRIDE'
                 };
-                statusEl.textContent = statusText[status] || status.toUpperCase();
+                const statusClass = status.replace('_', '-');
+
+                // Update main status badge
+                const statusEl = document.getElementById('dogFollowerStatus');
+                if (statusEl) {
+                    statusEl.className = 'dog-follower-status ' + statusClass;
+                    statusEl.textContent = statusTextFull[status] || status.toUpperCase();
+                }
+
+                // Update quick status badge
+                const statusElQuick = document.getElementById('dogFollowerStatusQuick');
+                if (statusElQuick) {
+                    statusElQuick.className = 'quick-status ' + statusClass;
+                    statusElQuick.textContent = statusText[status] || status.toUpperCase();
+                }
             }
 
             updateFeedIndicator(usingAiFeed) {
@@ -2975,18 +3130,24 @@
                 this.detectionEnabled = detectionEnabled;
                 this.usingAiFeed = usingAiFeed;
 
-                // Update toggle without triggering onchange
+                // Update both toggles without triggering onchange
                 const toggle = document.getElementById('detectionToggle');
-                if (toggle.checked !== detectionEnabled) {
+                const toggleQuick = document.getElementById('detectionToggleQuick');
+                if (toggle && toggle.checked !== detectionEnabled) {
                     toggle.checked = detectionEnabled;
+                }
+                if (toggleQuick && toggleQuick.checked !== detectionEnabled) {
+                    toggleQuick.checked = detectionEnabled;
                 }
 
                 // Update feed indicator
                 this.updateFeedIndicator(usingAiFeed);
 
-                // Update start button based on detection state
+                // Update start buttons based on detection state (main and quick)
                 const btnStart = document.getElementById('btnDogFollowStart');
-                btnStart.disabled = !detectionEnabled || this.followingEnabled;
+                const btnStartQuick = document.getElementById('btnDogFollowStartQuick');
+                if (btnStart) btnStart.disabled = !detectionEnabled || this.followingEnabled;
+                if (btnStartQuick) btnStartQuick.disabled = !detectionEnabled || this.followingEnabled;
             }
         }
 
