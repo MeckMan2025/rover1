@@ -1,6 +1,6 @@
 #!/bin/bash
 # Monitor Mode Setup for Rover 7" Touchscreen
-# Displays htop system monitor instead of web dashboard kiosk
+# Displays btop system monitor instead of web dashboard kiosk
 # Low CPU usage, shows system stats during demos
 #
 # To switch back to dashboard kiosk: ./scripts/kiosk_setup.sh
@@ -12,19 +12,25 @@ USER_HOME="/home/$USER_NAME"
 
 echo "=== Rover Monitor Mode Setup ==="
 
+# Ensure btop is installed
+if ! command -v btop &> /dev/null; then
+    echo "Installing btop..."
+    sudo apt-get update && sudo apt-get install -y btop
+fi
+
 echo ""
-echo "1. Creating htop monitor wrapper script..."
+echo "1. Creating btop monitor wrapper script..."
 mkdir -p "$USER_HOME/.config/rover-kiosk"
 
 cat > "$USER_HOME/.config/rover-kiosk/launch-monitor.sh" << 'MONITOR_SCRIPT'
 #!/bin/bash
 # Rover Monitor Launcher
-# Shows htop on the 7" display
+# Shows btop on the 7" display
 
 echo "[Monitor] Starting system monitor..."
 
-# Launch htop in fullscreen
-exec htop
+# Launch btop in fullscreen
+exec btop
 MONITOR_SCRIPT
 
 chmod +x "$USER_HOME/.config/rover-kiosk/launch-monitor.sh"
@@ -60,7 +66,7 @@ PROFILE_BLOCK
 echo ""
 echo "=== Monitor Mode Setup Complete ==="
 echo ""
-echo "On next boot, tty1 will show htop system monitor."
+echo "On next boot, tty1 will show btop system monitor."
 echo "SSH sessions are unaffected."
 echo ""
 echo "To switch back to dashboard kiosk:"
