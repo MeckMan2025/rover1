@@ -258,19 +258,23 @@ class DogFollower(Node):
 
     def detection_enable_callback(self, request, response):
         """Enable detection (Hailo inference + annotated image publishing)."""
-        if self.detection_enabled:
-            response.success = True
-            response.message = 'Detection already enabled'
-            return response
+        was_already_enabled = self.detection_enabled
 
+        # Always reset state - this fixes stuck 'teleop_override' status
         self.detection_enabled = True
         self.current_status = 'detecting'
         self.current_target_dog = None
-
-        response.success = True
-        response.message = 'Detection enabled - Hailo inference active'
-        self.get_logger().info('Detection ENABLED')
         self.publish_status('detecting')
+
+        if was_already_enabled:
+            response.success = True
+            response.message = 'Detection re-activated'
+            self.get_logger().info('Detection re-activated (was already enabled)')
+        else:
+            response.success = True
+            response.message = 'Detection enabled - Hailo inference active'
+            self.get_logger().info('Detection ENABLED')
+
         return response
 
     def detection_disable_callback(self, request, response):
