@@ -109,8 +109,8 @@ class DogFollower(Node):
             '~/ros2_ws/src/rover1/models/yolov8s.hef'))
         self.declare_parameter('confidence_threshold', 0.3)
         self.declare_parameter('target_box_area_ratio', 0.15)  # Target: dog fills 15% of frame
-        self.declare_parameter('linear_speed', 0.2)  # m/s - conservative for safety
-        self.declare_parameter('angular_speed', 0.5)  # rad/s
+        self.declare_parameter('linear_speed', 1.0)  # m/s - aggressive for fast dogs
+        self.declare_parameter('angular_speed', 2.0)  # rad/s - aggressive for fast dogs
         self.declare_parameter('center_tolerance', 0.1)  # 10% of frame width deadzone
         self.declare_parameter('detection_timeout', 1.0)  # Stop if no dog for 1s
         self.declare_parameter('teleop_override_timeout', 0.5)  # Disable if teleop active
@@ -737,7 +737,7 @@ class DogFollower(Node):
         # Angular control (centering) - proportional with deadzone
         if abs(center_error) > self.center_tolerance:
             # Negative because positive error (dog on right) needs negative angular.z (turn right)
-            twist.angular.z = -center_error * self.angular_speed * 2.0
+            twist.angular.z = -center_error * self.angular_speed * 4.0
             # Clamp to max speed
             twist.angular.z = np.clip(twist.angular.z, -self.angular_speed, self.angular_speed)
 
@@ -751,7 +751,7 @@ class DogFollower(Node):
             twist.linear.x = 0.0
         elif distance_error > area_deadzone:
             # Dog is too far (small in frame) - move forward to follow
-            twist.linear.x = distance_error * self.linear_speed * 5.0
+            twist.linear.x = distance_error * self.linear_speed * 10.0
             # Clamp to max forward speed
             twist.linear.x = min(twist.linear.x, self.linear_speed)
         # When dog is close but not too close, linear.x stays 0 - rotate only
