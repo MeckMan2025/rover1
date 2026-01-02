@@ -657,7 +657,12 @@ class DogFollower(Node):
 
         Control strategy:
         - Angular: Turn to keep dog centered in frame (proportional control)
-        - Linear: Move forward/backward to maintain target distance (based on box area)
+        - Linear: FORWARD ONLY - move forward when dog is far, stay still when close
+
+        When dog approaches (large bounding box), the rover rotates to track but
+        does not back up. This avoids collisions with furniture since we have no
+        rear obstacle detection. As the dog passes by, we keep rotating to track.
+        Once the dog moves away (small bounding box), we follow forward.
         """
         h, w = image_shape[:2]
         frame_center_x = w / 2
@@ -680,13 +685,16 @@ class DogFollower(Node):
             # Clamp to max speed
             twist.angular.z = np.clip(twist.angular.z, -self.angular_speed, self.angular_speed)
 
-        # Linear control (distance) - proportional with deadzone
+        # Linear control (distance) - FORWARD ONLY (no backward motion)
+        # When dog is close, we rotate to track but don't back up (avoids furniture collisions)
+        # When dog moves away, we follow forward
         area_deadzone = 0.03  # 3% area variation is acceptable
-        if abs(distance_error) > area_deadzone:
-            # Positive error (too far) = positive linear.x (forward)
+        if distance_error > area_deadzone:
+            # Dog is too far (small in frame) - move forward to follow
             twist.linear.x = distance_error * self.linear_speed * 5.0
-            # Clamp to max speed
-            twist.linear.x = np.clip(twist.linear.x, -self.linear_speed, self.linear_speed)
+            # Clamp to max forward speed
+            twist.linear.x = min(twist.linear.x, self.linear_speed)
+        # When dog is close (distance_error <= 0), linear.x stays 0 - rotate only to track
 
         # Mark this as our publish time (for teleop detection)
         with self.cmd_vel_lock:
