@@ -12,10 +12,16 @@ USER_HOME="/home/$USER_NAME"
 
 echo "=== Rover Monitor Mode Setup ==="
 
+# Ensure foot terminal emulator is installed (needed for btop's advanced rendering)
+if ! command -v foot &> /dev/null; then
+    echo "Installing foot terminal emulator..."
+    sudo apt-get update && sudo apt-get install -y foot
+fi
+
 # Ensure btop is installed
 if ! command -v btop &> /dev/null; then
     echo "Installing btop..."
-    sudo apt-get update && sudo apt-get install -y btop
+    sudo apt-get install -y btop
 fi
 
 echo ""
@@ -25,12 +31,12 @@ mkdir -p "$USER_HOME/.config/rover-kiosk"
 cat > "$USER_HOME/.config/rover-kiosk/launch-monitor.sh" << 'MONITOR_SCRIPT'
 #!/bin/bash
 # Rover Monitor Launcher
-# Shows btop on the 7" display
+# Shows btop on the 7" display via foot terminal emulator
 
 echo "[Monitor] Starting system monitor..."
 
-# Launch btop in fullscreen
-exec btop
+# Launch btop inside foot terminal (foot is Wayland-native, needed for btop's UI)
+exec foot btop
 MONITOR_SCRIPT
 
 chmod +x "$USER_HOME/.config/rover-kiosk/launch-monitor.sh"
