@@ -88,6 +88,11 @@ class DogFollower(Node):
         self.current_status = 'idle'
         self.current_target_dog = None  # Track which dog we're following for visualization
 
+        # Bounding box persistence (prevents flicker during brief detection drops)
+        self.last_dog_bbox = None
+        self.last_dog_bbox_time = None
+        self.bbox_persist_duration = 0.5  # Show cached box for 0.5s after losing detection
+
         # Thread safety for cmd_vel detection
         self.cmd_vel_lock = threading.Lock()
         self.last_external_cmd_time = None
@@ -389,6 +394,26 @@ class DogFollower(Node):
         dog = self.find_best_dog(detections, cv_image.shape)
         self.current_target_dog = dog  # Store for visualization
 
+        # Update cached bbox if we have a detection
+        if dog is not None:
+            self.last_dog_bbox = dog['bbox']
+            self.last_dog_bbox_time = self.get_clock().now()
+
+        # Use cached bbox for visualization if detection dropped briefly
+        display_dog = dog
+        if dog is None and self.last_dog_bbox_time is not None:
+            elapsed = (self.get_clock().now() - self.last_dog_bbox_time).nanoseconds / 1e9
+            if elapsed < self.bbox_persist_duration:
+                # Create a "ghost" dog dict for visualization only (not for following)
+                x1, y1, x2, y2 = self.last_dog_bbox
+                display_dog = {
+                    'bbox': self.last_dog_bbox,
+                    'confidence': 0.0,  # Mark as cached
+                    'area': (x2 - x1) * (y2 - y1),
+                    'center_x': (x1 + x2) / 2,
+                    'center_y': (y1 + y2) / 2
+                }
+
         # Debug logging - only log dog detections
         if len(dog_detections) > 0:
             top = max(dog_detections, key=lambda d: d[4])
@@ -398,7 +423,7 @@ class DogFollower(Node):
             )
 
         # Draw bounding boxes on dogs only and publish annotated image
-        annotated = self.draw_detections(cv_image, dog_detections, target_dog=dog)
+        annotated = self.draw_detections(cv_image, dog_detections, target_dog=display_dog)
         try:
             annotated_msg = self.bridge.cv2_to_imgmsg(annotated, 'bgr8')
             annotated_msg.header = msg.header  # Preserve timestamp
