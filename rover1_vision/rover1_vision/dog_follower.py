@@ -91,7 +91,7 @@ class DogFollower(Node):
         # Bounding box persistence (prevents flicker during brief detection drops)
         self.last_dog_bbox = None
         self.last_dog_bbox_time = None
-        self.bbox_persist_duration = 0.5  # Show cached box for 0.5s after losing detection
+        self.bbox_persist_duration = 1.0  # Match the 1s following timeout
 
         # Thread safety for cmd_vel detection
         self.cmd_vel_lock = threading.Lock()
@@ -101,7 +101,7 @@ class DogFollower(Node):
         # Declare parameters
         self.declare_parameter('model_path', os.path.expanduser(
             '~/ros2_ws/src/rover1/models/yolov8s.hef'))
-        self.declare_parameter('confidence_threshold', 0.5)
+        self.declare_parameter('confidence_threshold', 0.3)
         self.declare_parameter('target_box_area_ratio', 0.15)  # Target: dog fills 15% of frame
         self.declare_parameter('linear_speed', 0.2)  # m/s - conservative for safety
         self.declare_parameter('angular_speed', 0.5)  # rad/s
