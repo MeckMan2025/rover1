@@ -758,7 +758,10 @@ class DogFollower(Node):
 
     def destroy_node(self):
         """Cleanup on shutdown."""
-        self.stop_robot()
+        try:
+            self.stop_robot()
+        except Exception:
+            pass  # ROS context might already be invalid during shutdown
 
         # Close persistent inference pipeline context
         if self.infer_pipeline is not None:

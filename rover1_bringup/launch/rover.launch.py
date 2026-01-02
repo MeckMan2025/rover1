@@ -130,6 +130,8 @@ def generate_launch_description():
             executable='dog_follower',
             name='dog_follower',
             output='screen',
+            respawn=True,
+            respawn_delay=2.0,
             parameters=[{
                 'model_path': '/home/andrewmeckley/ros2_ws/src/rover1/models/yolov8s.hef',
                 'confidence_threshold': 0.5,
