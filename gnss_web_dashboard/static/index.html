@@ -745,6 +745,122 @@
             50% { opacity: 0.7; }
         }
 
+        /* Shoe Follower Quick Controls - Person follow mode */
+        .shoe-follower-quick {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 15px;
+            background: linear-gradient(135deg, rgba(0, 200, 200, 0.15), rgba(0, 150, 150, 0.1));
+            border-top: 1px solid rgba(0, 200, 200, 0.3);
+        }
+
+        .shoe-follower-quick .quick-label {
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: #00dddd;
+            min-width: 100px;
+        }
+
+        .shoe-follower-quick .quick-toggle-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .shoe-follower-quick .quick-btn {
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .shoe-follower-quick .quick-btn-start {
+            background: linear-gradient(135deg, #00cccc, #009999);
+            color: white;
+        }
+
+        .shoe-follower-quick .quick-btn-start:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 3px 10px rgba(0, 204, 204, 0.4);
+        }
+
+        .shoe-follower-quick .quick-btn-stop {
+            background: linear-gradient(135deg, #ff6b6b, #ee5a5a);
+            color: white;
+        }
+
+        .shoe-follower-quick .quick-btn-stop:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 3px 10px rgba(255, 107, 107, 0.4);
+        }
+
+        .shoe-follower-quick .quick-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .shoe-follower-quick .quick-status {
+            padding: 4px 10px;
+            border-radius: 10px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-left: auto;
+        }
+
+        .shoe-follower-quick .quick-status.idle {
+            background: rgba(128, 128, 128, 0.2);
+            color: #888;
+        }
+
+        .shoe-follower-quick .quick-status.detecting {
+            background: rgba(0, 200, 200, 0.2);
+            color: #00dddd;
+        }
+
+        .shoe-follower-quick .quick-status.searching {
+            background: rgba(255, 193, 7, 0.2);
+            color: #ffc107;
+            animation: pulse 1s infinite;
+        }
+
+        .shoe-follower-quick .quick-status.following {
+            background: rgba(0, 255, 136, 0.2);
+            color: #00ff88;
+            animation: pulse 0.5s infinite;
+        }
+
+        .shoe-follower-quick .quick-status.lost-target {
+            background: rgba(255, 152, 0, 0.2);
+            color: #ff9800;
+        }
+
+        .shoe-follower-quick .quick-status.teleop-override {
+            background: rgba(255, 68, 68, 0.2);
+            color: #ff4444;
+        }
+
+        .shoe-follower-quick .quick-status.recovery-scan {
+            background: rgba(255, 193, 7, 0.2);
+            color: #ffc107;
+            animation: pulse 0.8s infinite;
+        }
+
+        .shoe-follower-quick .quick-btn-reset {
+            background: linear-gradient(135deg, #666, #444);
+            color: #fff;
+        }
+
+        .shoe-follower-quick .quick-btn-reset:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 3px 10px rgba(100, 100, 100, 0.4);
+        }
+
         /* 3D Point Cloud Viewer Styles */
         .pointcloud-card {
             grid-column: 1 / -1;
@@ -1439,6 +1555,31 @@
             <span id="dogFollowerStatusQuick" class="quick-status idle">IDLE</span>
         </div>
 
+        <!-- Shoe Follower Quick Controls (Person Follow) -->
+        <div class="shoe-follower-quick">
+            <span class="quick-label">&#x1F45F; Person Follow</span>
+            <div class="quick-toggle-group">
+                <span style="font-size: 0.85rem; color: rgba(255,255,255,0.6);">Detect</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="shoeDetectionToggle" onchange="shoeFollower.toggleDetection(this.checked)">
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+            <button id="btnShoeFollowStart" class="quick-btn quick-btn-start"
+                    onclick="shoeFollower.enable()" disabled>
+                &#x1F6B6; Follow
+            </button>
+            <button id="btnShoeFollowStop" class="quick-btn quick-btn-stop"
+                    onclick="shoeFollower.disable()" disabled>
+                &#x23F9; Stop
+            </button>
+            <button id="btnShoeFollowReset" class="quick-btn quick-btn-reset"
+                    onclick="shoeFollower.reset()">
+                &#x21BB; Reset
+            </button>
+            <span id="shoeFollowerStatus" class="quick-status idle">IDLE</span>
+        </div>
+
         <!-- Teleop Speed Control -->
         <div class="teleop-controls">
             <div class="teleop-speed-control">
@@ -1802,6 +1943,7 @@
         let webTeleopController = null;
         let powerController = null;
         let dogFollower = null;
+        let shoeFollower = null;
 
         class Rover1Dashboard {
             constructor() {
@@ -1968,6 +2110,16 @@
                         data.detection_enabled || false,
                         data.using_ai_feed || false
                     );
+                }
+
+                // Shoe Follower Status
+                if (data.shoe_follower_status !== undefined && shoeFollower) {
+                    shoeFollower.updateStatus(data.shoe_follower_status);
+                }
+
+                // Shoe Follower Detection state
+                if (shoeFollower && data.shoe_detection_enabled !== undefined) {
+                    shoeFollower.syncFromServer(data.shoe_detection_enabled);
                 }
 
                 // Map location
@@ -3128,6 +3280,90 @@
             }
         }
 
+        class ShoeFollowerController {
+            constructor(dashboard) {
+                this.dashboard = dashboard;
+                this.detectionEnabled = false;
+                this.followingEnabled = false;
+                this.currentStatus = 'idle';
+            }
+
+            toggleDetection(enabled) {
+                if (enabled) {
+                    this.dashboard.sendCommand({ action: 'shoe_detection_enable' });
+                } else {
+                    this.dashboard.sendCommand({ action: 'shoe_detection_disable' });
+                }
+            }
+
+            enable() {
+                this.dashboard.sendCommand({ action: 'shoe_follow_enable' });
+            }
+
+            disable() {
+                this.dashboard.sendCommand({ action: 'shoe_follow_disable' });
+            }
+
+            reset() {
+                this.dashboard.sendCommand({ action: 'shoe_follow_reset' });
+            }
+
+            updateStatus(status) {
+                this.currentStatus = status;
+                // Following is active for searching, following, lost_target, recovery_scan states
+                this.followingEnabled = ['searching', 'following', 'lost_target', 'recovery_scan'].includes(status);
+                // Detection is on if not idle or teleop_override
+                const detectionOn = (status !== 'idle' && status !== 'teleop_override');
+
+                // Update toggle state
+                const toggle = document.getElementById('shoeDetectionToggle');
+                if (toggle && toggle.checked !== detectionOn) {
+                    toggle.checked = detectionOn;
+                }
+                this.detectionEnabled = detectionOn;
+
+                // Update button states
+                const btnStart = document.getElementById('btnShoeFollowStart');
+                const btnStop = document.getElementById('btnShoeFollowStop');
+                if (btnStart) btnStart.disabled = !this.detectionEnabled || this.followingEnabled;
+                if (btnStop) btnStop.disabled = !this.followingEnabled;
+
+                // Status text with friendly names
+                const statusText = {
+                    'idle': 'IDLE',
+                    'detecting': 'DETECTING',
+                    'searching': 'SEARCHING...',
+                    'following': 'FOLLOWING',
+                    'lost_target': 'LOST',
+                    'teleop_override': 'OVERRIDE',
+                    'recovery_scan': 'SCANNING...'
+                };
+                const statusClass = status.replace('_', '-');
+
+                // Update status badge
+                const statusEl = document.getElementById('shoeFollowerStatus');
+                if (statusEl) {
+                    statusEl.className = 'quick-status ' + statusClass;
+                    statusEl.textContent = statusText[status] || status.toUpperCase();
+                }
+            }
+
+            // Sync state from server (called when receiving data)
+            syncFromServer(detectionEnabled) {
+                this.detectionEnabled = detectionEnabled;
+
+                // Update toggle without triggering onchange
+                const toggle = document.getElementById('shoeDetectionToggle');
+                if (toggle && toggle.checked !== detectionEnabled) {
+                    toggle.checked = detectionEnabled;
+                }
+
+                // Update start button based on detection state
+                const btnStart = document.getElementById('btnShoeFollowStart');
+                if (btnStart) btnStart.disabled = !detectionEnabled || this.followingEnabled;
+            }
+        }
+
         class PointCloudViewer {
             constructor() {
                 this.scene = null;
@@ -3386,6 +3622,7 @@
             webTeleopController = new WebTeleopController(dashboard);
             powerController = new PowerController(dashboard);
             dogFollower = new DogFollowerController(dashboard);
+            shoeFollower = new ShoeFollowerController(dashboard);
             pointcloudViewer = new PointCloudViewer();
             dashboard.setPatrolController(patrol);
             dashboard.setTeleopController(teleopController);

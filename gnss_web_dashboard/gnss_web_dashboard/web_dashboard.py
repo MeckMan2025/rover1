@@ -120,6 +120,25 @@ class Rover1WebDashboard(Node):
             10
         )
 
+        # Shoe Follower service clients
+        self.shoe_follower_clients = {
+            'detection_enable': self.create_client(Trigger, '/shoe_follower/detection_enable'),
+            'detection_disable': self.create_client(Trigger, '/shoe_follower/detection_disable'),
+            'enable': self.create_client(Trigger, '/shoe_follower/enable'),
+            'disable': self.create_client(Trigger, '/shoe_follower/disable'),
+            'reset': self.create_client(Trigger, '/shoe_follower/reset'),
+        }
+
+        # Shoe Follower status tracking
+        self.latest_shoe_follower_status = 'idle'
+        self.shoe_detection_enabled = False
+        self.shoe_follower_sub = self.create_subscription(
+            String,
+            '/shoe_follower/status',
+            self.shoe_follower_status_callback,
+            10
+        )
+
         # Camera integration
         self.bridge = CvBridge()
         self.latest_image_base64 = None
@@ -227,6 +246,15 @@ class Rover1WebDashboard(Node):
         """Process incoming dog follower status messages"""
         with self.health_lock:
             self.latest_dog_follower_status = msg.data
+
+        # Broadcast to all connected WebSocket clients
+        if self.ws_clients:
+            self.broadcast_data()
+
+    def shoe_follower_status_callback(self, msg: String):
+        """Process incoming shoe follower status messages"""
+        with self.health_lock:
+            self.latest_shoe_follower_status = msg.data
 
         # Broadcast to all connected WebSocket clients
         if self.ws_clients:
@@ -352,6 +380,9 @@ class Rover1WebDashboard(Node):
             payload['dog_follower_status'] = self.latest_dog_follower_status
             payload['detection_enabled'] = self.detection_enabled
             payload['using_ai_feed'] = self.using_annotated_feed
+            # Shoe Follower status
+            payload['shoe_follower_status'] = self.latest_shoe_follower_status
+            payload['shoe_detection_enabled'] = self.shoe_detection_enabled
 
         if not payload:
             return
@@ -475,6 +506,29 @@ class Rover1WebDashboard(Node):
             if result.get('success'):
                 self.detection_enabled = False  # Reset clears detection
             return result
+        # Shoe Follower commands
+        elif action == 'shoe_detection_enable':
+            result = await self.call_shoe_follower_service('detection_enable')
+            if result.get('success'):
+                self.shoe_detection_enabled = True
+            return result
+        elif action == 'shoe_detection_disable':
+            result = await self.call_shoe_follower_service('detection_disable')
+            if result.get('success'):
+                self.shoe_detection_enabled = False
+            return result
+        elif action == 'shoe_follow_enable':
+            result = await self.call_shoe_follower_service('enable')
+            if result.get('success'):
+                self.shoe_detection_enabled = True  # Following auto-enables detection
+            return result
+        elif action == 'shoe_follow_disable':
+            return await self.call_shoe_follower_service('disable')
+        elif action == 'shoe_follow_reset':
+            result = await self.call_shoe_follower_service('reset')
+            if result.get('success'):
+                self.shoe_detection_enabled = False  # Reset clears detection
+            return result
         else:
             return {'success': False, 'message': f'Unknown action: {action}'}
 
@@ -505,6 +559,25 @@ class Rover1WebDashboard(Node):
 
         if not client.wait_for_service(timeout_sec=1.0):
             return {'success': False, 'message': 'Dog follower node not running'}
+
+        request = Trigger.Request()
+        future = client.call_async(request)
+
+        # Wait for result in a non-blocking way
+        while not future.done():
+            await asyncio.sleep(0.1)
+
+        result = future.result()
+        return {'success': result.success, 'message': result.message}
+
+    async def call_shoe_follower_service(self, service_name):
+        """Call a shoe follower Trigger service and return the result"""
+        client = self.shoe_follower_clients.get(service_name)
+        if not client:
+            return {'success': False, 'message': f'Shoe follower service {service_name} not found'}
+
+        if not client.wait_for_service(timeout_sec=1.0):
+            return {'success': False, 'message': 'Shoe follower node not running'}
 
         request = Trigger.Request()
         future = client.call_async(request)
