@@ -30,6 +30,14 @@ while true; do
     IP=$(hostname -I | awk '{print $1}' 2>/dev/null)
     TEMP=$(vcgencmd measure_temp 2>/dev/null | cut -d'=' -f2)
 
+    # Get current WiFi SSID
+    SSID=$(nmcli -t -f active,ssid dev wifi 2>/dev/null | grep "^yes:" | cut -d: -f2)
+    if [ -n "$SSID" ]; then
+        SSID_STATUS="${GREEN}${SSID}${NC}"
+    else
+        SSID_STATUS="${RED}No WiFi${NC}"
+    fi
+
     # Battery voltage from /battery_voltage topic with staleness caching
     # Cache prevents flickering to '--' during brief topic gaps
     BATT_CACHE="/tmp/rover_battery_cache"
@@ -65,7 +73,7 @@ while true; do
         BATT_STATUS="${RED}--${NC}"
     fi
 
-    echo -e "NETWORK:        IP: ${YELLOW}${IP}${NC}  |  CPU: ${YELLOW}${TEMP}${NC}  |  BATT: ${BATT_STATUS}"
+    echo -e "NETWORK:        ${SSID_STATUS}  |  IP: ${YELLOW}${IP}${NC}  |  CPU: ${YELLOW}${TEMP}${NC}  |  BATT: ${BATT_STATUS}"
     echo -e "${CYAN}----------------------------------------------------------------${NC}"
 
     # 3. NODE HEALTH
