@@ -20,9 +20,10 @@ fi
 # Match RMW with rover1.service (fastrtps)
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 
-# Try ROS topic (1 second timeout to keep tmux responsive)
+# Try ROS topic (3 second timeout for DDS discovery)
 # Note: --qos-reliability best_effort required to match sensor_data QoS publisher
-voltage=$(timeout 1 ros2 topic echo /battery_voltage std_msgs/msg/Float32 --qos-reliability best_effort --once 2>/dev/null | grep "data:" | awk '{print $2}')
+# Note: fastrtps takes 2-3s for initial discovery, faster once daemon is warm
+voltage=$(timeout 3 ros2 topic echo /battery_voltage std_msgs/msg/Float32 --qos-reliability best_effort --once 2>/dev/null | grep "data:" | awk '{print $2}')
 
 if [ -n "$voltage" ] && [ "$voltage" != "0" ]; then
     # Format with one decimal place
