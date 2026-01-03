@@ -35,7 +35,7 @@ while true; do
     BATT_CACHE="/tmp/rover_battery_cache"
     BATT_STALE_SECONDS=10  # Only show '--' if no valid reading for 10+ seconds
 
-    BATT_V=$(timeout 2 ros2 topic echo /battery_voltage --once 2>/dev/null | grep "data:" | awk '{printf "%.1f", $2}')
+    BATT_V=$(timeout 3 ros2 topic echo /battery_voltage --once 2>/dev/null | grep "data:" | awk '{printf "%.1f", $2}')
 
     if [ -n "$BATT_V" ] && [ "$BATT_V" != "0.0" ]; then
         # Valid reading - cache it with timestamp
