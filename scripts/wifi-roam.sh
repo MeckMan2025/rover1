@@ -34,7 +34,7 @@ get_priority() {
 # Get current WiFi connection name
 get_current_wifi() {
     nmcli -t -f NAME,TYPE,DEVICE connection show --active 2>/dev/null | \
-        grep ":wifi:" | grep -v "^--" | head -1 | cut -d: -f1 || echo ""
+        grep ":802-11-wireless:" | head -1 | cut -d: -f1 || echo ""
 }
 
 # Get list of available WiFi networks (SSIDs)
@@ -51,7 +51,7 @@ get_available_networks() {
 get_known_connections() {
     # Returns: connection_name:priority for each WiFi connection
     nmcli -t -f NAME,TYPE connection show 2>/dev/null | \
-        grep ":wifi$" | cut -d: -f1 | while read -r conn; do
+        grep ":802-11-wireless$" | cut -d: -f1 | while read -r conn; do
             priority=$(get_priority "$conn")
             echo "$conn:$priority"
         done | sort -t: -k2 -rn  # Sort by priority descending
