@@ -25,6 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'dog_follower = rover1_vision.dog_follower:main',
+            'shoe_follower = rover1_vision.shoe_follower:main',
         ],
     },
 )

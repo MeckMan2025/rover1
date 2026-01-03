@@ -1,0 +1,25 @@
+# Shoe Follower Configuration
+# Parameters for YOLOv8 person detection and following behavior
+#
+# This mode tracks the bottom-center of the person bounding box (feet position)
+# to estimate distance. Lower in frame = closer person.
+
+shoe_follower:
+  ros__parameters:
+    # Model Configuration (same model as dog_follower)
+    model_path: "/home/andrewmeckley/ros2_ws/src/rover1/models/yolov8s.hef"
+    confidence_threshold: 0.5  # Minimum detection confidence (0.0-1.0)
+
+    # Following Behavior - Y position based
+    target_foot_y_ratio: 0.70      # Target: feet at 70% down the frame
+    too_close_foot_y_ratio: 0.85   # Stop if feet at bottom 15% of frame
+    center_tolerance: 0.12         # 12% frame width deadzone (humans wider than dogs)
+
+    # Speed Limits (slower than dog - humans walk ~1.4 m/s max)
+    linear_speed: 0.4              # Max forward speed (m/s)
+    angular_speed: 0.8             # Max rotation speed (rad/s)
+
+    # Safety Timeouts
+    detection_timeout: 2.0         # Stop if no person for 2s (longer than dog)
+    teleop_override_timeout: 0.5   # Disable if teleop active (seconds)
+    recovery_scan_timeout: 4.0     # Longer recovery scan for humans
