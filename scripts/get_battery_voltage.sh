@@ -17,6 +17,9 @@ if ! command -v ros2 &> /dev/null; then
     fi
 fi
 
+# Match RMW with rover1.service (fastrtps)
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+
 # Try ROS topic (1 second timeout to keep tmux responsive)
 # Note: --qos-reliability best_effort required to match sensor_data QoS publisher
 voltage=$(timeout 1 ros2 topic echo /battery_voltage std_msgs/msg/Float32 --qos-reliability best_effort --once 2>/dev/null | grep "data:" | awk '{print $2}')
