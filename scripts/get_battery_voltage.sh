@@ -18,7 +18,8 @@ if ! command -v ros2 &> /dev/null; then
 fi
 
 # Try ROS topic (1 second timeout to keep tmux responsive)
-voltage=$(timeout 1 ros2 topic echo /battery_voltage std_msgs/msg/Float32 --once 2>/dev/null | grep "data:" | awk '{print $2}')
+# Note: --qos-reliability best_effort required to match sensor_data QoS publisher
+voltage=$(timeout 1 ros2 topic echo /battery_voltage std_msgs/msg/Float32 --qos-reliability best_effort --once 2>/dev/null | grep "data:" | awk '{print $2}')
 
 if [ -n "$voltage" ] && [ "$voltage" != "0" ]; then
     # Format with one decimal place
