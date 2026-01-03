@@ -1539,67 +1539,6 @@
             </div>
         </div>
 
-        <!-- Dog Follower Quick Controls -->
-        <div class="dog-follower-quick">
-            <span class="quick-label">Dog Follower</span>
-            <div class="quick-toggle-group">
-                <span style="font-size: 0.85rem; color: rgba(255,255,255,0.6);">Detect</span>
-                <label class="toggle-switch">
-                    <input type="checkbox" id="detectionToggleQuick" onchange="dogFollower.toggleDetection(this.checked)">
-                    <span class="toggle-slider"></span>
-                </label>
-            </div>
-            <button id="btnDogFollowStartQuick" class="quick-btn quick-btn-start"
-                    onclick="dogFollower.enable()" disabled>
-                &#x1F43E; Follow
-            </button>
-            <button id="btnDogFollowStopQuick" class="quick-btn quick-btn-stop"
-                    onclick="dogFollower.disable()" disabled>
-                &#x23F9; Stop
-            </button>
-            <button id="btnDogFollowResetQuick" class="quick-btn quick-btn-reset"
-                    onclick="dogFollower.reset()">
-                &#x21BB; Reset
-            </button>
-            <span id="dogFollowerStatusQuick" class="quick-status idle">IDLE</span>
-        </div>
-
-        <!-- Shoe Follower Quick Controls (Person Follow) -->
-        <div class="shoe-follower-quick">
-            <span class="quick-label">Person Follow</span>
-            <div class="quick-toggle-group">
-                <span style="font-size: 0.85rem; color: rgba(255,255,255,0.6);">Detect</span>
-                <label class="toggle-switch">
-                    <input type="checkbox" id="shoeDetectionToggle" onchange="shoeFollower.toggleDetection(this.checked)">
-                    <span class="toggle-slider"></span>
-                </label>
-            </div>
-            <button id="btnShoeFollowStart" class="quick-btn quick-btn-start"
-                    onclick="shoeFollower.enable()" disabled>
-                &#x1F6B6; Follow
-            </button>
-            <button id="btnShoeFollowStop" class="quick-btn quick-btn-stop"
-                    onclick="shoeFollower.disable()" disabled>
-                &#x23F9; Stop
-            </button>
-            <button id="btnShoeFollowReset" class="quick-btn quick-btn-reset"
-                    onclick="shoeFollower.reset()">
-                &#x21BB; Reset
-            </button>
-            <span id="shoeFollowerStatus" class="quick-status idle">IDLE</span>
-        </div>
-
-        <!-- Teleop Speed Control -->
-        <div class="teleop-controls">
-            <div class="teleop-speed-control">
-                <span class="teleop-speed-label">Teleop Speed</span>
-                <input type="range" id="teleopSpeedSlider" class="teleop-slider"
-                       min="10" max="100" value="100"
-                       oninput="teleopController.updateSpeed(this.value)">
-                <span id="teleopSpeedValue" class="teleop-speed-value">100%</span>
-            </div>
-        </div>
-
         <!-- Web Teleop Drive Controls - Two-thumb layout -->
         <div class="card teleop-card">
             <div class="card-title">Drive Controls</div>
@@ -1661,6 +1600,67 @@
             <div class="teleop-status" id="teleopStatus">
                 <span class="teleop-status-inactive">Ready - use both thumbs for agile control</span>
             </div>
+        </div>
+
+        <!-- Teleop Speed Control -->
+        <div class="teleop-controls">
+            <div class="teleop-speed-control">
+                <span class="teleop-speed-label">Teleop Speed</span>
+                <input type="range" id="teleopSpeedSlider" class="teleop-slider"
+                       min="10" max="100" value="100"
+                       oninput="teleopController.updateSpeed(this.value)">
+                <span id="teleopSpeedValue" class="teleop-speed-value">100%</span>
+            </div>
+        </div>
+
+        <!-- Shoe Follower Quick Controls (Person Follow) -->
+        <div class="shoe-follower-quick">
+            <span class="quick-label">Person Follow</span>
+            <div class="quick-toggle-group">
+                <span style="font-size: 0.85rem; color: rgba(255,255,255,0.6);">Detect</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="shoeDetectionToggle" onchange="shoeFollower.toggleDetection(this.checked)">
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+            <button id="btnShoeFollowStart" class="quick-btn quick-btn-start"
+                    onclick="shoeFollower.enable()" disabled>
+                &#x1F6B6; Follow
+            </button>
+            <button id="btnShoeFollowStop" class="quick-btn quick-btn-stop"
+                    onclick="shoeFollower.disable()" disabled>
+                &#x23F9; Stop
+            </button>
+            <button id="btnShoeFollowReset" class="quick-btn quick-btn-reset"
+                    onclick="shoeFollower.reset()">
+                &#x21BB; Reset
+            </button>
+            <span id="shoeFollowerStatus" class="quick-status idle">IDLE</span>
+        </div>
+
+        <!-- Dog Follower Quick Controls -->
+        <div class="dog-follower-quick">
+            <span class="quick-label">Dog Follower</span>
+            <div class="quick-toggle-group">
+                <span style="font-size: 0.85rem; color: rgba(255,255,255,0.6);">Detect</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="detectionToggleQuick" onchange="dogFollower.toggleDetection(this.checked)">
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+            <button id="btnDogFollowStartQuick" class="quick-btn quick-btn-start"
+                    onclick="dogFollower.enable()" disabled>
+                &#x1F43E; Follow
+            </button>
+            <button id="btnDogFollowStopQuick" class="quick-btn quick-btn-stop"
+                    onclick="dogFollower.disable()" disabled>
+                &#x23F9; Stop
+            </button>
+            <button id="btnDogFollowResetQuick" class="quick-btn quick-btn-reset"
+                    onclick="dogFollower.reset()">
+                &#x21BB; Reset
+            </button>
+            <span id="dogFollowerStatusQuick" class="quick-status idle">IDLE</span>
         </div>
 
         <!-- Street Map Section -->
