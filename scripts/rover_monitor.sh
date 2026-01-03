@@ -30,8 +30,28 @@ while true; do
     IP=$(hostname -I | awk '{print $1}' 2>/dev/null)
     TEMP=$(vcgencmd measure_temp 2>/dev/null | cut -d'=' -f2)
 
-    # Battery voltage from /battery_voltage topic
+    # Battery voltage from /battery_voltage topic with staleness caching
+    # Cache prevents flickering to '--' during brief topic gaps
+    BATT_CACHE="/tmp/rover_battery_cache"
+    BATT_STALE_SECONDS=10  # Only show '--' if no valid reading for 10+ seconds
+
     BATT_V=$(timeout 2 ros2 topic echo /battery_voltage --once 2>/dev/null | grep "data:" | awk '{printf "%.1f", $2}')
+
+    if [ -n "$BATT_V" ] && [ "$BATT_V" != "0.0" ]; then
+        # Valid reading - cache it with timestamp
+        echo "$BATT_V $(date +%s)" > "$BATT_CACHE"
+    elif [ -f "$BATT_CACHE" ]; then
+        # No reading - try to use cached value if not stale
+        CACHED=$(cat "$BATT_CACHE" 2>/dev/null)
+        CACHED_V=$(echo "$CACHED" | awk '{print $1}')
+        CACHED_TIME=$(echo "$CACHED" | awk '{print $2}')
+        NOW=$(date +%s)
+        AGE=$((NOW - CACHED_TIME))
+        if [ "$AGE" -lt "$BATT_STALE_SECONDS" ] && [ -n "$CACHED_V" ]; then
+            BATT_V="$CACHED_V"
+        fi
+    fi
+
     if [ -n "$BATT_V" ]; then
         # Color code: green > 14V, yellow 12-14V, red < 12V
         if (( $(echo "$BATT_V > 14.0" | bc -l) )); then
