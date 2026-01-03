@@ -1809,6 +1809,12 @@
                 this.reconnectInterval = 5000;
                 this.lastUpdateTime = null;
                 this.patrolController = null;
+
+                // Battery voltage staleness tracking - prevents flickering to '--' during brief data gaps
+                this.lastValidBatteryVoltage = null;
+                this.lastValidBatteryTime = null;
+                this.batteryStaleTimeout = 5000; // Show '--' only if no valid data for 5 seconds
+
                 this.connect();
 
                 // Update "last updated" every second
@@ -1919,9 +1925,21 @@
                 // HUD Overlays
                 this.updateHUD(data);
 
-                // Battery Status
-                if (data.battery_voltage !== undefined) {
+                // Battery Status - with staleness protection to prevent flickering
+                if (data.battery_voltage !== undefined && data.battery_voltage !== null && data.battery_voltage > 0) {
+                    // Valid reading - update and cache
+                    this.lastValidBatteryVoltage = data.battery_voltage;
+                    this.lastValidBatteryTime = Date.now();
                     this.updateBatteryStatus(data.battery_voltage);
+                } else if (this.lastValidBatteryVoltage !== null) {
+                    // Invalid/null reading - check staleness before showing '--'
+                    if (Date.now() - this.lastValidBatteryTime < this.batteryStaleTimeout) {
+                        // Keep showing last valid value (data not stale yet)
+                        this.updateBatteryStatus(this.lastValidBatteryVoltage);
+                    } else {
+                        // Data is stale, show '--'
+                        this.updateBatteryStatus(null);
+                    }
                 }
 
                 // Power Supply Status (USB-C PD)
@@ -1996,11 +2014,19 @@
                     sat.textContent = `SAT: ${data.sat_used}`;
                 }
 
-                if (data.battery_voltage !== undefined) {
+                // HUD voltage uses same staleness-protected value as battery status
+                if (data.battery_voltage !== undefined && data.battery_voltage !== null && data.battery_voltage > 0) {
                     volt.textContent = `VOLT: ${data.battery_voltage.toFixed(1)} V`;
+                } else if (this.lastValidBatteryVoltage !== null) {
+                    // Use cached value if not stale
+                    if (Date.now() - this.lastValidBatteryTime < this.batteryStaleTimeout) {
+                        volt.textContent = `VOLT: ${this.lastValidBatteryVoltage.toFixed(1)} V`;
+                    } else {
+                        volt.textContent = 'VOLT: -- V';
+                    }
                 }
             }
-            
+
             updateRTKStatus(state, accuracy) {
                 const badge = document.getElementById('rtkBadge');
                 const accuracyEl = document.getElementById('rtkAccuracy');
