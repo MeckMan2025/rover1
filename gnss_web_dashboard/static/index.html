@@ -745,57 +745,66 @@
             50% { opacity: 0.7; }
         }
 
-        /* Shoe Follower Quick Controls - Person follow mode */
+        /* Shoe Follower Quick Controls - Matches dog follower style with cyan accent */
         .shoe-follower-quick {
+            max-width: 800px;
+            margin: 0 auto 20px auto;
+            padding: 12px 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(0, 200, 255, 0.3);
+            border-radius: 12px;
             display: flex;
             align-items: center;
-            gap: 12px;
-            padding: 8px 15px;
-            background: linear-gradient(135deg, rgba(0, 200, 200, 0.15), rgba(0, 150, 150, 0.1));
-            border-top: 1px solid rgba(0, 200, 200, 0.3);
+            justify-content: center;
+            gap: 20px;
+            flex-wrap: wrap;
         }
 
         .shoe-follower-quick .quick-label {
             font-weight: 600;
-            font-size: 0.9rem;
-            color: #00dddd;
-            min-width: 100px;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
         .shoe-follower-quick .quick-toggle-group {
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 10px;
         }
 
         .shoe-follower-quick .quick-btn {
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 0.85rem;
-            font-weight: 500;
+            padding: 8px 16px;
             border: none;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
             cursor: pointer;
             transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
 
         .shoe-follower-quick .quick-btn-start {
-            background: linear-gradient(135deg, #00cccc, #009999);
-            color: white;
+            background: linear-gradient(135deg, #00ddff, #00aacc);
+            color: #000;
         }
 
         .shoe-follower-quick .quick-btn-start:hover:not(:disabled) {
             transform: translateY(-1px);
-            box-shadow: 0 3px 10px rgba(0, 204, 204, 0.4);
+            box-shadow: 0 3px 10px rgba(0, 221, 255, 0.4);
         }
 
         .shoe-follower-quick .quick-btn-stop {
-            background: linear-gradient(135deg, #ff6b6b, #ee5a5a);
-            color: white;
+            background: linear-gradient(135deg, #ff4444, #cc0000);
+            color: #fff;
         }
 
         .shoe-follower-quick .quick-btn-stop:hover:not(:disabled) {
             transform: translateY(-1px);
-            box-shadow: 0 3px 10px rgba(255, 107, 107, 0.4);
+            box-shadow: 0 3px 10px rgba(255, 68, 68, 0.4);
         }
 
         .shoe-follower-quick .quick-btn:disabled {
@@ -805,34 +814,34 @@
         }
 
         .shoe-follower-quick .quick-status {
-            padding: 4px 10px;
-            border-radius: 10px;
-            font-size: 0.75rem;
+            padding: 6px 14px;
+            border-radius: 6px;
             font-weight: 600;
+            font-size: 0.8rem;
             text-transform: uppercase;
-            margin-left: auto;
+            letter-spacing: 0.5px;
         }
 
         .shoe-follower-quick .quick-status.idle {
-            background: rgba(128, 128, 128, 0.2);
-            color: #888;
+            background: rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.5);
         }
 
         .shoe-follower-quick .quick-status.detecting {
-            background: rgba(0, 200, 200, 0.2);
-            color: #00dddd;
+            background: rgba(0, 200, 255, 0.2);
+            color: #00ccff;
         }
 
         .shoe-follower-quick .quick-status.searching {
             background: rgba(255, 193, 7, 0.2);
             color: #ffc107;
-            animation: pulse 1s infinite;
+            animation: pulse 1.5s infinite;
         }
 
         .shoe-follower-quick .quick-status.following {
             background: rgba(0, 255, 136, 0.2);
             color: #00ff88;
-            animation: pulse 0.5s infinite;
+            animation: pulse 1s infinite;
         }
 
         .shoe-follower-quick .quick-status.lost-target {
@@ -1557,7 +1566,7 @@
 
         <!-- Shoe Follower Quick Controls (Person Follow) -->
         <div class="shoe-follower-quick">
-            <span class="quick-label">&#x1F45F; Person Follow</span>
+            <span class="quick-label">Person Follow</span>
             <div class="quick-toggle-group">
                 <span style="font-size: 0.85rem; color: rgba(255,255,255,0.6);">Detect</span>
                 <label class="toggle-switch">
