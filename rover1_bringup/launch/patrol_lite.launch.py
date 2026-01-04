@@ -106,6 +106,34 @@ def generate_launch_description():
             }]
         ),
 
+        # Trace Recorder (odometry-only path recording)
+        Node(
+            package='rover1_patrol',
+            executable='trace_recorder.py',
+            name='trace_recorder',
+            output='screen',
+            parameters=[{
+                'paths_directory': paths_dir,
+                'min_distance': 0.2,
+                'min_rotation': 0.15,  # ~8.6 degrees
+                'odom_topic': '/odom/wheel_odom'
+            }]
+        ),
+
+        # Trace Follower (odometry-only path replay)
+        Node(
+            package='rover1_patrol',
+            executable='trace_follower.py',
+            name='trace_follower',
+            output='screen',
+            parameters=[{
+                'paths_directory': paths_dir,
+                'waypoint_tolerance': 0.15,
+                'max_linear_speed': 0.3,
+                'max_angular_speed': 0.8
+            }]
+        ),
+
         # NOTE: Web Dashboard is launched by rover.launch.py (included above)
         # Do not add it here to avoid duplicate nodes
     ])
