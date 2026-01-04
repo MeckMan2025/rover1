@@ -175,6 +175,11 @@ class TraceRecorder(Node):
 
     def publish_status(self):
         """Publish current status."""
+        # Only publish when active (recording or pending_save)
+        # When idle, let waypoint_recorder own /patrol/status
+        if not self.recording and len(self.waypoints) == 0:
+            return
+
         msg = PatrolStatus()
 
         if self.recording:

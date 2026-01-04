@@ -261,6 +261,11 @@ class WaypointRecorder(Node):
 
     def publish_status(self):
         """Publish current status."""
+        # Only publish when active (recording or pending_save)
+        # When idle, don't publish - avoids conflict with trace_recorder
+        if not self.recording and len(self.waypoints) == 0:
+            return
+
         msg = PatrolStatus()
 
         if self.recording:
