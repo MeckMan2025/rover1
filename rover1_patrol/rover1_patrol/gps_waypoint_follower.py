@@ -94,6 +94,11 @@ class GPSWaypointFollower(Node):
         self.last_lat = None
         self.last_lon = None
 
+        # Teleop preemption - yield to external control
+        self.teleop_active = False
+        self.last_teleop_time = None
+        self.teleop_timeout = 0.5  # Yield for 0.5s after last teleop cmd
+
         # QoS for GPS (BEST_EFFORT to match ublox driver)
         gps_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -146,6 +151,12 @@ class GPSWaypointFollower(Node):
         self.speed_sub = self.create_subscription(
             Float32, '/patrol/speed_scale',
             self.speed_callback, 10
+        )
+
+        # Teleop preemption - subscribe to gamepad commands
+        self.teleop_sub = self.create_subscription(
+            Twist, '/teleop/cmd_vel',
+            self.teleop_callback, 10
         )
 
         # Control loop timer
@@ -279,6 +290,10 @@ class GPSWaypointFollower(Node):
         """Main control loop - compute and publish velocity commands."""
         if self.state != FollowerState.FOLLOWING:
             return
+
+        # SAFETY: Yield to teleop commands
+        if self.is_teleop_active():
+            return  # Don't publish - let teleop control the rover
 
         # Check GPS timeout
         if self.last_gps_time is None:
@@ -499,6 +514,31 @@ class GPSWaypointFollower(Node):
     def speed_callback(self, msg: Float32):
         """Handle speed scale updates."""
         self.speed_scale = max(0.1, min(1.0, msg.data))
+
+    def teleop_callback(self, msg: Twist):
+        """Handle teleop commands - yield control to operator."""
+        has_motion = (abs(msg.linear.x) > 0.01 or
+                      abs(msg.linear.y) > 0.01 or
+                      abs(msg.angular.z) > 0.01)
+
+        if has_motion:
+            self.last_teleop_time = self.get_clock().now()
+            if not self.teleop_active:
+                self.teleop_active = True
+                self.get_logger().info('Teleop active - yielding control')
+
+    def is_teleop_active(self) -> bool:
+        """Check if teleop is currently active."""
+        if self.last_teleop_time is None:
+            return False
+
+        elapsed = (self.get_clock().now() - self.last_teleop_time).nanoseconds / 1e9
+        if elapsed > self.teleop_timeout:
+            if self.teleop_active:
+                self.teleop_active = False
+                self.get_logger().info('Teleop inactive - resuming patrol')
+            return False
+        return True
 
 
 def main(args=None):

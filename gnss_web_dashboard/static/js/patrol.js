@@ -65,7 +65,10 @@ class PatrolController {
         const patrolProgress = document.getElementById('patrolProgress');
         const patrolError = document.getElementById('patrolError');
 
-        if (state === 'patrolling' || state === 'paused') {
+        // States: 'following' (from follower), 'patrolling' (from nav2), 'paused'
+        const isActive = (state === 'following' || state === 'patrolling' || state === 'paused');
+
+        if (isActive) {
             this.isPatrolling = true;
             btnStartPatrol.style.display = 'none';
             patrolStatus.style.display = 'block';
@@ -79,7 +82,7 @@ class PatrolController {
             if (state === 'paused') {
                 patrolProgress.textContent += ' [PAUSED]';
             }
-        } else if (state === 'idle' || state === 'error') {
+        } else if (state === 'idle' || state === 'error' || state === 'complete') {
             this.isPatrolling = false;
             btnStartPatrol.style.display = 'block';
             patrolStatus.style.display = 'none';
