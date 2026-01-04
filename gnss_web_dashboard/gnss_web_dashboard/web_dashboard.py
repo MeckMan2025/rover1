@@ -51,6 +51,12 @@ class Rover1WebDashboard(Node):
         self.latest_patrol_status = None
         self.health_lock = threading.Lock()
 
+        # Broadcast throttling (reduce WebSocket traffic for smoother teleop)
+        self.last_health_broadcast = 0
+        self.health_broadcast_interval = 0.5  # 2Hz for GNSS updates (was every callback ~10Hz)
+        self.last_patrol_broadcast = 0
+        self.patrol_broadcast_interval = 0.2  # 5Hz for patrol status
+
         # Paths directory for map images
         self.paths_dir = Path(os.path.expanduser('~/paths'))
 
@@ -141,12 +147,14 @@ class Rover1WebDashboard(Node):
             10
         )
 
-        # Camera integration
+        # Camera integration (optimized for low-latency teleop)
         self.bridge = CvBridge()
         self.latest_image_base64 = None
         self.last_img_time = 0
-        self.fps_limit = 10.0
+        self.fps_limit = 5.0  # Reduced from 10 to minimize bandwidth contention
         self.interval = 1.0 / self.fps_limit
+        self.stream_width = 320  # Downsample for faster transmission
+        self.stream_height = 240
 
         # Track which feed we're using
         self.using_annotated_feed = False
@@ -203,7 +211,7 @@ class Rover1WebDashboard(Node):
         self.get_logger().info(f"Rover1 Web Dashboard started. Package dir: {self.package_dir}")
         
     def health_callback(self, msg: GnssHealth):
-        """Process incoming GNSS health messages"""
+        """Process incoming GNSS health messages (throttled to reduce WebSocket traffic)"""
         import math
         with self.health_lock:
             # Convert ROS message to JSON-serializable dict
@@ -225,13 +233,16 @@ class Rover1WebDashboard(Node):
                 'dgps_id': msg.dgps_id,
                 'battery_voltage': msg.battery_voltage if msg.battery_voltage > 0 else None
             }
-            
-        # Broadcast to all connected WebSocket clients
-        if self.ws_clients:
-            self.broadcast_data()
+
+        # Throttle broadcasts to 2Hz (health data doesn't need 10Hz updates)
+        now = time.time()
+        if now - self.last_health_broadcast >= self.health_broadcast_interval:
+            self.last_health_broadcast = now
+            if self.ws_clients:
+                self.broadcast_data()
 
     def patrol_status_callback(self, msg: PatrolStatus):
-        """Process incoming patrol status messages"""
+        """Process incoming patrol status messages (throttled to reduce WebSocket traffic)"""
         with self.health_lock:
             self.latest_patrol_status = {
                 'state': msg.state,
@@ -245,9 +256,12 @@ class Rover1WebDashboard(Node):
                 'recorded_waypoint_count': msg.recorded_waypoint_count,
             }
 
-        # Broadcast to all connected WebSocket clients
-        if self.ws_clients:
-            self.broadcast_data()
+        # Throttle broadcasts to 5Hz (patrol status updates are less critical than teleop)
+        now = time.time()
+        if now - self.last_patrol_broadcast >= self.patrol_broadcast_interval:
+            self.last_patrol_broadcast = now
+            if self.ws_clients:
+                self.broadcast_data()
 
     def dog_follower_status_callback(self, msg: String):
         """Process incoming dog follower status messages"""
@@ -282,7 +296,7 @@ class Rover1WebDashboard(Node):
         self._process_image(msg)
 
     def _process_image(self, msg: Image):
-        """Common image processing for both feeds."""
+        """Common image processing for both feeds (optimized for low-latency teleop)."""
         now = time.time()
         if now - self.last_img_time < self.interval:
             return
@@ -291,9 +305,13 @@ class Rover1WebDashboard(Node):
             # Convert ROS Image to OpenCV BGR
             cv_img = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
 
-            # Encode as JPEG
-            # Quality 40-60 is a good balance for bandwidth vs clarity
-            _, buffer = cv2.imencode('.jpg', cv_img, [cv2.IMWRITE_JPEG_QUALITY, 50])
+            # Downsample for faster transmission (320x240 ~10KB vs 640x480 ~40KB)
+            cv_img = cv2.resize(cv_img, (self.stream_width, self.stream_height),
+                               interpolation=cv2.INTER_AREA)
+
+            # Encode as JPEG with aggressive compression for bandwidth
+            # Quality 35 keeps images recognizable while minimizing size
+            _, buffer = cv2.imencode('.jpg', cv_img, [cv2.IMWRITE_JPEG_QUALITY, 35])
 
             # Convert to Base64 string
             base64_img = base64.b64encode(buffer).decode('utf-8')
