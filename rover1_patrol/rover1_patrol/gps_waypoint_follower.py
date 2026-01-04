@@ -397,6 +397,10 @@ class GPSWaypointFollower(Node):
 
     def publish_status(self):
         """Publish patrol status for dashboard."""
+        # Let waypoint_recorder own /patrol/status when we're idle
+        if self.state == FollowerState.IDLE:
+            return
+
         msg = PatrolStatus()
         msg.state = self.state.value
         msg.path_name = self.path_name
