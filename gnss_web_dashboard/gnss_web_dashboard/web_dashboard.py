@@ -506,7 +506,8 @@ class Rover1WebDashboard(Node):
         if action == 'list_paths':
             return await self.call_list_paths()
         elif action == 'start_recording':
-            # Use trace recording for trace mode, legacy for others
+            # Trace mode: use trace recorder (odom-only, relative positions)
+            # GPS mode: use legacy recorder (captures GPS waypoints)
             if autonomy_style == 'trace':
                 return await self.call_trigger_service('trace_start_recording')
             return await self.call_trigger_service('start_recording')

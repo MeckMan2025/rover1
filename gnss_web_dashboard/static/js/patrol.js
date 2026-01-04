@@ -193,6 +193,12 @@ class PatrolController {
         const autonomySelect = document.getElementById('autonomyStyle');
         const autonomyStyle = autonomySelect ? autonomySelect.value : 'trace';
 
+        // Validate GPS mode has GPS waypoints
+        if (autonomyStyle === 'gps' && !this.selectedPathHasGps) {
+            alert('This path has no GPS waypoints. Record a new path outdoors with GPS fix, or use Trace & Retrace mode.');
+            return;
+        }
+
         console.log(`Starting patrol: path=${pathName}, autonomy=${autonomyStyle}`);
 
         this.sendCommand({
@@ -201,7 +207,7 @@ class PatrolController {
             path_name: pathName,
             loop_count: 0,        // Always infinite
             speed_percent: 1.0,   // Always 100%
-            reverse_mode: false   // Always forward
+            reverse_mode: true    // Back and forth (retrace)
         });
 
         this.currentAutonomyStyle = autonomyStyle;
@@ -220,9 +226,11 @@ class PatrolController {
 
         // Stop all autonomy styles
         this.sendCommand({ action: 'stop_patrol', autonomy_style: 'trace' });
+        this.sendCommand({ action: 'stop_patrol', autonomy_style: 'gps' });
 
-        // Discard any recording in progress (trace mode)
+        // Discard any recording in progress (both modes)
         this.sendCommand({ action: 'discard_recording', autonomy_style: 'trace' });
+        this.sendCommand({ action: 'discard_recording', autonomy_style: 'gps' });
 
         // Send zero velocity command
         this.sendCommand({ action: 'emergency_stop' });
