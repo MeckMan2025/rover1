@@ -535,6 +535,8 @@ class Rover1WebDashboard(Node):
             return self.system_shutdown()
         elif action == 'reboot':
             return self.system_reboot()
+        elif action == 'emergency_stop':
+            return self.emergency_stop()
         # Dog Follower commands (with dynamic node spawning/killing)
         elif action == 'detection_enable':
             # Spawn node if not running, then enable detection
@@ -1011,6 +1013,26 @@ class Rover1WebDashboard(Node):
         except Exception as e:
             self.get_logger().error(f'Reboot failed: {e}')
             return {'success': False, 'message': f'Reboot failed: {e}'}
+
+    def emergency_stop(self):
+        """Emergency stop - send zero velocity command immediately."""
+        self.get_logger().warn('EMERGENCY STOP activated via web dashboard!')
+
+        # Send zero velocity command
+        twist = Twist()
+        twist.linear.x = 0.0
+        twist.linear.y = 0.0
+        twist.linear.z = 0.0
+        twist.angular.x = 0.0
+        twist.angular.y = 0.0
+        twist.angular.z = 0.0
+
+        # Publish multiple times to ensure it gets through
+        for _ in range(5):
+            self.cmd_vel_pub.publish(twist)
+
+        self.get_logger().info('Emergency stop: Zero velocity published')
+        return {'success': True, 'message': 'Emergency stop activated'}
 
 
 class CustomHTTPHandler(SimpleHTTPRequestHandler):

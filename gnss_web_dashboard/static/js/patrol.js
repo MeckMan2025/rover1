@@ -192,6 +192,39 @@ class PatrolController {
             auto_mode: this.currentAutoMode || 'odometry'
         });
     }
+
+    emergencyStop() {
+        // Stop ALL autonomous movement - both followers and recording
+        console.log('EMERGENCY STOP triggered');
+
+        // Stop both patrol types
+        this.sendCommand({ action: 'stop_patrol', auto_mode: 'odometry' });
+        this.sendCommand({ action: 'stop_patrol', auto_mode: 'gps' });
+
+        // Discard any recording in progress
+        this.sendCommand({ action: 'discard_recording' });
+
+        // Send zero velocity command
+        this.sendCommand({ action: 'emergency_stop' });
+
+        // Force UI reset
+        this.isPatrolling = false;
+        this.isRecording = false;
+
+        const btnRecord = document.getElementById('btnRecord');
+        const recordingStatus = document.getElementById('recordingStatus');
+        const saveDialog = document.getElementById('saveDialog');
+        const btnStartPatrol = document.getElementById('btnStartPatrol');
+        const patrolStatus = document.getElementById('patrolStatus');
+
+        if (btnRecord) btnRecord.style.display = 'block';
+        if (recordingStatus) recordingStatus.style.display = 'none';
+        if (saveDialog) saveDialog.style.display = 'none';
+        if (btnStartPatrol) btnStartPatrol.style.display = 'block';
+        if (patrolStatus) patrolStatus.style.display = 'none';
+
+        alert('Emergency Stop activated - all autonomous movement stopped');
+    }
 }
 
 window.PatrolController = PatrolController;

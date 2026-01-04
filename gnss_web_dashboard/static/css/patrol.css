@@ -6,6 +6,34 @@
     max-width: 400px;
 }
 
+/* Emergency Stop Button - Always visible, can't miss it */
+.btn-emergency {
+    width: 100%;
+    padding: 15px;
+    font-size: 1.1rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    background: linear-gradient(135deg, #ff0000, #cc0000);
+    color: white;
+    border: 3px solid #ff0000;
+    border-radius: 8px;
+    cursor: pointer;
+    margin-bottom: 20px;
+    box-shadow: 0 0 10px rgba(255, 0, 0, 0.3);
+    transition: all 0.1s ease;
+}
+
+.btn-emergency:hover {
+    background: linear-gradient(135deg, #ff3333, #ee0000);
+    box-shadow: 0 0 20px rgba(255, 0, 0, 0.5);
+    transform: scale(1.02);
+}
+
+.btn-emergency:active {
+    transform: scale(0.98);
+}
+
 .patrol-mode {
     padding: 15px 0;
 }

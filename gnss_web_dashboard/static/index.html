@@ -272,6 +272,11 @@
             <div class="card patrol-card">
                 <div class="card-title">Teach & Repeat</div>
 
+                <!-- EMERGENCY STOP - Always visible -->
+                <button id="btnEmergencyStop" class="btn btn-emergency" onclick="patrol.emergencyStop()">
+                    EMERGENCY STOP
+                </button>
+
                 <!-- RECORD MODE -->
                 <div id="recordMode" class="patrol-mode">
                     <button id="btnRecord" class="btn btn-big btn-record" onclick="patrol.startRecording()">
