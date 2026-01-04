@@ -290,6 +290,22 @@ class WaypointRecorder(Node):
 
         self.status_pub.publish(msg)
 
+    def publish_idle_status(self):
+        """Publish a final idle status to reset the UI."""
+        msg = PatrolStatus()
+        msg.state = 'idle'
+        msg.recorded_waypoint_count = 0
+        msg.path_name = ''
+        msg.current_waypoint = 0
+        msg.total_waypoints = 0
+        msg.current_loop = 0
+        msg.total_loops = 0
+        msg.speed_percent = 1.0
+        msg.error_message = ''
+        msg.gps_fix_available = False
+        msg.gps_waypoint_count = 0
+        self.status_pub.publish(msg)
+
     def start_recording_callback(self, request, response):
         """Start recording waypoints."""
         if self.recording:
@@ -414,6 +430,9 @@ class WaypointRecorder(Node):
         self.accumulated_distance = 0.0
         self.last_odom_time = None
 
+        # Publish final idle status so UI resets
+        self.publish_idle_status()
+
         gps_msg = f' ({len(valid_gps)} with GPS)' if valid_gps else ' (no GPS)'
         response.success = True
         response.message = f'Path "{path_name}" saved with {path_data["waypoint_count"]} waypoints{gps_msg}'
@@ -430,6 +449,9 @@ class WaypointRecorder(Node):
         self.gps_waypoints = []
         self.accumulated_distance = 0.0
         self.last_odom_time = None
+
+        # Publish final idle status so UI resets
+        self.publish_idle_status()
 
         if was_recording or had_waypoints:
             response.success = True
