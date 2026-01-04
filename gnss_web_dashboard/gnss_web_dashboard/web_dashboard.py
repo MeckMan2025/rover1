@@ -1033,19 +1033,19 @@ class CustomHTTPHandler(SimpleHTTPRequestHandler):
 def run_http_server(static_dir, port=8080):
     """Run HTTP server for static files"""
     os.chdir(static_dir)
-    
+
     handler = lambda *args, **kwargs: CustomHTTPHandler(*args, static_dir=static_dir, **kwargs)
     server = HTTPServer(('0.0.0.0', port), handler)
-    
+
     print(f"HTTP server starting on port {port}")
     server.serve_forever()
 
 
-def run_websocket_server(dashboard_node):
+def run_websocket_server(dashboard_node, ready_event):
     """Run WebSocket server for real-time data"""
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    
+
     server = websockets.serve(
         dashboard_node.handle_websocket,
         '0.0.0.0',
@@ -1053,10 +1053,14 @@ def run_websocket_server(dashboard_node):
         ping_interval=20,
         ping_timeout=10
     )
-    
-    print("WebSocket server starting on port 8081")
+
     dashboard_node.ws_loop = loop
     loop.run_until_complete(server)
+
+    # Signal that WebSocket is ready before entering run_forever
+    print("WebSocket server ready on port 8081")
+    ready_event.set()
+
     loop.run_forever()
 
 
@@ -1066,23 +1070,30 @@ def main(args=None):
 
     # Create dashboard node
     dashboard = Rover1WebDashboard()
-    
-    # Start HTTP server in separate thread
+
+    # Event to synchronize startup order
+    ws_ready = threading.Event()
+
+    # Start WebSocket server first (must be ready before HTTP serves pages)
+    ws_thread = threading.Thread(
+        target=run_websocket_server,
+        args=(dashboard, ws_ready),
+        daemon=True
+    )
+    ws_thread.start()
+
+    # Wait for WebSocket to be ready (max 10 seconds)
+    if not ws_ready.wait(timeout=10.0):
+        dashboard.get_logger().error("WebSocket server failed to start in time!")
+
+    # Now start HTTP server (clients can connect to WebSocket immediately)
     http_thread = threading.Thread(
         target=run_http_server,
         args=(dashboard.static_dir, 8080),
         daemon=True
     )
     http_thread.start()
-    
-    # Start WebSocket server in separate thread  
-    ws_thread = threading.Thread(
-        target=run_websocket_server,
-        args=(dashboard,),
-        daemon=True
-    )
-    ws_thread.start()
-    
+
     dashboard.get_logger().info("Rover1 Web Dashboard ready at http://<rover-ip>:8080")
     
     try:
