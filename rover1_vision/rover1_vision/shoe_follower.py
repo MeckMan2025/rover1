@@ -54,15 +54,8 @@ import numpy as np
 import os
 import threading
 
-# Hailo SDK imports - gracefully handle if not installed
-try:
-    from hailo_platform import (
-        HEF, VDevice, HailoStreamInterface, InferVStreams, ConfigureParams,
-        InputVStreamParams, OutputVStreamParams, FormatType
-    )
-    HAILO_AVAILABLE = True
-except ImportError:
-    HAILO_AVAILABLE = False
+# Hailo SDK imports - lazy loaded in _init_hailo() to save ~96MB when idle
+HAILO_AVAILABLE = None  # Will be set on first _init_hailo() call
 
 
 class ShoeFollower(Node):
@@ -150,6 +143,7 @@ class ShoeFollower(Node):
         self.output_vstream_params = None
         self.infer_pipeline = None  # Persistent inference pipeline
         self.hailo_initialized = False  # Lazy loading flag
+        self._hailo_imports = None  # Lazy-loaded SDK imports
 
         # Publishers
         self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
@@ -225,6 +219,34 @@ class ShoeFollower(Node):
 
     def _init_hailo(self):
         """Initialize Hailo-8L inference engine with persistent vstreams."""
+        global HAILO_AVAILABLE
+
+        # Lazy import Hailo SDK (saves ~96MB when idle)
+        if HAILO_AVAILABLE is None:
+            try:
+                from hailo_platform import (
+                    HEF, VDevice, HailoStreamInterface, InferVStreams, ConfigureParams,
+                    InputVStreamParams, OutputVStreamParams, FormatType
+                )
+                # Store imports as instance attributes for use in this method and run_inference
+                self._hailo_imports = {
+                    'HEF': HEF,
+                    'VDevice': VDevice,
+                    'HailoStreamInterface': HailoStreamInterface,
+                    'InferVStreams': InferVStreams,
+                    'ConfigureParams': ConfigureParams,
+                    'InputVStreamParams': InputVStreamParams,
+                    'OutputVStreamParams': OutputVStreamParams,
+                    'FormatType': FormatType,
+                }
+                HAILO_AVAILABLE = True
+                self.get_logger().info('Hailo SDK loaded successfully')
+            except ImportError as e:
+                HAILO_AVAILABLE = False
+                self._hailo_imports = None
+                self.get_logger().warn(f'Hailo SDK not available: {e} - running in mock mode')
+                return
+
         if not HAILO_AVAILABLE:
             self.get_logger().warn('Hailo SDK not available - running in mock mode')
             return
@@ -235,6 +257,16 @@ class ShoeFollower(Node):
             return
 
         try:
+            # Get imported classes from lazy-loaded imports
+            HEF = self._hailo_imports['HEF']
+            VDevice = self._hailo_imports['VDevice']
+            HailoStreamInterface = self._hailo_imports['HailoStreamInterface']
+            ConfigureParams = self._hailo_imports['ConfigureParams']
+            InputVStreamParams = self._hailo_imports['InputVStreamParams']
+            OutputVStreamParams = self._hailo_imports['OutputVStreamParams']
+            FormatType = self._hailo_imports['FormatType']
+            InferVStreams = self._hailo_imports['InferVStreams']
+
             # Load HEF (Hailo Executable Format)
             self.hailo_hef = HEF(self.model_path)
 
