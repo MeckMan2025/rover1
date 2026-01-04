@@ -65,7 +65,7 @@ def generate_launch_description():
             launch_arguments={
                 'device_family': 'F9R',
                 'frame_id': 'gps_link',
-                'log_level': 'DEBUG',  # RTK troubleshooting - check RTCM subscription
+                # 'log_level': 'DEBUG',  # Uncomment for RTCM troubleshooting
             }.items()
         )
     ])

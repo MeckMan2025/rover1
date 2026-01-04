@@ -1,7 +1,7 @@
 # Rover1 Engineering Journal & Technical Specifications
 
 **Maintainer:** MeckMan2025
-**Last Updated:** 2026-01-01
+**Last Updated:** 2026-01-04
 **Purpose:** Living documentation of the hardware verification, driver protocols, and system architecture for the Rover1 autonomous vehicle. This document serves as the sole source of truth for AI agents and engineering rebuilds.
 
 ---
@@ -1476,6 +1476,65 @@ MONITORING:
 | Web Dashboard | ✅ WORKING | Access from external browser |
 | Nav2 | ⏸️ PAUSED | Crashes during lifecycle bringup on Pi 5/Jazzy |
 | Kiosk Mode | ❌ DISABLED | CPU overhead; using htop on display |
+
+---
+
+### 4.18 RTK Multi-Constellation Debug Session (Jan 4, 2026)
+**Status:** RESOLVED - RTK FLOAT achieved after mountpoint change
+
+**Problem:** RTK status stuck at DGPS (~4-5m accuracy) despite NTRIP showing connected and RTCM messages flowing at 3+ msg/s. The Davenport, IA base station (IADA) is only ~10km from Bettendorf location - well within RTK range.
+
+**Root Cause Analysis:**
+1. **Wrong NTRIP mountpoint**: Was using `RTCM3_IMAX` which only provides GPS+GLONASS corrections (2 constellations)
+2. **F9R underutilized**: The ZED-F9R supports 4 constellations but was only receiving 2
+3. **Ruled out**: Initially suspected RTCM wasn't being forwarded to F9R device. DEBUG logging confirmed `ublox_dgnss` WAS subscribing to `/ntrip_client/rtcm` and writing to USB correctly.
+
+**Solution:**
+Changed NTRIP mountpoint from `RTCM3_IMAX` to `MSM_IMAX`:
+- File: `rover1_bringup/launch/gps.launch.py` line 16
+- MSM_IMAX provides GPS + GLONASS + Galileo + BeiDou (4 constellations)
+- Same Iowa DOT NTRIP server (165.206.203.10:10000)
+
+**Results:**
+| Metric      | Before (RTCM3_IMAX) | After (MSM_IMAX) |
+|-------------|---------------------|------------------|
+| RTK Status  | DGPS                | **FLOAT**        |
+| H_ACC       | 4-5 meters          | **0.20 meters**  |
+| Satellites  | 12-16               | 16-18            |
+| RTCM Rate   | 3 msg/s             | 5-6 msg/s        |
+
+**Debug Commands Used:**
+```bash
+# Enable DEBUG logging on ublox_dgnss (gps.launch.py line 68)
+'log_level': 'DEBUG',
+
+# Verify RTCM subscription and USB writes
+journalctl -u rover1.service -f | grep -iE "rtcm.*callback|write.*buffer"
+
+# Expected output confirming RTCM flow:
+# [DEBUG] rtcm_callback msg.message: 0xd3003d3fb...
+# [DEBUG] usb connection: write_buffer: sending 394 bytes to endpoint 0x1
+# [DEBUG] usb connection: write_buffer: result rc=0 actual_length=394
+```
+
+**Key Learnings:**
+1. **Multi-constellation corrections (MSM) dramatically improve RTK performance** - More satellites = faster ambiguity resolution
+2. **The ublox_dgnss driver (v0.7.0) correctly subscribes to `/ntrip_client/rtcm`** and forwards to device - no manual bridging needed
+3. **DEBUG logging on ublox_dgnss is invaluable** for troubleshooting RTCM flow
+4. **VRS handshake via `fix_to_nmea` → `/nmea` topic is working correctly**
+
+**Iowa RTN Mountpoint Reference (from IaRTNRTKProducts-NTRIP-QuickGuide.pdf):**
+| Mountpoint | Type | Constellations | Use Case |
+|------------|------|----------------|----------|
+| RTCM3_IMAX | VRS Network | GPS/GLO | Legacy dual-constellation |
+| **MSM_IMAX** | VRS Network | **GPS/GLO/GAL/BDS** | **Best for F9R (all constellations)** |
+| RTCM3_NEAR | Single Baseline | GPS/GLO | Fallback to nearest physical base |
+
+**Hardware Reference:**
+- GPS Module: u-blox ZED-F9R (GNSS + IMU sensor fusion)
+- NTRIP Server: Iowa DOT RTN (165.206.203.10:10000)
+- Nearest Base: Davenport, IA (IADA) ~10km from Bettendorf
+- Mountpoint: MSM_IMAX (4-constellation VRS network solution)
 
 ---
 
