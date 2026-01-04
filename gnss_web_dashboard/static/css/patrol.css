@@ -1,84 +1,223 @@
-/* patrol.css - Patrol card and map styles */
+/* patrol.css - Minimal Teach & Repeat UI */
 
 /* Patrol Card */
 .patrol-card {
     grid-column: 1 / -1;
+    max-width: 400px;
 }
 
-.patrol-section {
-    margin-bottom: 20px;
-    padding-bottom: 20px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+.patrol-mode {
+    padding: 15px 0;
 }
 
-.patrol-section:last-child {
-    margin-bottom: 0;
-    padding-bottom: 0;
-    border-bottom: none;
+.patrol-divider {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.1);
+    margin: 10px 0;
 }
 
-.section-title {
-    font-size: 0.9rem;
-    color: rgba(255, 255, 255, 0.7);
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    margin-bottom: 12px;
-}
-
-/* Patrol status badges */
-.patrol-status-badge {
-    display: inline-block;
-    padding: 8px 16px;
-    border-radius: 20px;
+/* Big Buttons */
+.btn-big {
+    width: 100%;
+    padding: 20px;
+    font-size: 1.2rem;
     font-weight: 600;
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
     text-transform: uppercase;
     letter-spacing: 1px;
 }
 
-.patrol-idle { background: rgba(128, 128, 128, 0.2); color: #888; }
-.patrol-recording { background: rgba(255, 68, 68, 0.2); color: #ff4444; animation: patrolPulse 1s infinite; }
-.patrol-pending-save { background: rgba(255, 193, 7, 0.2); color: #ffc107; }
-.patrol-patrolling { background: rgba(0, 255, 136, 0.2); color: #00ff88; animation: patrolPulse 2s infinite; }
-.patrol-paused { background: rgba(0, 136, 255, 0.2); color: #0088ff; }
-.patrol-error { background: rgba(255, 68, 68, 0.2); color: #ff4444; }
-
-@keyframes patrolPulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
+.btn-big:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
-.patrol-progress {
-    margin-top: 10px;
-    font-size: 0.9rem;
-    color: rgba(255, 255, 255, 0.8);
+.btn-record {
+    background: linear-gradient(135deg, #ff4444, #cc0000);
+    color: white;
 }
 
-.patrol-error-msg {
-    margin-top: 10px;
-    padding: 10px;
-    background: rgba(255, 68, 68, 0.1);
-    border: 1px solid rgba(255, 68, 68, 0.3);
-    border-radius: 8px;
+.btn-record:hover:not(:disabled) {
+    background: linear-gradient(135deg, #ff6666, #ee0000);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(255, 68, 68, 0.4);
+}
+
+.btn-stop {
+    background: linear-gradient(135deg, #666, #444);
+    color: white;
+}
+
+.btn-stop:hover:not(:disabled) {
+    background: linear-gradient(135deg, #777, #555);
+}
+
+.btn-patrol {
+    background: linear-gradient(135deg, #00ff88, #00cc6a);
+    color: #000;
+}
+
+.btn-patrol:hover:not(:disabled) {
+    background: linear-gradient(135deg, #33ff99, #00ee77);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0, 255, 136, 0.4);
+}
+
+/* Recording Status */
+.recording-status {
+    text-align: center;
+    padding: 20px 0;
+}
+
+.recording-info {
+    font-size: 1.5rem;
+    font-weight: bold;
     color: #ff4444;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
 }
 
-/* Path selector */
-.path-selector {
+.recording-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #ff4444;
+    animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.9); }
+}
+
+/* GPS Status */
+.gps-check {
+    font-size: 1.1rem;
+    margin-bottom: 15px;
+    padding: 8px 16px;
+    border-radius: 8px;
+    display: inline-block;
+}
+
+.gps-check.gps-available {
+    background: rgba(0, 255, 136, 0.15);
+    color: #00ff88;
+}
+
+.gps-check.gps-unavailable {
+    background: rgba(255, 193, 7, 0.15);
+    color: #ffc107;
+}
+
+.gps-yes {
+    color: #00ff88;
+    font-weight: bold;
+}
+
+.gps-no {
+    color: #ff4444;
+    font-weight: bold;
+}
+
+/* Save Dialog */
+.save-dialog {
+    padding: 15px 0;
+}
+
+.path-name-input {
+    width: 100%;
+    padding: 15px;
+    font-size: 1.1rem;
+    background: rgba(255, 255, 255, 0.1);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-radius: 10px;
+    color: #fff;
+    margin-bottom: 15px;
+    box-sizing: border-box;
+}
+
+.path-name-input:focus {
+    outline: none;
+    border-color: #00ff88;
+}
+
+.path-name-input::placeholder {
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.save-buttons {
     display: flex;
     gap: 10px;
+}
+
+.btn-save {
+    flex: 1;
+    padding: 15px;
+    font-size: 1rem;
+    font-weight: 600;
+    background: linear-gradient(135deg, #00ff88, #00cc6a);
+    color: #000;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-save:hover {
+    background: linear-gradient(135deg, #33ff99, #00ee77);
+}
+
+.btn-discard {
+    flex: 1;
+    padding: 15px;
+    font-size: 1rem;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-discard:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* Path Selector */
+.path-selector {
+    display: flex;
     align-items: center;
-    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.path-selector label {
+    font-size: 1rem;
+    color: rgba(255, 255, 255, 0.7);
+    white-space: nowrap;
 }
 
 .path-select {
     flex: 1;
-    min-width: 150px;
-    padding: 10px 15px;
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 8px;
-    color: #fff;
+    padding: 12px 15px;
     font-size: 1rem;
+    background: rgba(255, 255, 255, 0.1);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-radius: 10px;
+    color: #fff;
+    cursor: pointer;
+}
+
+.path-select:focus {
+    outline: none;
+    border-color: #00ff88;
 }
 
 .path-select option {
@@ -86,132 +225,38 @@
     color: #fff;
 }
 
-/* Map preview */
-.map-preview {
-    margin-top: 15px;
-    background: rgba(0, 0, 0, 0.3);
+.path-select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Patrol Status */
+.patrol-status {
+    text-align: center;
+    padding: 15px 0;
+}
+
+.patrol-progress-text {
+    font-size: 1.2rem;
+    color: #00ff88;
+    margin-bottom: 15px;
+    padding: 10px;
+    background: rgba(0, 255, 136, 0.1);
     border-radius: 8px;
-    overflow: hidden;
-    max-height: 300px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
 }
 
-.map-preview img {
-    max-width: 100%;
-    max-height: 300px;
-    object-fit: contain;
-}
-
-.map-placeholder {
-    padding: 40px;
-    color: rgba(255, 255, 255, 0.3);
+/* Error Display */
+.patrol-error {
+    margin-top: 15px;
+    padding: 12px;
+    background: rgba(255, 68, 68, 0.1);
+    border: 1px solid rgba(255, 68, 68, 0.3);
+    border-radius: 8px;
+    color: #ff4444;
     text-align: center;
 }
 
-/* Patrol options */
-.patrol-options {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 15px;
-    margin-bottom: 15px;
-}
-
-.option-group {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-}
-
-.option-label {
-    font-size: 0.8rem;
-    color: rgba(255, 255, 255, 0.6);
-    text-transform: uppercase;
-    letter-spacing: 1px;
-}
-
-.option-input {
-    padding: 8px 12px;
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 6px;
-    color: #fff;
-    font-size: 0.9rem;
-}
-
-.speed-slider {
-    width: 100%;
-    -webkit-appearance: none;
-    height: 8px;
-    border-radius: 4px;
-    background: rgba(255, 255, 255, 0.1);
-    outline: none;
-}
-
-.speed-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: #00ff88;
-    cursor: pointer;
-}
-
-.checkbox-label {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    cursor: pointer;
-    padding: 8px 0;
-}
-
-.checkbox-label input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
-    accent-color: #00ff88;
-}
-
-/* Recording indicator */
-.recording-indicator {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.recording-dot {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: #ff4444;
-    animation: patrolPulse 1s infinite;
-}
-
-/* Save dialog */
-.save-dialog {
-    display: none;
-    margin-top: 15px;
-    padding: 15px;
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 8px;
-}
-
-.save-dialog.active {
-    display: block;
-}
-
-.path-name-input {
-    width: 100%;
-    padding: 10px;
-    margin-bottom: 10px;
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 6px;
-    color: #fff;
-    font-size: 1rem;
-}
-
-/* Map Card */
+/* Map Card (keep existing) */
 .map-card {
     grid-column: 1 / -1;
 }
@@ -292,46 +337,4 @@
     font-family: monospace;
     font-size: 0.85rem;
     color: rgba(255, 255, 255, 0.8);
-}
-
-/* GPS Status Indicators */
-.gps-indicator {
-    font-size: 0.8rem;
-    margin-top: 5px;
-    padding: 4px 8px;
-    border-radius: 4px;
-}
-
-.gps-indicator.gps-available {
-    color: #00ff88;
-    background: rgba(0, 255, 136, 0.1);
-}
-
-.gps-indicator.gps-unavailable {
-    color: #ffc107;
-    background: rgba(255, 193, 7, 0.1);
-}
-
-/* GPS status in recording indicator */
-.gps-status {
-    font-size: 0.85rem;
-    padding: 2px 8px;
-    border-radius: 4px;
-    margin-left: 8px;
-}
-
-.gps-status.gps-ok {
-    color: #00ff88;
-    background: rgba(0, 255, 136, 0.15);
-}
-
-.gps-status.gps-no {
-    color: #ff4444;
-    background: rgba(255, 68, 68, 0.15);
-}
-
-/* Small button variant */
-.btn-small {
-    padding: 6px 12px;
-    font-size: 0.8rem;
 }

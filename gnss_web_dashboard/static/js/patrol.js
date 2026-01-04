@@ -1,11 +1,13 @@
-// patrol.js - Waypoint recording and patrol playback (Simplified UI)
+// patrol.js - Minimal Teach & Repeat UI
+// 6 buttons: Record, Stop Recording, Save, Discard, Start Patrol, Stop
+
 class PatrolController {
     constructor(dashboard) {
         this.dashboard = dashboard;
-        this.currentState = 'idle';
-        this.pendingCallback = null;
         this.paths = [];
         this.selectedPathHasGps = false;
+        this.isRecording = false;
+        this.isPatrolling = false;
     }
 
     sendCommand(cmd) {
@@ -13,141 +15,92 @@ class PatrolController {
     }
 
     handleResponse(data) {
-        console.log('Patrol response:', data);
         if (data.paths !== undefined) {
-            // Response from list_paths
             this.updatePathList(data.paths);
-        } else if (data.image !== undefined) {
-            // Response from get_map_image
-            this.showMapPreview(data.image);
-        } else if (data.pointcloud !== undefined) {
-            // Response from get_pointcloud
-            pointcloudViewer.hideLoading();
-            if (data.success) {
-                pointcloudViewer.show();
-                pointcloudViewer.loadPointCloud(data.pointcloud);
-            } else {
-                alert(data.message || 'Failed to load point cloud');
-            }
-        } else if (!data.success) {
-            // Error response
-            pointcloudViewer.hideLoading();
-            alert(data.message || 'Operation failed');
+        } else if (!data.success && data.message) {
+            alert(data.message);
         }
     }
 
     updateStatus(status) {
-        this.currentState = status.state;
+        const state = status.state;
 
-        // Update status badge
-        const badge = document.getElementById('patrolStatusBadge');
-        const stateClass = `patrol-${status.state.replace('_', '-')}`;
-        badge.className = `patrol-status-badge ${stateClass}`;
-
-        let stateText = status.state.toUpperCase().replace('_', ' ');
-        if (status.state === 'recording') {
-            // Show GPS status during recording
-            const gpsStatus = status.gps_fix_available ? 'GPS' : 'NO GPS';
-            const gpsClass = status.gps_fix_available ? 'gps-ok' : 'gps-no';
-            stateText = `RECORDING (${status.recorded_waypoint_count} pts)`;
-        }
-        badge.textContent = stateText;
-
-        // Update progress display
-        const progressEl = document.getElementById('patrolProgress');
-        if (status.state === 'patrolling' || status.state === 'paused') {
-            const loopText = status.total_loops > 0
-                ? `Loop ${status.current_loop + 1} of ${status.total_loops}`
-                : `Loop ${status.current_loop + 1} (continuous)`;
-            progressEl.textContent = `Waypoint ${status.current_waypoint + 1} of ${status.total_waypoints} | ${loopText}`;
-            progressEl.style.display = 'block';
-        } else {
-            progressEl.style.display = 'none';
-        }
-
-        // Update error display
-        const errorEl = document.getElementById('patrolError');
-        if (status.error_message) {
-            errorEl.textContent = status.error_message;
-            errorEl.style.display = 'block';
-        } else {
-            errorEl.style.display = 'none';
-        }
-
-        // Update recording indicator with GPS feedback
-        const recordingIndicator = document.getElementById('recordingIndicator');
-        const recordingCount = document.getElementById('recordingCount');
-        if (status.state === 'recording') {
-            recordingIndicator.style.display = 'flex';
-            const gpsText = status.gps_fix_available
-                ? `<span class="gps-status gps-ok">GPS: YES (${status.gps_waypoint_count}/${status.recorded_waypoint_count})</span>`
-                : '<span class="gps-status gps-no">GPS: NO</span>';
-            recordingCount.innerHTML = `Recording: ${status.recorded_waypoint_count} waypoints ${gpsText}`;
-        } else {
-            recordingIndicator.style.display = 'none';
-        }
-
-        // Update button states
-        this.updateButtonStates(status.state);
-
-        // Show/hide save dialog
+        // RECORD MODE UI
+        const btnRecord = document.getElementById('btnRecord');
+        const recordingStatus = document.getElementById('recordingStatus');
         const saveDialog = document.getElementById('saveDialog');
-        if (status.state === 'pending_save') {
-            saveDialog.classList.add('active');
-        } else {
-            saveDialog.classList.remove('active');
-        }
-    }
+        const waypointCount = document.getElementById('waypointCount');
+        const gpsStatus = document.getElementById('gpsStatus');
 
-    updateButtonStates(state) {
-        const btnStartRecord = document.getElementById('btnStartRecord');
-        const btnStopRecord = document.getElementById('btnStopRecord');
+        if (state === 'recording') {
+            this.isRecording = true;
+            btnRecord.style.display = 'none';
+            recordingStatus.style.display = 'block';
+            saveDialog.style.display = 'none';
+            waypointCount.textContent = status.recorded_waypoint_count;
+
+            // GPS status: checkmark or X
+            if (status.gps_fix_available) {
+                gpsStatus.innerHTML = 'GPS: <span class="gps-yes">&#10003;</span>';
+                gpsStatus.className = 'gps-check gps-available';
+            } else {
+                gpsStatus.innerHTML = 'GPS: <span class="gps-no">&#10007;</span>';
+                gpsStatus.className = 'gps-check gps-unavailable';
+            }
+        } else if (state === 'pending_save') {
+            this.isRecording = false;
+            btnRecord.style.display = 'none';
+            recordingStatus.style.display = 'none';
+            saveDialog.style.display = 'block';
+        } else if (state === 'idle' && !this.isPatrolling) {
+            this.isRecording = false;
+            btnRecord.style.display = 'block';
+            recordingStatus.style.display = 'none';
+            saveDialog.style.display = 'none';
+        }
+
+        // PATROL MODE UI
         const btnStartPatrol = document.getElementById('btnStartPatrol');
-        const btnPausePatrol = document.getElementById('btnPausePatrol');
-        const btnResumePatrol = document.getElementById('btnResumePatrol');
-        const btnStopPatrol = document.getElementById('btnStopPatrol');
+        const patrolStatus = document.getElementById('patrolStatus');
+        const patrolProgress = document.getElementById('patrolProgress');
+        const patrolError = document.getElementById('patrolError');
 
-        // Reset all buttons
-        btnStartRecord.disabled = false;
-        btnStopRecord.disabled = true;
-        btnStartPatrol.disabled = false;
-        btnPausePatrol.disabled = true;
-        btnResumePatrol.disabled = true;
-        btnStopPatrol.disabled = true;
+        if (state === 'patrolling' || state === 'paused') {
+            this.isPatrolling = true;
+            btnStartPatrol.style.display = 'none';
+            patrolStatus.style.display = 'block';
 
-        switch (state) {
-            case 'idle':
-                // Default state - can start recording or patrol
-                break;
-            case 'recording':
-                btnStartRecord.disabled = true;
-                btnStopRecord.disabled = false;
-                btnStartPatrol.disabled = true;
-                break;
-            case 'pending_save':
-                btnStartRecord.disabled = true;
-                btnStopRecord.disabled = true;
-                btnStartPatrol.disabled = true;
-                break;
-            case 'patrolling':
-                btnStartRecord.disabled = true;
-                btnStartPatrol.disabled = true;
-                btnPausePatrol.disabled = false;
-                btnStopPatrol.disabled = false;
-                break;
-            case 'paused':
-                btnStartRecord.disabled = true;
-                btnStartPatrol.disabled = true;
-                btnResumePatrol.disabled = false;
-                btnStopPatrol.disabled = false;
-                break;
-            case 'error':
-                // Can try again
-                break;
+            // Show progress: "5/12 (Loop 3)"
+            const wp = status.current_waypoint + 1;
+            const total = status.total_waypoints;
+            const loop = status.current_loop + 1;
+            patrolProgress.textContent = `Patrolling: ${wp}/${total} (Loop ${loop})`;
+
+            if (state === 'paused') {
+                patrolProgress.textContent += ' [PAUSED]';
+            }
+        } else if (state === 'idle' || state === 'error') {
+            this.isPatrolling = false;
+            btnStartPatrol.style.display = 'block';
+            patrolStatus.style.display = 'none';
         }
+
+        // Error display
+        if (status.error_message) {
+            patrolError.textContent = status.error_message;
+            patrolError.style.display = 'block';
+        } else {
+            patrolError.style.display = 'none';
+        }
+
+        // Disable patrol controls during recording
+        const pathSelect = document.getElementById('pathSelect');
+        pathSelect.disabled = this.isRecording;
+        btnStartPatrol.disabled = this.isRecording || !pathSelect.value;
     }
 
-    // Recording controls
+    // === RECORDING ===
+
     startRecording() {
         this.sendCommand({ action: 'start_recording' });
     }
@@ -164,7 +117,6 @@ class PatrolController {
         }
         this.sendCommand({ action: 'save_path', path_name: pathName });
         document.getElementById('pathNameInput').value = '';
-        // Refresh paths after saving
         setTimeout(() => this.refreshPaths(), 500);
     }
 
@@ -172,7 +124,8 @@ class PatrolController {
         this.sendCommand({ action: 'discard_recording' });
     }
 
-    // Path management
+    // === PATH MANAGEMENT ===
+
     refreshPaths() {
         this.sendCommand({ action: 'list_paths' });
     }
@@ -180,94 +133,34 @@ class PatrolController {
     updatePathList(paths) {
         this.paths = paths;
         const select = document.getElementById('pathSelect');
-        select.innerHTML = '<option value="">-- Select a path --</option>';
+        select.innerHTML = '<option value="">Select path...</option>';
 
         paths.forEach(path => {
             const option = document.createElement('option');
             option.value = path.name;
-            // Show GPS indicator in path list
-            const gpsIndicator = path.has_gps ? ' [GPS]' : '';
-            option.textContent = `${path.name} (${path.waypoint_count} pts${gpsIndicator}, ${path.recorded_date})`;
+            const gpsTag = path.has_gps ? ' [GPS]' : '';
+            option.textContent = `${path.name} (${path.waypoint_count} pts${gpsTag})`;
             option.dataset.hasGps = path.has_gps;
-            option.dataset.gpsCount = path.gps_waypoint_count;
             select.appendChild(option);
         });
     }
 
     onPathSelect() {
         const pathSelect = document.getElementById('pathSelect');
-        const pathName = pathSelect.value;
-        const autoModeSelect = document.getElementById('autoMode');
-        const gpsIndicator = document.getElementById('gpsIndicator');
-        const btn3D = document.getElementById('btnView3D');
+        const btnStartPatrol = document.getElementById('btnStartPatrol');
 
-        if (pathName) {
-            // Get GPS info from selected option
+        if (pathSelect.value) {
             const selectedOption = pathSelect.options[pathSelect.selectedIndex];
             this.selectedPathHasGps = selectedOption.dataset.hasGps === 'true';
-
-            // Auto-select mode based on GPS availability
-            if (this.selectedPathHasGps) {
-                autoModeSelect.value = 'gps';
-                gpsIndicator.textContent = 'GPS mode available';
-                gpsIndicator.className = 'gps-indicator gps-available';
-                autoModeSelect.disabled = false;
-            } else {
-                autoModeSelect.value = 'odometry';
-                gpsIndicator.textContent = 'Indoor mode only (no GPS data)';
-                gpsIndicator.className = 'gps-indicator gps-unavailable';
-                // Only show odometry option
-                autoModeSelect.disabled = true;
-            }
-
-            this.sendCommand({ action: 'get_map_image', path_name: pathName });
-            btn3D.disabled = false;
+            btnStartPatrol.disabled = false;
         } else {
-            this.clearMapPreview();
-            btn3D.disabled = true;
-            gpsIndicator.textContent = '';
-            gpsIndicator.className = 'gps-indicator';
-            autoModeSelect.disabled = false;
+            this.selectedPathHasGps = false;
+            btnStartPatrol.disabled = true;
         }
     }
 
-    view3DCloud() {
-        const pathName = document.getElementById('pathSelect').value;
-        if (!pathName) {
-            alert('Please select a path first');
-            return;
-        }
-        pointcloudViewer.showLoading();
-        this.sendCommand({ action: 'get_pointcloud', path_name: pathName });
-    }
+    // === PATROL ===
 
-    showMapPreview(base64Image) {
-        const preview = document.getElementById('mapPreview');
-        if (base64Image) {
-            preview.innerHTML = `<img src="data:image/png;base64,${base64Image}" alt="Path Map">`;
-        } else {
-            this.clearMapPreview();
-        }
-    }
-
-    clearMapPreview() {
-        const preview = document.getElementById('mapPreview');
-        preview.innerHTML = '<div class="map-placeholder">Select a path to preview map</div>';
-    }
-
-    toggleAdvanced() {
-        const advancedOptions = document.getElementById('advancedOptions');
-        const toggleBtn = document.getElementById('btnToggleAdvanced');
-        if (advancedOptions.style.display === 'none') {
-            advancedOptions.style.display = 'block';
-            toggleBtn.textContent = 'Hide Options';
-        } else {
-            advancedOptions.style.display = 'none';
-            toggleBtn.textContent = 'More Options';
-        }
-    }
-
-    // Patrol controls
     startPatrol() {
         const pathName = document.getElementById('pathSelect').value;
         if (!pathName) {
@@ -275,36 +168,19 @@ class PatrolController {
             return;
         }
 
-        const autoMode = document.getElementById('autoMode').value;
-        const loopCount = parseInt(document.getElementById('loopCount').value);
-        const speedPercent = parseInt(document.getElementById('speedSlider').value) / 100;
-        const reverseMode = document.getElementById('reverseMode').checked;
-
-        // Store current mode for pause/resume/stop
-        this.currentAutoMode = autoMode;
+        // Auto-detect mode: GPS if path has GPS waypoints, else Odometry
+        const autoMode = this.selectedPathHasGps ? 'gps' : 'odometry';
 
         this.sendCommand({
             action: 'start_patrol',
             auto_mode: autoMode,
             path_name: pathName,
-            loop_count: loopCount,
-            speed_percent: speedPercent,
-            reverse_mode: reverseMode
+            loop_count: 0,        // Always infinite
+            speed_percent: 1.0,   // Always 100%
+            reverse_mode: false   // Always forward
         });
-    }
 
-    pausePatrol() {
-        this.sendCommand({
-            action: 'pause_patrol',
-            auto_mode: this.currentAutoMode || 'odometry'
-        });
-    }
-
-    resumePatrol() {
-        this.sendCommand({
-            action: 'resume_patrol',
-            auto_mode: this.currentAutoMode || 'odometry'
-        });
+        this.currentAutoMode = autoMode;
     }
 
     stopPatrol() {
@@ -313,12 +189,6 @@ class PatrolController {
             auto_mode: this.currentAutoMode || 'odometry'
         });
     }
-
-    updateSpeedLabel() {
-        const value = document.getElementById('speedSlider').value;
-        document.getElementById('speedValue').textContent = value;
-    }
 }
-
 
 window.PatrolController = PatrolController;

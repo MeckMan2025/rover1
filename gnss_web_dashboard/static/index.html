@@ -268,122 +268,63 @@
                 </div>
             </div>
 
-            <!-- Patrol Card -->
+            <!-- Patrol Card - Minimal UI -->
             <div class="card patrol-card">
-                <div class="card-title">Teach & Repeat Patrol</div>
+                <div class="card-title">Teach & Repeat</div>
 
-                <!-- Status Section -->
-                <div class="patrol-section">
-                    <div class="section-title">Status</div>
-                    <span id="patrolStatusBadge" class="patrol-status-badge patrol-idle">IDLE</span>
-                    <div id="patrolProgress" class="patrol-progress" style="display: none;"></div>
-                    <div id="patrolError" class="patrol-error-msg" style="display: none;"></div>
-                </div>
+                <!-- RECORD MODE -->
+                <div id="recordMode" class="patrol-mode">
+                    <button id="btnRecord" class="btn btn-big btn-record" onclick="patrol.startRecording()">
+                        Record Path
+                    </button>
 
-                <!-- Recording Section -->
-                <div class="patrol-section">
-                    <div class="section-title">Record New Path</div>
-                    <div id="recordingControls">
-                        <div class="btn-group">
-                            <button id="btnStartRecord" class="btn btn-danger" onclick="patrol.startRecording()">
-                                Start Recording
-                            </button>
-                            <button id="btnStopRecord" class="btn btn-secondary" onclick="patrol.stopRecording()" disabled>
-                                Stop Recording
-                            </button>
+                    <!-- Recording status (shown while recording) -->
+                    <div id="recordingStatus" class="recording-status" style="display: none;">
+                        <div class="recording-info">
+                            <span class="recording-dot"></span>
+                            <span id="waypointCount">0</span> waypoints
                         </div>
-                        <div id="recordingIndicator" class="recording-indicator" style="display: none; margin-top: 10px;">
-                            <div class="recording-dot"></div>
-                            <span id="recordingCount">Recording: 0 waypoints</span>
-                        </div>
+                        <div id="gpsStatus" class="gps-check">GPS: --</div>
+                        <button id="btnStopRecord" class="btn btn-big btn-stop" onclick="patrol.stopRecording()">
+                            Stop Recording
+                        </button>
                     </div>
 
-                    <!-- Save Dialog (shown after stopping recording) -->
-                    <div id="saveDialog" class="save-dialog">
-                        <input type="text" id="pathNameInput" class="path-name-input" placeholder="Enter path name...">
-                        <div class="btn-group">
-                            <button class="btn btn-primary" onclick="patrol.savePath()">Save Path</button>
-                            <button class="btn btn-secondary" onclick="patrol.discardRecording()">Discard</button>
+                    <!-- Save dialog (shown after stop) -->
+                    <div id="saveDialog" class="save-dialog" style="display: none;">
+                        <input type="text" id="pathNameInput" class="path-name-input" placeholder="Path name...">
+                        <div class="save-buttons">
+                            <button class="btn btn-save" onclick="patrol.savePath()">Save</button>
+                            <button class="btn btn-discard" onclick="patrol.discardRecording()">Discard</button>
                         </div>
                     </div>
                 </div>
 
-                <!-- Path Selection Section -->
-                <div class="patrol-section">
-                    <div class="section-title">Select Path</div>
+                <div class="patrol-divider"></div>
+
+                <!-- PATROL MODE -->
+                <div id="patrolMode" class="patrol-mode">
                     <div class="path-selector">
+                        <label>Path:</label>
                         <select id="pathSelect" class="path-select" onchange="patrol.onPathSelect()">
-                            <option value="">-- Select a path --</option>
+                            <option value="">Select path...</option>
                         </select>
-                        <button class="btn btn-secondary" onclick="patrol.refreshPaths()">Refresh</button>
                     </div>
-                    <div id="mapPreview" class="map-preview">
-                        <div class="map-placeholder">Select a path to preview map</div>
-                    </div>
-                    <div style="margin-top: 10px;">
-                        <button id="btnView3D" class="btn btn-secondary" onclick="patrol.view3DCloud()" disabled>
-                            View 3D Point Cloud
-                        </button>
-                    </div>
-                </div>
 
-                <!-- Patrol Options Section (Simplified) -->
-                <div class="patrol-section">
-                    <div class="section-title">Patrol Mode</div>
-                    <div class="patrol-options">
-                        <div class="option-group">
-                            <select id="autoMode" class="option-input">
-                                <option value="odometry">Indoor (Odometry)</option>
-                                <option value="gps">Outdoor (GPS)</option>
-                            </select>
-                            <span id="gpsIndicator" class="gps-indicator"></span>
-                        </div>
-                        <button id="btnToggleAdvanced" class="btn btn-secondary btn-small" onclick="patrol.toggleAdvanced()">More Options</button>
-                    </div>
-                    <!-- Advanced options (hidden by default) -->
-                    <div id="advancedOptions" class="patrol-options" style="display: none; margin-top: 10px;">
-                        <div class="option-group">
-                            <label class="option-label">Loop Count</label>
-                            <select id="loopCount" class="option-input">
-                                <option value="0">Continuous</option>
-                                <option value="1">1 loop</option>
-                                <option value="2">2 loops</option>
-                                <option value="3">3 loops</option>
-                                <option value="5">5 loops</option>
-                                <option value="10">10 loops</option>
-                            </select>
-                        </div>
-                        <div class="option-group">
-                            <label class="option-label">Speed: <span id="speedValue">100</span>%</label>
-                            <input type="range" id="speedSlider" class="speed-slider"
-                                   min="10" max="100" value="100" oninput="patrol.updateSpeedLabel()">
-                        </div>
-                        <div class="option-group">
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="reverseMode">
-                                Reverse Mode (back & forth)
-                            </label>
-                        </div>
-                    </div>
-                </div>
+                    <button id="btnStartPatrol" class="btn btn-big btn-patrol" onclick="patrol.startPatrol()">
+                        Start Patrol
+                    </button>
 
-                <!-- Patrol Controls Section -->
-                <div class="patrol-section">
-                    <div class="section-title">Patrol Controls</div>
-                    <div class="btn-group">
-                        <button id="btnStartPatrol" class="btn btn-primary" onclick="patrol.startPatrol()">
-                            Start Patrol
-                        </button>
-                        <button id="btnPausePatrol" class="btn btn-warning" onclick="patrol.pausePatrol()" disabled>
-                            Pause
-                        </button>
-                        <button id="btnResumePatrol" class="btn btn-primary" onclick="patrol.resumePatrol()" disabled>
-                            Resume
-                        </button>
-                        <button id="btnStopPatrol" class="btn btn-danger" onclick="patrol.stopPatrol()" disabled>
+                    <!-- Patrol status (shown while patrolling) -->
+                    <div id="patrolStatus" class="patrol-status" style="display: none;">
+                        <div id="patrolProgress" class="patrol-progress-text"></div>
+                        <button id="btnStopPatrol" class="btn btn-big btn-stop" onclick="patrol.stopPatrol()">
                             Stop
                         </button>
                     </div>
+
+                    <!-- Error display -->
+                    <div id="patrolError" class="patrol-error" style="display: none;"></div>
                 </div>
             </div>
 
