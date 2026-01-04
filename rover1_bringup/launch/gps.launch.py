@@ -13,7 +13,7 @@ def generate_launch_description():
     ntrip_pass = LaunchConfiguration('ntrip_pass', default=os.getenv('NTRIP_PASS', ''))
     ntrip_host = LaunchConfiguration('ntrip_host', default=os.getenv('NTRIP_HOST', '165.206.203.10'))
     ntrip_port = LaunchConfiguration('ntrip_port', default='10000')
-    ntrip_mountpoint = LaunchConfiguration('ntrip_mountpoint', default='RTCM3_IMAX')
+    ntrip_mountpoint = LaunchConfiguration('ntrip_mountpoint', default='MSM_IMAX')
 
     return LaunchDescription([
         # NTRIP Client
