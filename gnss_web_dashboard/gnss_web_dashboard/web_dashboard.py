@@ -856,9 +856,9 @@ class Rover1WebDashboard(Node):
 
         request = StartPatrol.Request()
         request.path_name = path_name
-        request.loop_count = loop_count
-        request.reverse_mode = reverse_mode
-        request.speed_percent = speed_percent
+        request.loop_count = int(loop_count)
+        request.reverse_mode = bool(reverse_mode)
+        request.speed_percent = float(speed_percent)
 
         future = client.call_async(request)
         while not future.done():
