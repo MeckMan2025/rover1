@@ -3,3 +3,5 @@
 string[] path_names
 int32[] waypoint_counts
 string[] recorded_dates
+int32[] gps_waypoint_counts   # Number of GPS waypoints in each path (0 if none)
+bool[] has_gps                # True if path has GPS waypoints for outdoor mode

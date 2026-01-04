@@ -334,6 +334,8 @@ class PatrolManager(Node):
         response.path_names = []
         response.waypoint_counts = []
         response.recorded_dates = []
+        response.gps_waypoint_counts = []
+        response.has_gps = []
 
         try:
             for yaml_file in sorted(self.paths_dir.glob('*.yaml')):
@@ -344,6 +346,10 @@ class PatrolManager(Node):
                     name = data.get('name', yaml_file.stem)
                     count = len(data.get('waypoints', []))
                     recorded = data.get('recorded', '')
+
+                    # GPS waypoint info for auto-detection
+                    gps_waypoints = data.get('gps_waypoints', [])
+                    gps_count = len(gps_waypoints) if gps_waypoints else 0
 
                     # Parse date for display
                     if recorded:
@@ -358,6 +364,8 @@ class PatrolManager(Node):
                     response.path_names.append(name)
                     response.waypoint_counts.append(count)
                     response.recorded_dates.append(date_str)
+                    response.gps_waypoint_counts.append(gps_count)
+                    response.has_gps.append(gps_count > 0)
 
                 except Exception as e:
                     self.get_logger().warn(f'Failed to read {yaml_file}: {e}')

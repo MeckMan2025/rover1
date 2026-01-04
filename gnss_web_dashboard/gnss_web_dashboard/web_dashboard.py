@@ -254,6 +254,8 @@ class Rover1WebDashboard(Node):
                 'speed_percent': msg.speed_percent,
                 'error_message': msg.error_message,
                 'recorded_waypoint_count': msg.recorded_waypoint_count,
+                'gps_fix_available': msg.gps_fix_available,
+                'gps_waypoint_count': msg.gps_waypoint_count,
             }
 
         # Throttle broadcasts to 5Hz (patrol status updates are less critical than teleop)
@@ -816,6 +818,8 @@ class Rover1WebDashboard(Node):
                 'name': name,
                 'waypoint_count': result.waypoint_counts[i] if i < len(result.waypoint_counts) else 0,
                 'recorded_date': result.recorded_dates[i] if i < len(result.recorded_dates) else '',
+                'gps_waypoint_count': result.gps_waypoint_counts[i] if i < len(result.gps_waypoint_counts) else 0,
+                'has_gps': result.has_gps[i] if i < len(result.has_gps) else False,
             })
 
         return {'success': True, 'paths': paths}

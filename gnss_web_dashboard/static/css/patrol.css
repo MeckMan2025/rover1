@@ -293,3 +293,45 @@
     font-size: 0.85rem;
     color: rgba(255, 255, 255, 0.8);
 }
+
+/* GPS Status Indicators */
+.gps-indicator {
+    font-size: 0.8rem;
+    margin-top: 5px;
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
+.gps-indicator.gps-available {
+    color: #00ff88;
+    background: rgba(0, 255, 136, 0.1);
+}
+
+.gps-indicator.gps-unavailable {
+    color: #ffc107;
+    background: rgba(255, 193, 7, 0.1);
+}
+
+/* GPS status in recording indicator */
+.gps-status {
+    font-size: 0.85rem;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-left: 8px;
+}
+
+.gps-status.gps-ok {
+    color: #00ff88;
+    background: rgba(0, 255, 136, 0.15);
+}
+
+.gps-status.gps-no {
+    color: #ff4444;
+    background: rgba(255, 68, 68, 0.15);
+}
+
+/* Small button variant */
+.btn-small {
+    padding: 6px 12px;
+    font-size: 0.8rem;
+}

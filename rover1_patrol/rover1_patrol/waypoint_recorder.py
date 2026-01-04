@@ -279,6 +279,10 @@ class WaypointRecorder(Node):
         msg.speed_percent = 1.0
         msg.error_message = ''
 
+        # GPS status for live feedback during recording
+        msg.gps_fix_available = self.gps_fix_valid
+        msg.gps_waypoint_count = len([gp for gp in self.gps_waypoints if gp is not None])
+
         self.status_pub.publish(msg)
 
     def start_recording_callback(self, request, response):

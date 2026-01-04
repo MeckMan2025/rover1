@@ -327,18 +327,21 @@
                     </div>
                 </div>
 
-                <!-- Patrol Options Section -->
+                <!-- Patrol Options Section (Simplified) -->
                 <div class="patrol-section">
-                    <div class="section-title">Patrol Options</div>
+                    <div class="section-title">Patrol Mode</div>
                     <div class="patrol-options">
                         <div class="option-group">
-                            <label class="option-label">Auto Mode</label>
                             <select id="autoMode" class="option-input">
-                                <option value="odometry">Odometry Only (Indoor)</option>
-                                <option value="gps">GPS Outdoor</option>
-                                <option value="nav2" disabled>Nav2 SLAM (Heavy CPU)</option>
+                                <option value="odometry">Indoor (Odometry)</option>
+                                <option value="gps">Outdoor (GPS)</option>
                             </select>
+                            <span id="gpsIndicator" class="gps-indicator"></span>
                         </div>
+                        <button id="btnToggleAdvanced" class="btn btn-secondary btn-small" onclick="patrol.toggleAdvanced()">More Options</button>
+                    </div>
+                    <!-- Advanced options (hidden by default) -->
+                    <div id="advancedOptions" class="patrol-options" style="display: none; margin-top: 10px;">
                         <div class="option-group">
                             <label class="option-label">Loop Count</label>
                             <select id="loopCount" class="option-input">

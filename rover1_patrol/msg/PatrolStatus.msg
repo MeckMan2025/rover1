@@ -22,3 +22,7 @@ string error_message
 
 # Recording-specific: count of waypoints recorded so far
 int32 recorded_waypoint_count
+
+# GPS status during recording
+bool gps_fix_available      # True if GPS fix is currently available
+int32 gps_waypoint_count    # Number of waypoints with valid GPS coordinates

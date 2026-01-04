@@ -1,10 +1,11 @@
-// patrol.js - Waypoint recording and patrol playback
+// patrol.js - Waypoint recording and patrol playback (Simplified UI)
 class PatrolController {
     constructor(dashboard) {
         this.dashboard = dashboard;
         this.currentState = 'idle';
         this.pendingCallback = null;
         this.paths = [];
+        this.selectedPathHasGps = false;
     }
 
     sendCommand(cmd) {
@@ -45,6 +46,9 @@ class PatrolController {
 
         let stateText = status.state.toUpperCase().replace('_', ' ');
         if (status.state === 'recording') {
+            // Show GPS status during recording
+            const gpsStatus = status.gps_fix_available ? 'GPS' : 'NO GPS';
+            const gpsClass = status.gps_fix_available ? 'gps-ok' : 'gps-no';
             stateText = `RECORDING (${status.recorded_waypoint_count} pts)`;
         }
         badge.textContent = stateText;
@@ -70,12 +74,15 @@ class PatrolController {
             errorEl.style.display = 'none';
         }
 
-        // Update recording indicator
+        // Update recording indicator with GPS feedback
         const recordingIndicator = document.getElementById('recordingIndicator');
         const recordingCount = document.getElementById('recordingCount');
         if (status.state === 'recording') {
             recordingIndicator.style.display = 'flex';
-            recordingCount.textContent = `Recording: ${status.recorded_waypoint_count} waypoints`;
+            const gpsText = status.gps_fix_available
+                ? `<span class="gps-status gps-ok">GPS: YES (${status.gps_waypoint_count}/${status.recorded_waypoint_count})</span>`
+                : '<span class="gps-status gps-no">GPS: NO</span>';
+            recordingCount.innerHTML = `Recording: ${status.recorded_waypoint_count} waypoints ${gpsText}`;
         } else {
             recordingIndicator.style.display = 'none';
         }
@@ -178,20 +185,49 @@ class PatrolController {
         paths.forEach(path => {
             const option = document.createElement('option');
             option.value = path.name;
-            option.textContent = `${path.name} (${path.waypoint_count} pts, ${path.recorded_date})`;
+            // Show GPS indicator in path list
+            const gpsIndicator = path.has_gps ? ' [GPS]' : '';
+            option.textContent = `${path.name} (${path.waypoint_count} pts${gpsIndicator}, ${path.recorded_date})`;
+            option.dataset.hasGps = path.has_gps;
+            option.dataset.gpsCount = path.gps_waypoint_count;
             select.appendChild(option);
         });
     }
 
     onPathSelect() {
-        const pathName = document.getElementById('pathSelect').value;
+        const pathSelect = document.getElementById('pathSelect');
+        const pathName = pathSelect.value;
+        const autoModeSelect = document.getElementById('autoMode');
+        const gpsIndicator = document.getElementById('gpsIndicator');
         const btn3D = document.getElementById('btnView3D');
+
         if (pathName) {
+            // Get GPS info from selected option
+            const selectedOption = pathSelect.options[pathSelect.selectedIndex];
+            this.selectedPathHasGps = selectedOption.dataset.hasGps === 'true';
+
+            // Auto-select mode based on GPS availability
+            if (this.selectedPathHasGps) {
+                autoModeSelect.value = 'gps';
+                gpsIndicator.textContent = 'GPS mode available';
+                gpsIndicator.className = 'gps-indicator gps-available';
+                autoModeSelect.disabled = false;
+            } else {
+                autoModeSelect.value = 'odometry';
+                gpsIndicator.textContent = 'Indoor mode only (no GPS data)';
+                gpsIndicator.className = 'gps-indicator gps-unavailable';
+                // Only show odometry option
+                autoModeSelect.disabled = true;
+            }
+
             this.sendCommand({ action: 'get_map_image', path_name: pathName });
             btn3D.disabled = false;
         } else {
             this.clearMapPreview();
             btn3D.disabled = true;
+            gpsIndicator.textContent = '';
+            gpsIndicator.className = 'gps-indicator';
+            autoModeSelect.disabled = false;
         }
     }
 
@@ -217,6 +253,18 @@ class PatrolController {
     clearMapPreview() {
         const preview = document.getElementById('mapPreview');
         preview.innerHTML = '<div class="map-placeholder">Select a path to preview map</div>';
+    }
+
+    toggleAdvanced() {
+        const advancedOptions = document.getElementById('advancedOptions');
+        const toggleBtn = document.getElementById('btnToggleAdvanced');
+        if (advancedOptions.style.display === 'none') {
+            advancedOptions.style.display = 'block';
+            toggleBtn.textContent = 'Hide Options';
+        } else {
+            advancedOptions.style.display = 'none';
+            toggleBtn.textContent = 'More Options';
+        }
     }
 
     // Patrol controls
