@@ -40,8 +40,8 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             'enable_dog_follower',
-            default_value='true',
-            description='Whether to start the Dog Follower vision node'
+            default_value='false',
+            description='Whether to start the Dog Follower vision node (mothballed by default)'
         ),
 
         # Robot State Publisher (TF Tree)
