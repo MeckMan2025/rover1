@@ -316,6 +316,18 @@
                         </select>
                     </div>
 
+                    <!-- Mode Selection - Radio Buttons -->
+                    <div class="mode-selector">
+                        <label class="radio-label">
+                            <input type="radio" name="patrolMode" value="odometry" checked>
+                            <span class="radio-text">Odometry (Indoor)</span>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="patrolMode" value="gps">
+                            <span class="radio-text">GPS (Outdoor)</span>
+                        </label>
+                    </div>
+
                     <button id="btnStartPatrol" class="btn btn-big btn-patrol" onclick="patrol.startPatrol()">
                         Start Patrol
                     </button>

@@ -171,19 +171,22 @@ class PatrolController {
             return;
         }
 
-        // Auto-detect mode: GPS if path has GPS waypoints, else Odometry
-        const autoMode = this.selectedPathHasGps ? 'gps' : 'odometry';
+        // Get mode from radio buttons
+        const modeRadio = document.querySelector('input[name="patrolMode"]:checked');
+        const mode = modeRadio ? modeRadio.value : 'odometry';
+
+        console.log(`Starting patrol: path=${pathName}, mode=${mode}`);
 
         this.sendCommand({
             action: 'start_patrol',
-            auto_mode: autoMode,
+            auto_mode: mode,
             path_name: pathName,
             loop_count: 0,        // Always infinite
             speed_percent: 1.0,   // Always 100%
             reverse_mode: false   // Always forward
         });
 
-        this.currentAutoMode = autoMode;
+        this.currentAutoMode = mode;
     }
 
     stopPatrol() {
