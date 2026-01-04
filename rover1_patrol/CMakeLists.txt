@@ -33,6 +33,8 @@ install(PROGRAMS
   rover1_patrol/pointcloud_exporter.py
   rover1_patrol/simple_waypoint_follower.py
   rover1_patrol/gps_waypoint_follower.py
+  rover1_patrol/trace_recorder.py
+  rover1_patrol/trace_follower.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

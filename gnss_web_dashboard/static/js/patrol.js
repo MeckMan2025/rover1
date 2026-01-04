@@ -104,12 +104,23 @@ class PatrolController {
 
     // === RECORDING ===
 
+    getAutonomyStyle() {
+        const autonomySelect = document.getElementById('autonomyStyle');
+        return autonomySelect ? autonomySelect.value : 'trace';
+    }
+
     startRecording() {
-        this.sendCommand({ action: 'start_recording' });
+        this.sendCommand({
+            action: 'start_recording',
+            autonomy_style: this.getAutonomyStyle()
+        });
     }
 
     stopRecording() {
-        this.sendCommand({ action: 'stop_recording' });
+        this.sendCommand({
+            action: 'stop_recording',
+            autonomy_style: this.getAutonomyStyle()
+        });
     }
 
     savePath() {
@@ -118,13 +129,20 @@ class PatrolController {
             alert('Please enter a path name');
             return;
         }
-        this.sendCommand({ action: 'save_path', path_name: pathName });
+        this.sendCommand({
+            action: 'save_path',
+            path_name: pathName,
+            autonomy_style: this.getAutonomyStyle()
+        });
         document.getElementById('pathNameInput').value = '';
         setTimeout(() => this.refreshPaths(), 500);
     }
 
     discardRecording() {
-        this.sendCommand({ action: 'discard_recording' });
+        this.sendCommand({
+            action: 'discard_recording',
+            autonomy_style: this.getAutonomyStyle()
+        });
     }
 
     // === PATH MANAGEMENT ===
@@ -171,41 +189,40 @@ class PatrolController {
             return;
         }
 
-        // Get mode from radio buttons
-        const modeRadio = document.querySelector('input[name="patrolMode"]:checked');
-        const mode = modeRadio ? modeRadio.value : 'odometry';
+        // Get autonomy style from dropdown
+        const autonomySelect = document.getElementById('autonomyStyle');
+        const autonomyStyle = autonomySelect ? autonomySelect.value : 'trace';
 
-        console.log(`Starting patrol: path=${pathName}, mode=${mode}`);
+        console.log(`Starting patrol: path=${pathName}, autonomy=${autonomyStyle}`);
 
         this.sendCommand({
             action: 'start_patrol',
-            auto_mode: mode,
+            autonomy_style: autonomyStyle,
             path_name: pathName,
             loop_count: 0,        // Always infinite
             speed_percent: 1.0,   // Always 100%
             reverse_mode: false   // Always forward
         });
 
-        this.currentAutoMode = mode;
+        this.currentAutonomyStyle = autonomyStyle;
     }
 
     stopPatrol() {
         this.sendCommand({
             action: 'stop_patrol',
-            auto_mode: this.currentAutoMode || 'odometry'
+            autonomy_style: this.currentAutonomyStyle || 'trace'
         });
     }
 
     emergencyStop() {
-        // Stop ALL autonomous movement - both followers and recording
+        // Stop ALL autonomous movement - all followers and recording
         console.log('EMERGENCY STOP triggered');
 
-        // Stop both patrol types
-        this.sendCommand({ action: 'stop_patrol', auto_mode: 'odometry' });
-        this.sendCommand({ action: 'stop_patrol', auto_mode: 'gps' });
+        // Stop all autonomy styles
+        this.sendCommand({ action: 'stop_patrol', autonomy_style: 'trace' });
 
-        // Discard any recording in progress
-        this.sendCommand({ action: 'discard_recording' });
+        // Discard any recording in progress (trace mode)
+        this.sendCommand({ action: 'discard_recording', autonomy_style: 'trace' });
 
         // Send zero velocity command
         this.sendCommand({ action: 'emergency_stop' });

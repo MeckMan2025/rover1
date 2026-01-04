@@ -83,10 +83,20 @@ class Rover1WebDashboard(Node):
         # Create patrol service clients
         self.patrol_clients = {
             'list_paths': self.create_client(ListPaths, '/patrol/list_paths'),
+            # Legacy recording (SLAM-based)
             'start_recording': self.create_client(Trigger, '/patrol/start_recording'),
             'stop_recording': self.create_client(Trigger, '/patrol/stop_recording'),
             'save_path': self.create_client(SavePath, '/patrol/save_path'),
             'discard_recording': self.create_client(Trigger, '/patrol/discard_recording'),
+            # Trace mode (dead-reckoning, odom-only)
+            'trace_start_recording': self.create_client(Trigger, '/trace/start_recording'),
+            'trace_stop_recording': self.create_client(Trigger, '/trace/stop_recording'),
+            'trace_save_path': self.create_client(SavePath, '/trace/save_path'),
+            'trace_discard_recording': self.create_client(Trigger, '/trace/discard_recording'),
+            'trace_start': self.create_client(StartPatrol, '/trace/start'),
+            'trace_stop': self.create_client(Trigger, '/trace/stop'),
+            'trace_pause': self.create_client(Trigger, '/trace/pause'),
+            'trace_resume': self.create_client(Trigger, '/trace/resume'),
             # Nav2 mode (original patrol_manager - heavy CPU)
             'nav2_start': self.create_client(StartPatrol, '/patrol/start_patrol'),
             'nav2_stop': self.create_client(Trigger, '/patrol/stop_patrol'),
@@ -104,8 +114,8 @@ class Rover1WebDashboard(Node):
             'gps_resume': self.create_client(Trigger, '/patrol/gps_resume'),
         }
 
-        # Track current auto mode for patrol operations
-        self.current_auto_mode = 'odometry'  # Default to lightweight mode
+        # Track current autonomy style for patrol operations
+        self.current_autonomy_style = 'trace'  # Default to simplest mode
 
         # Dog Follower service clients
         self.dog_follower_clients = {
@@ -491,34 +501,43 @@ class Rover1WebDashboard(Node):
     async def handle_command(self, cmd):
         """Handle commands from the dashboard"""
         action = cmd.get('action')
-        auto_mode = cmd.get('auto_mode', self.current_auto_mode)
+        autonomy_style = cmd.get('autonomy_style', self.current_autonomy_style)
 
         if action == 'list_paths':
             return await self.call_list_paths()
         elif action == 'start_recording':
+            # Use trace recording for trace mode, legacy for others
+            if autonomy_style == 'trace':
+                return await self.call_trigger_service('trace_start_recording')
             return await self.call_trigger_service('start_recording')
         elif action == 'stop_recording':
+            if autonomy_style == 'trace':
+                return await self.call_trigger_service('trace_stop_recording')
             return await self.call_trigger_service('stop_recording')
         elif action == 'save_path':
+            if autonomy_style == 'trace':
+                return await self.call_save_path(cmd.get('path_name', 'unnamed'), use_trace=True)
             return await self.call_save_path(cmd.get('path_name', 'unnamed'))
         elif action == 'discard_recording':
+            if autonomy_style == 'trace':
+                return await self.call_trigger_service('trace_discard_recording')
             return await self.call_trigger_service('discard_recording')
         elif action == 'start_patrol':
-            # Store the mode for subsequent pause/resume/stop
-            self.current_auto_mode = auto_mode
+            # Store the style for subsequent pause/resume/stop
+            self.current_autonomy_style = autonomy_style
             return await self.call_start_patrol(
-                auto_mode,
+                autonomy_style,
                 cmd.get('path_name'),
                 cmd.get('loop_count', 0),
                 cmd.get('reverse_mode', False),
                 cmd.get('speed_percent', 1.0)
             )
         elif action == 'stop_patrol':
-            return await self.call_trigger_service(f'{auto_mode}_stop')
+            return await self.call_trigger_service(f'{autonomy_style}_stop')
         elif action == 'pause_patrol':
-            return await self.call_trigger_service(f'{auto_mode}_pause')
+            return await self.call_trigger_service(f'{autonomy_style}_pause')
         elif action == 'resume_patrol':
-            return await self.call_trigger_service(f'{auto_mode}_resume')
+            return await self.call_trigger_service(f'{autonomy_style}_resume')
         elif action == 'get_map_image':
             return self.get_map_image(cmd.get('path_name'))
         elif action == 'set_teleop_speed':
@@ -826,11 +845,12 @@ class Rover1WebDashboard(Node):
 
         return {'success': True, 'paths': paths}
 
-    async def call_save_path(self, path_name):
+    async def call_save_path(self, path_name, use_trace=False):
         """Call save_path service"""
-        client = self.patrol_clients.get('save_path')
+        service_key = 'trace_save_path' if use_trace else 'save_path'
+        client = self.patrol_clients.get(service_key)
         if not client.wait_for_service(timeout_sec=1.0):
-            return {'success': False, 'message': 'save_path service not available'}
+            return {'success': False, 'message': f'{service_key} service not available'}
 
         request = SavePath.Request()
         request.path_name = path_name
@@ -842,19 +862,24 @@ class Rover1WebDashboard(Node):
         result = future.result()
         return {'success': result.success, 'message': result.message}
 
-    async def call_start_patrol(self, auto_mode, path_name, loop_count, reverse_mode, speed_percent):
-        """Call start_patrol service based on selected auto mode"""
-        # Map mode to service client key
-        service_key = f'{auto_mode}_start'
+    async def call_start_patrol(self, autonomy_style, path_name, loop_count, reverse_mode, speed_percent):
+        """Call start_patrol service based on selected autonomy style"""
+        # Map style to service client key
+        service_key = f'{autonomy_style}_start'
         client = self.patrol_clients.get(service_key)
 
         if not client:
-            return {'success': False, 'message': f'Unknown auto mode: {auto_mode}'}
+            return {'success': False, 'message': f'Unknown autonomy style: {autonomy_style}'}
 
         if not client.wait_for_service(timeout_sec=1.0):
-            mode_names = {'odometry': 'Simple Waypoint Follower', 'gps': 'GPS Waypoint Follower', 'nav2': 'Nav2 Patrol Manager'}
-            mode_name = mode_names.get(auto_mode, auto_mode)
-            return {'success': False, 'message': f'{mode_name} service not available. Is the node running?'}
+            style_names = {
+                'trace': 'Trace Follower',
+                'odometry': 'Simple Waypoint Follower',
+                'gps': 'GPS Waypoint Follower',
+                'nav2': 'Nav2 Patrol Manager'
+            }
+            style_name = style_names.get(autonomy_style, autonomy_style)
+            return {'success': False, 'message': f'{style_name} service not available. Is the node running?'}
 
         request = StartPatrol.Request()
         request.path_name = path_name
@@ -867,8 +892,13 @@ class Rover1WebDashboard(Node):
             await asyncio.sleep(0.1)
 
         result = future.result()
-        mode_label = {'odometry': '[Odom]', 'gps': '[GPS]', 'nav2': '[Nav2]'}.get(auto_mode, '')
-        return {'success': result.success, 'message': f'{mode_label} {result.message}'}
+        style_label = {
+            'trace': '[Trace]',
+            'odometry': '[Odom]',
+            'gps': '[GPS]',
+            'nav2': '[Nav2]'
+        }.get(autonomy_style, '')
+        return {'success': result.success, 'message': f'{style_label} {result.message}'}
 
     def get_map_image(self, path_name):
         """Get base64-encoded map image for a path"""

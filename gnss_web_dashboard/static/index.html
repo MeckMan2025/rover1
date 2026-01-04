@@ -316,16 +316,12 @@
                         </select>
                     </div>
 
-                    <!-- Mode Selection - Radio Buttons -->
-                    <div class="mode-selector">
-                        <label class="radio-label">
-                            <input type="radio" name="patrolMode" value="odometry" checked>
-                            <span class="radio-text">Odometry (Indoor)</span>
-                        </label>
-                        <label class="radio-label">
-                            <input type="radio" name="patrolMode" value="gps">
-                            <span class="radio-text">GPS (Outdoor)</span>
-                        </label>
+                    <!-- Autonomy Style Selector -->
+                    <div class="autonomy-selector">
+                        <label class="autonomy-label">Autonomy Style:</label>
+                        <select id="autonomyStyle" class="autonomy-select">
+                            <option value="trace">Trace & Retrace</option>
+                        </select>
                     </div>
 
                     <button id="btnStartPatrol" class="btn btn-big btn-patrol" onclick="patrol.startPatrol()">
