@@ -173,6 +173,11 @@ class Rover1WebDashboard(Node):
         self.power_timer = self.create_timer(3.0, self.check_power_status)
         self.check_power_status()  # Initial check
 
+        # WiFi signal strength monitoring
+        self.wifi_signal = None
+        self.wifi_timer = self.create_timer(3.0, self.check_wifi_signal)
+        self.check_wifi_signal()  # Initial check
+
         # Teleop speed control publisher
         self.teleop_speed_pub = self.create_publisher(Float32, '/teleop/speed_scale', 10)
         self.teleop_speed = 1.0  # Track current speed for dashboard sync
@@ -363,6 +368,26 @@ class Rover1WebDashboard(Node):
             self.get_logger().warn(f"Power status check failed: {e}")
             self.power_status = {'status': 'UNKNOWN', 'status_color': 'unknown'}
 
+    def check_wifi_signal(self):
+        """Check WiFi signal strength via nmcli"""
+        try:
+            result = subprocess.run(
+                ['nmcli', '-t', '-f', 'IN-USE,SIGNAL', 'dev', 'wifi', 'list'],
+                capture_output=True,
+                text=True,
+                timeout=5.0
+            )
+            if result.returncode == 0:
+                for line in result.stdout.strip().split('\n'):
+                    if line.startswith('*:'):
+                        # Line format: "*:75" where 75 is signal strength
+                        self.wifi_signal = int(line.split(':')[1])
+                        return
+            self.wifi_signal = None
+        except Exception as e:
+            self.get_logger().debug(f"WiFi signal check failed: {e}")
+            self.wifi_signal = None
+
     def broadcast_data(self):
         """Prepare and broadcast combined health + image + patrol data"""
         # Prepare combined data
@@ -374,6 +399,8 @@ class Rover1WebDashboard(Node):
                 payload['image'] = self.latest_image_base64
             if self.power_status:
                 payload['power_status'] = self.power_status
+            if self.wifi_signal is not None:
+                payload['wifi_signal'] = self.wifi_signal
             if self.latest_patrol_status:
                 payload['patrol'] = self.latest_patrol_status
             # Include teleop speed for dashboard sync

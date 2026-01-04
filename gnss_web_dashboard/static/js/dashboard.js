@@ -211,10 +211,11 @@ class Rover1Dashboard {
         const rtk = document.getElementById('hudRtk');
         const sat = document.getElementById('hudSat');
         const volt = document.getElementById('hudVolt');
+        const wifi = document.getElementById('hudWifi');
 
         if (data.rtk_state) {
             rtk.textContent = `RTK: ${data.rtk_state}`;
-            rtk.style.color = data.rtk_state === 'FIXED' ? '#00ff88' : 
+            rtk.style.color = data.rtk_state === 'FIXED' ? '#00ff88' :
                              (data.rtk_state === 'FLOAT' ? '#0088ff' : '#ffc107');
         }
 
@@ -232,6 +233,22 @@ class Rover1Dashboard {
             } else {
                 volt.textContent = 'VOLT: -- V';
             }
+        }
+
+        // WiFi signal strength with color coding
+        if (data.wifi_signal !== undefined && data.wifi_signal !== null) {
+            wifi.textContent = `WIFI: ${data.wifi_signal}%`;
+            // Color code: green >60%, yellow 30-60%, red <30%
+            if (data.wifi_signal >= 60) {
+                wifi.style.color = '#00ff88';
+            } else if (data.wifi_signal >= 30) {
+                wifi.style.color = '#ffc107';
+            } else {
+                wifi.style.color = '#ff4444';
+            }
+        } else {
+            wifi.textContent = 'WIFI: --%';
+            wifi.style.color = '#888888';
         }
     }
 
