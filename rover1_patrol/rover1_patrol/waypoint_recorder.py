@@ -26,6 +26,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from std_srvs.srv import Trigger
 from geometry_msgs.msg import TransformStamped
 from nav_msgs.msg import Odometry
+from sensor_msgs.msg import NavSatFix
 from tf2_ros import Buffer, TransformListener, TransformException
 import yaml
 import os
@@ -60,6 +61,19 @@ class WaypointRecorder(Node):
         # Recording state
         self.recording = False
         self.waypoints = []
+        self.gps_waypoints = []  # GPS coordinates (lat/lon) for each waypoint
+
+        # GPS state - store latest fix for capture when recording waypoints
+        self.latest_gps = None  # (lat, lon, status) tuple
+        self.gps_fix_valid = False
+
+        # Subscribe to GPS fix
+        self.gps_sub = self.create_subscription(
+            NavSatFix,
+            '/fix',
+            self.gps_callback,
+            10
+        )
 
         # Odometry-based distance tracking (hybrid approach)
         # Accumulate distance from wheel encoders, record position from SLAM
@@ -163,8 +177,25 @@ class WaypointRecorder(Node):
             self.record_waypoint_from_slam()
             self.accumulated_distance = 0.0  # Reset accumulator
 
+    def gps_callback(self, msg: NavSatFix):
+        """
+        Process GPS fix messages and store latest coordinates.
+
+        GPS status codes (NavSatStatus):
+          -1 = STATUS_NO_FIX
+           0 = STATUS_FIX (standard GPS)
+           1 = STATUS_SBAS_FIX (SBAS augmented)
+           2 = STATUS_GBAS_FIX (ground-based augmentation / RTK)
+        """
+        # Check for valid fix (status >= 0 means we have a fix)
+        if msg.status.status >= 0:
+            self.latest_gps = (msg.latitude, msg.longitude, msg.status.status)
+            self.gps_fix_valid = True
+        else:
+            self.gps_fix_valid = False
+
     def record_waypoint_from_slam(self):
-        """Record current SLAM position as a waypoint."""
+        """Record current SLAM position as a waypoint, with GPS coordinates if available."""
         transform = self.get_robot_pose()
         if transform is None:
             self.get_logger().warn('Cannot record waypoint: TF lookup failed')
@@ -173,9 +204,25 @@ class WaypointRecorder(Node):
         pose = self.transform_to_pose(transform)
         self.waypoints.append(pose)
 
+        # Capture GPS coordinates if available
+        gps_point = None
+        if self.gps_fix_valid and self.latest_gps is not None:
+            lat, lon, status = self.latest_gps
+            gps_point = {
+                'lat': float(lat),
+                'lon': float(lon),
+                'status': int(status)  # 0=GPS, 1=SBAS, 2=RTK
+            }
+            self.gps_waypoints.append(gps_point)
+            gps_str = f', GPS: ({lat:.7f}, {lon:.7f})'
+        else:
+            # Append None placeholder to keep indices aligned
+            self.gps_waypoints.append(None)
+            gps_str = ' [no GPS fix]'
+
         self.get_logger().info(
             f'Recorded waypoint {len(self.waypoints)}: '
-            f'({pose["x"]:.2f}, {pose["y"]:.2f}) [odom triggered]'
+            f'({pose["x"]:.2f}, {pose["y"]:.2f}){gps_str}'
         )
 
     def get_robot_pose(self):
@@ -248,10 +295,11 @@ class WaypointRecorder(Node):
 
         self.recording = True
         self.waypoints = []
+        self.gps_waypoints = []
         self.accumulated_distance = 0.0
         self.last_odom_time = None
 
-        self.get_logger().info('Started recording waypoints (odom-triggered)')
+        self.get_logger().info('Started recording waypoints (odom-triggered, GPS enabled)')
         response.success = True
         response.message = 'Recording started (odometry-triggered)'
         return response
@@ -299,13 +347,20 @@ class WaypointRecorder(Node):
             response.saved_file_path = ''
             return response
 
+        # Filter out None values from GPS waypoints (keep only valid fixes)
+        valid_gps = [gp for gp in self.gps_waypoints if gp is not None]
+        gps_coverage = len(valid_gps) / len(self.waypoints) * 100 if self.waypoints else 0
+
         # Create YAML data
         path_data = {
             'name': path_name,
             'recorded': datetime.now().isoformat(),
             'waypoint_spacing_m': self.min_distance,
             'waypoint_count': len(self.waypoints),
-            'waypoints': self.waypoints
+            'gps_waypoint_count': len(valid_gps),
+            'gps_coverage_percent': round(gps_coverage, 1),
+            'waypoints': self.waypoints,
+            'gps_waypoints': valid_gps  # Only save waypoints with valid GPS
         }
 
         # Save YAML file
@@ -346,11 +401,13 @@ class WaypointRecorder(Node):
 
         # Clear waypoints and reset state
         self.waypoints = []
+        self.gps_waypoints = []
         self.accumulated_distance = 0.0
         self.last_odom_time = None
 
+        gps_msg = f' ({len(valid_gps)} with GPS)' if valid_gps else ' (no GPS)'
         response.success = True
-        response.message = f'Path "{path_name}" saved with {path_data["waypoint_count"]} waypoints'
+        response.message = f'Path "{path_name}" saved with {path_data["waypoint_count"]} waypoints{gps_msg}'
         response.saved_file_path = str(yaml_path)
         return response
 
@@ -361,6 +418,7 @@ class WaypointRecorder(Node):
 
         self.recording = False
         self.waypoints = []
+        self.gps_waypoints = []
         self.accumulated_distance = 0.0
         self.last_odom_time = None
 
