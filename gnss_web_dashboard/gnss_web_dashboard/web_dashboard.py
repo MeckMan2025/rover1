@@ -110,9 +110,10 @@ class Rover1WebDashboard(Node):
             'reset': self.create_client(Trigger, '/dog_follower/reset'),
         }
 
-        # Dog Follower status tracking
+        # Dog Follower status tracking and process management
         self.latest_dog_follower_status = 'idle'
         self.detection_enabled = False  # Track if we should use annotated feed
+        self.dog_follower_process = None  # Subprocess for dynamic spawning
         self.dog_follower_sub = self.create_subscription(
             String,
             '/dog_follower/status',
@@ -129,9 +130,10 @@ class Rover1WebDashboard(Node):
             'reset': self.create_client(Trigger, '/shoe_follower/reset'),
         }
 
-        # Shoe Follower status tracking
+        # Shoe Follower status tracking and process management
         self.latest_shoe_follower_status = 'idle'
         self.shoe_detection_enabled = False
+        self.shoe_follower_process = None  # Subprocess for dynamic spawning
         self.shoe_follower_sub = self.create_subscription(
             String,
             '/shoe_follower/status',
@@ -380,9 +382,11 @@ class Rover1WebDashboard(Node):
             payload['dog_follower_status'] = self.latest_dog_follower_status
             payload['detection_enabled'] = self.detection_enabled
             payload['using_ai_feed'] = self.using_annotated_feed
+            payload['dog_follower_running'] = self.is_follower_running('dog')
             # Shoe Follower status
             payload['shoe_follower_status'] = self.latest_shoe_follower_status
             payload['shoe_detection_enabled'] = self.shoe_detection_enabled
+            payload['shoe_follower_running'] = self.is_follower_running('shoe')
 
         if not payload:
             return
@@ -484,17 +488,26 @@ class Rover1WebDashboard(Node):
             return self.system_shutdown()
         elif action == 'reboot':
             return self.system_reboot()
+        # Dog Follower commands (with dynamic node spawning/killing)
         elif action == 'detection_enable':
+            # Spawn node if not running, then enable detection
+            spawn_result = await self.spawn_follower_node('dog')
+            if not spawn_result.get('success'):
+                return spawn_result
             result = await self.call_dog_follower_service('detection_enable')
             if result.get('success'):
                 self.detection_enabled = True
             return result
         elif action == 'detection_disable':
-            result = await self.call_dog_follower_service('detection_disable')
-            if result.get('success'):
-                self.detection_enabled = False
+            # Kill node entirely (true mothball - frees all CPU/memory)
+            result = self.kill_follower_node('dog')
+            self.detection_enabled = False
             return result
         elif action == 'dog_follow_enable':
+            # Spawn node if not running, then enable following
+            spawn_result = await self.spawn_follower_node('dog')
+            if not spawn_result.get('success'):
+                return spawn_result
             result = await self.call_dog_follower_service('enable')
             if result.get('success'):
                 self.detection_enabled = True  # Following auto-enables detection
@@ -502,22 +515,32 @@ class Rover1WebDashboard(Node):
         elif action == 'dog_follow_disable':
             return await self.call_dog_follower_service('disable')
         elif action == 'dog_follow_reset':
-            result = await self.call_dog_follower_service('reset')
-            if result.get('success'):
-                self.detection_enabled = False  # Reset clears detection
+            # Reset and kill node (full mothball)
+            if self.is_follower_running('dog'):
+                await self.call_dog_follower_service('reset')
+            result = self.kill_follower_node('dog')
+            self.detection_enabled = False
             return result
-        # Shoe Follower commands
+        # Shoe Follower commands (with dynamic node spawning/killing)
         elif action == 'shoe_detection_enable':
+            # Spawn node if not running, then enable detection
+            spawn_result = await self.spawn_follower_node('shoe')
+            if not spawn_result.get('success'):
+                return spawn_result
             result = await self.call_shoe_follower_service('detection_enable')
             if result.get('success'):
                 self.shoe_detection_enabled = True
             return result
         elif action == 'shoe_detection_disable':
-            result = await self.call_shoe_follower_service('detection_disable')
-            if result.get('success'):
-                self.shoe_detection_enabled = False
+            # Kill node entirely (true mothball - frees all CPU/memory)
+            result = self.kill_follower_node('shoe')
+            self.shoe_detection_enabled = False
             return result
         elif action == 'shoe_follow_enable':
+            # Spawn node if not running, then enable following
+            spawn_result = await self.spawn_follower_node('shoe')
+            if not spawn_result.get('success'):
+                return spawn_result
             result = await self.call_shoe_follower_service('enable')
             if result.get('success'):
                 self.shoe_detection_enabled = True  # Following auto-enables detection
@@ -525,9 +548,11 @@ class Rover1WebDashboard(Node):
         elif action == 'shoe_follow_disable':
             return await self.call_shoe_follower_service('disable')
         elif action == 'shoe_follow_reset':
-            result = await self.call_shoe_follower_service('reset')
-            if result.get('success'):
-                self.shoe_detection_enabled = False  # Reset clears detection
+            # Reset and kill node (full mothball)
+            if self.is_follower_running('shoe'):
+                await self.call_shoe_follower_service('reset')
+            result = self.kill_follower_node('shoe')
+            self.shoe_detection_enabled = False
             return result
         else:
             return {'success': False, 'message': f'Unknown action: {action}'}
@@ -588,6 +613,144 @@ class Rover1WebDashboard(Node):
 
         result = future.result()
         return {'success': result.success, 'message': result.message}
+
+    def is_follower_running(self, follower_type):
+        """Check if a follower node process is running.
+
+        Args:
+            follower_type: 'dog' or 'shoe'
+
+        Returns:
+            bool: True if the process is running
+        """
+        if follower_type == 'dog':
+            proc = self.dog_follower_process
+        else:
+            proc = self.shoe_follower_process
+
+        return proc is not None and proc.poll() is None
+
+    async def spawn_follower_node(self, follower_type):
+        """Spawn a follower node via subprocess.
+
+        Args:
+            follower_type: 'dog' or 'shoe'
+
+        Returns:
+            dict with success and message
+        """
+        if self.is_follower_running(follower_type):
+            return {'success': True, 'message': f'{follower_type.title()} follower already running'}
+
+        self.get_logger().info(f'Spawning {follower_type} follower node...')
+
+        try:
+            # Build the ros2 run command
+            if follower_type == 'dog':
+                cmd = [
+                    'ros2', 'run', 'rover1_vision', 'dog_follower',
+                    '--ros-args',
+                    '-p', 'model_path:=/home/andrewmeckley/ros2_ws/src/rover1/models/yolov8s.hef',
+                    '-p', 'confidence_threshold:=0.5',
+                    '-p', 'linear_speed:=0.2',
+                    '-p', 'angular_speed:=0.5',
+                ]
+                service_client = self.dog_follower_clients['detection_enable']
+            else:
+                cmd = [
+                    'ros2', 'run', 'rover1_vision', 'shoe_follower',
+                    '--ros-args',
+                    '-p', 'model_path:=/home/andrewmeckley/ros2_ws/src/rover1/models/yolov8s.hef',
+                    '-p', 'confidence_threshold:=0.5',
+                    '-p', 'linear_speed:=0.2',
+                    '-p', 'angular_speed:=0.5',
+                ]
+                service_client = self.shoe_follower_clients['detection_enable']
+
+            # Spawn the process
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True  # Detach from parent process group
+            )
+
+            if follower_type == 'dog':
+                self.dog_follower_process = proc
+            else:
+                self.shoe_follower_process = proc
+
+            # Wait for service to become available (max 10 seconds)
+            self.get_logger().info(f'Waiting for {follower_type} follower services...')
+            for _ in range(100):  # 100 * 0.1s = 10s max
+                if service_client.wait_for_service(timeout_sec=0.1):
+                    self.get_logger().info(f'{follower_type.title()} follower node ready!')
+                    return {'success': True, 'message': f'{follower_type.title()} follower started'}
+                await asyncio.sleep(0.1)
+
+            # Timeout - node may have crashed
+            self.get_logger().error(f'{follower_type.title()} follower failed to start in time')
+            self.kill_follower_node(follower_type)
+            return {'success': False, 'message': f'{follower_type.title()} follower failed to start'}
+
+        except Exception as e:
+            self.get_logger().error(f'Failed to spawn {follower_type} follower: {e}')
+            return {'success': False, 'message': str(e)}
+
+    def kill_follower_node(self, follower_type):
+        """Kill a follower node process.
+
+        Args:
+            follower_type: 'dog' or 'shoe'
+
+        Returns:
+            dict with success and message
+        """
+        import signal
+
+        if follower_type == 'dog':
+            proc = self.dog_follower_process
+        else:
+            proc = self.shoe_follower_process
+
+        if proc is None:
+            return {'success': True, 'message': f'{follower_type.title()} follower not running'}
+
+        if proc.poll() is not None:
+            # Process already exited
+            if follower_type == 'dog':
+                self.dog_follower_process = None
+            else:
+                self.shoe_follower_process = None
+            return {'success': True, 'message': f'{follower_type.title()} follower already stopped'}
+
+        self.get_logger().info(f'Killing {follower_type} follower node...')
+
+        try:
+            # Send SIGTERM for graceful shutdown
+            proc.terminate()
+            try:
+                proc.wait(timeout=3.0)
+            except subprocess.TimeoutExpired:
+                # Force kill if it doesn't respond
+                proc.kill()
+                proc.wait(timeout=1.0)
+
+            if follower_type == 'dog':
+                self.dog_follower_process = None
+                self.detection_enabled = False
+                self.latest_dog_follower_status = 'idle'
+            else:
+                self.shoe_follower_process = None
+                self.shoe_detection_enabled = False
+                self.latest_shoe_follower_status = 'idle'
+
+            self.get_logger().info(f'{follower_type.title()} follower stopped')
+            return {'success': True, 'message': f'{follower_type.title()} follower stopped'}
+
+        except Exception as e:
+            self.get_logger().error(f'Failed to kill {follower_type} follower: {e}')
+            return {'success': False, 'message': str(e)}
 
     async def call_list_paths(self):
         """Call list_paths service and return the result"""

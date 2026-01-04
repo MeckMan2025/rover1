@@ -15,7 +15,7 @@ def generate_launch_description():
     # Launch Arguments
     use_joy = LaunchConfiguration('use_joy', default='true')
     use_foxglove = LaunchConfiguration('use_foxglove', default='true')
-    enable_dog_follower = LaunchConfiguration('enable_dog_follower', default='true')
+    enable_dog_follower = LaunchConfiguration('enable_dog_follower', default='false')
 
     # Process URDF
     urdf_file = PathJoinSubstitution([desc_share, 'urdf', 'rover.urdf.xacro'])
