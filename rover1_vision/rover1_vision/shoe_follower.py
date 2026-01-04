@@ -139,7 +139,7 @@ class ShoeFollower(Node):
         self.teleop_override_timeout = self.get_parameter('teleop_override_timeout').value
         self.recovery_scan_timeout = self.get_parameter('recovery_scan_timeout').value
 
-        # Initialize Hailo inference engine
+        # Initialize Hailo inference engine (lazy-loaded on first detection enable)
         self.hailo_device = None
         self.hailo_hef = None
         self.hailo_network_group = None
@@ -149,7 +149,7 @@ class ShoeFollower(Node):
         self.input_vstream_params = None
         self.output_vstream_params = None
         self.infer_pipeline = None  # Persistent inference pipeline
-        self._init_hailo()
+        self.hailo_initialized = False  # Lazy loading flag
 
         # Publishers
         self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
@@ -158,14 +158,8 @@ class ShoeFollower(Node):
             Image, '/shoe_follower/annotated_image', qos_profile_sensor_data
         )
 
-        # Subscribers
-        self.image_sub = self.create_subscription(
-            Image,
-            '/ascamera_hp60c/camera_publisher/rgb0/image',
-            self.image_callback,
-            qos_profile_sensor_data,
-            callback_group=self.subscription_cb_group
-        )
+        # Subscribers (image subscription created lazily when detection enabled)
+        self.image_sub = None
 
         # Subscribe to cmd_vel to detect teleop override
         # Use BEST_EFFORT to not miss any messages
@@ -288,9 +282,62 @@ class ShoeFollower(Node):
             self.get_logger().warn('Running in mock mode')
             self.hailo_device = None
 
+    def _cleanup_hailo(self):
+        """Release Hailo resources when detection disabled."""
+        # Close persistent inference pipeline context
+        if self.infer_pipeline is not None:
+            try:
+                self.infer_pipeline.__exit__(None, None, None)
+            except Exception:
+                pass
+            self.infer_pipeline = None
+
+        # Exit activation context
+        if self.activated_network_group is not None:
+            try:
+                self.activated_network_group.__exit__(None, None, None)
+            except Exception:
+                pass
+            self.activated_network_group = None
+
+        # Release device
+        if self.hailo_device is not None:
+            try:
+                self.hailo_device.release()
+            except Exception:
+                pass
+            self.hailo_device = None
+
+        # Clear other references
+        self.hailo_hef = None
+        self.hailo_network_group = None
+        self.input_vstream_info = None
+        self.output_vstream_info = None
+        self.input_vstream_params = None
+        self.output_vstream_params = None
+
+        self.get_logger().info('Hailo resources released')
+
     def detection_enable_callback(self, request, response):
         """Enable detection (Hailo inference + annotated image publishing)."""
         was_already_enabled = self.detection_enabled
+
+        # Lazy-initialize Hailo on first enable (2-3s delay)
+        if not self.hailo_initialized:
+            self.get_logger().info('Lazy-loading Hailo inference engine...')
+            self._init_hailo()
+            self.hailo_initialized = True
+
+        # Create image subscription if not exists
+        if self.image_sub is None:
+            self.image_sub = self.create_subscription(
+                Image,
+                '/ascamera_hp60c/camera_publisher/rgb0/image',
+                self.image_callback,
+                qos_profile_sensor_data,
+                callback_group=self.subscription_cb_group
+            )
+            self.get_logger().info('Image subscription created')
 
         # Always reset state - this fixes stuck 'teleop_override' status
         self.detection_enabled = True
@@ -310,7 +357,7 @@ class ShoeFollower(Node):
         return response
 
     def detection_disable_callback(self, request, response):
-        """Disable detection (stops Hailo inference)."""
+        """Disable detection (stops Hailo inference and releases resources)."""
         if self.following_enabled:
             response.success = False
             response.message = 'Cannot disable detection while following is active. Stop following first.'
@@ -320,9 +367,19 @@ class ShoeFollower(Node):
         self.current_status = 'idle'
         self.current_target_person = None
 
+        # Destroy image subscription to stop processing frames
+        if self.image_sub is not None:
+            self.destroy_subscription(self.image_sub)
+            self.image_sub = None
+            self.get_logger().info('Image subscription destroyed')
+
+        # Release Hailo resources to free memory
+        self._cleanup_hailo()
+        self.hailo_initialized = False
+
         response.success = True
-        response.message = 'Detection disabled'
-        self.get_logger().info('Detection DISABLED')
+        response.message = 'Detection disabled - resources released'
+        self.get_logger().info('Detection DISABLED - resources released')
         self.publish_status('idle')
         return response
 
@@ -333,8 +390,25 @@ class ShoeFollower(Node):
             response.message = 'Shoe follower already enabled'
             return response
 
-        # Auto-enable detection if not already enabled
+        # Auto-enable detection if not already enabled (with lazy loading)
         if not self.detection_enabled:
+            # Lazy-initialize Hailo on first enable
+            if not self.hailo_initialized:
+                self.get_logger().info('Lazy-loading Hailo inference engine...')
+                self._init_hailo()
+                self.hailo_initialized = True
+
+            # Create image subscription if not exists
+            if self.image_sub is None:
+                self.image_sub = self.create_subscription(
+                    Image,
+                    '/ascamera_hp60c/camera_publisher/rgb0/image',
+                    self.image_callback,
+                    qos_profile_sensor_data,
+                    callback_group=self.subscription_cb_group
+                )
+                self.get_logger().info('Image subscription created')
+
             self.detection_enabled = True
             self.get_logger().info('Detection auto-enabled for following')
 
@@ -397,6 +471,15 @@ class ShoeFollower(Node):
         with self.cmd_vel_lock:
             self.last_external_cmd_time = None
             self.our_last_publish_time = None
+
+        # Destroy image subscription to release resources
+        if self.image_sub is not None:
+            self.destroy_subscription(self.image_sub)
+            self.image_sub = None
+
+        # Release Hailo resources
+        self._cleanup_hailo()
+        self.hailo_initialized = False
 
         self.publish_status('idle')
 
@@ -920,26 +1003,11 @@ class ShoeFollower(Node):
         except Exception:
             pass  # ROS context might already be invalid during shutdown
 
-        # Close persistent inference pipeline context
-        if self.infer_pipeline is not None:
-            try:
-                self.infer_pipeline.__exit__(None, None, None)
-            except Exception:
-                pass
-
-        # Exit activation context
-        if self.activated_network_group is not None:
-            try:
-                self.activated_network_group.__exit__(None, None, None)
-            except Exception:
-                pass
-
-        # Release device
-        if self.hailo_device is not None:
-            try:
-                self.hailo_device.release()
-            except Exception:
-                pass
+        # Release Hailo resources
+        try:
+            self._cleanup_hailo()
+        except Exception:
+            pass
 
         super().destroy_node()
 
