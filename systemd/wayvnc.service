@@ -1,0 +1,23 @@
+[Unit]
+Description=WayVNC Server for Remote Access
+After=graphical.target
+Wants=graphical.target
+
+[Service]
+Type=simple
+User=andrewmeckley
+Group=andrewmeckley
+WorkingDirectory=/home/andrewmeckley
+Environment="WAYLAND_DISPLAY=wayland-1"
+Environment="XDG_RUNTIME_DIR=/run/user/1000"
+ExecStart=/usr/bin/wayvnc --config=/home/andrewmeckley/.config/wayvnc/config
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Ensure Wayland session is available
+ExecStartPre=/bin/bash -c 'until [ -S "$XDG_RUNTIME_DIR/wayland-1" ]; do sleep 1; done'
+
+[Install]
+WantedBy=default.target
