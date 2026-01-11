@@ -426,7 +426,7 @@ class Rover1WebDashboard(Node):
             if self.latest_health:
                 payload.update(self.latest_health)
             if self.latest_image_base64:
-                payload['image'] = self.latest_image_base64
+                payload['camera_image'] = self.latest_image_base64
             if self.power_status:
                 payload['power_status'] = self.power_status
             if self.wifi_signal is not None:
@@ -916,7 +916,7 @@ class Rover1WebDashboard(Node):
         try:
             with open(img_path, 'rb') as f:
                 img_data = base64.b64encode(f.read()).decode('utf-8')
-            return {'success': True, 'image': img_data}
+            return {'success': True, 'camera_image': img_data}
         except Exception as e:
             return {'success': False, 'message': str(e)}
 

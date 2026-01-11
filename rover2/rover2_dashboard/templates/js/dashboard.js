@@ -98,8 +98,8 @@ class Rover1Dashboard {
         }
 
         // Video Feed
-        if (data.image) {
-            this.updateVideoFeed(data.image);
+        if (data.camera_image) {
+            this.updateVideoFeed(data.camera_image);
         }
 
         // HUD Overlays
