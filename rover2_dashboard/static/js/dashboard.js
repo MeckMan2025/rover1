@@ -270,13 +270,19 @@ class Rover1Dashboard {
     }
 
     updateBatteryStatus(voltage) {
+        // Update both old-style elements (if present) and new slim elements
         const voltageEl = document.getElementById('batteryVoltage');
         const fill = document.getElementById('batteryFill');
         const statusEl = document.getElementById('batteryStatus');
+        
+        // New slim elements
+        const voltageSlimEl = document.getElementById('batteryVoltageSlim');
+        const fillSlim = document.getElementById('batteryFillSlim');
+        const statusSlimEl = document.getElementById('batteryStatusSlim');
 
         if (voltage && voltage > 0) {
-            voltageEl.textContent = voltage.toFixed(2);
-
+            const voltageText = voltage.toFixed(2) + ' V';
+            
             // Battery percentage and status based on typical LiPo 3S (11.1V nominal)
             // Full: 12.6V, Empty: 9.9V (3.3V per cell cutoff)
             const minV = 9.9;
@@ -302,16 +308,57 @@ class Rover1Dashboard {
                 voltageColor = '#ff4444';
             }
 
-            fill.style.width = percent + '%';
-            fill.className = `battery-fill ${fillClass}`;
-            statusEl.textContent = `${statusText} (${Math.round(percent)}%)`;
-            voltageEl.style.color = voltageColor;
+            // Update old elements if they exist
+            if (voltageEl) {
+                voltageEl.textContent = voltage.toFixed(2);
+                voltageEl.style.color = voltageColor;
+            }
+            if (fill) {
+                fill.style.width = percent + '%';
+                fill.className = `battery-fill ${fillClass}`;
+            }
+            if (statusEl) {
+                statusEl.textContent = `${statusText} (${Math.round(percent)}%)`;
+            }
+            
+            // Update new slim elements
+            if (voltageSlimEl) {
+                voltageSlimEl.textContent = voltageText;
+                voltageSlimEl.style.color = voltageColor;
+            }
+            if (fillSlim) {
+                fillSlim.style.width = percent + '%';
+                fillSlim.className = `battery-fill-slim ${fillClass}`;
+            }
+            if (statusSlimEl) {
+                statusSlimEl.textContent = statusText;
+            }
         } else {
-            voltageEl.textContent = '--';
-            voltageEl.style.color = 'rgba(255, 255, 255, 0.5)';
-            fill.style.width = '0%';
-            fill.className = 'battery-fill battery-good';
-            statusEl.textContent = 'NO DATA';
+            // No data state
+            if (voltageEl) {
+                voltageEl.textContent = '--';
+                voltageEl.style.color = 'rgba(255, 255, 255, 0.5)';
+            }
+            if (fill) {
+                fill.style.width = '0%';
+                fill.className = 'battery-fill battery-good';
+            }
+            if (statusEl) {
+                statusEl.textContent = 'NO DATA';
+            }
+            
+            // Update slim elements
+            if (voltageSlimEl) {
+                voltageSlimEl.textContent = '-- V';
+                voltageSlimEl.style.color = 'rgba(255, 255, 255, 0.5)';
+            }
+            if (fillSlim) {
+                fillSlim.style.width = '0%';
+                fillSlim.className = 'battery-fill-slim battery-good';
+            }
+            if (statusSlimEl) {
+                statusSlimEl.textContent = 'NO DATA';
+            }
         }
     }
 

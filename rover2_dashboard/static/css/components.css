@@ -147,6 +147,43 @@
 
 .battery-full { background: #00ff88; }
 .battery-good { background: #0088ff; }
+
+/* Slim Battery Display */
+.battery-slim-display {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    flex: 1;
+}
+
+.battery-voltage {
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: #00ff88;
+    min-width: 60px;
+}
+
+.battery-bar-slim {
+    flex: 1;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    overflow: hidden;
+    max-width: 150px;
+}
+
+.battery-fill-slim {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.3s ease, background-color 0.3s ease;
+}
+
+.battery-status-text {
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.7);
+    min-width: 80px;
+    text-align: right;
+}
 .battery-low { background: #ffc107; }
 .battery-critical { background: #ff4444; }
 
