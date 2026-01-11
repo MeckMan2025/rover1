@@ -1,0 +1,8 @@
+# COLCON_IGNORE
+# This file tells colcon to ignore this directory during builds
+# 
+# The vendor_samples_archive contains tutorial/demo code that should not
+# be built as part of the production rover1 workspace
+# 
+# Without this file, colcon would attempt to build archived packages
+# which could cause build conflicts and errors
