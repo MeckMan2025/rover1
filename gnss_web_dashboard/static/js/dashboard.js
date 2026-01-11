@@ -77,6 +77,8 @@ class Rover1Dashboard {
 
     updateConnectionStatus(connected) {
         const statusEl = document.getElementById('connectionStatus');
+        if (!statusEl) return;
+        
         if (connected) {
             statusEl.textContent = '● Connected';
             statusEl.className = 'connection-status connected';
@@ -96,8 +98,10 @@ class Rover1Dashboard {
 
         // Satellites
         if (data.sat_visible !== undefined) {
-            document.getElementById('satVisible').textContent = data.sat_visible || '--';
-            document.getElementById('satUsed').textContent = data.sat_used || '--';
+            const satVisEl = document.getElementById('satVisible');
+            const satUsedEl = document.getElementById('satUsed');
+            if (satVisEl) satVisEl.textContent = data.sat_visible || '--';
+            if (satUsedEl) satUsedEl.textContent = data.sat_used || '--';
         }
 
         // NTRIP Status
@@ -107,10 +111,15 @@ class Rover1Dashboard {
 
         // Data Statistics
         if (data.rtcm_msgs_total !== undefined) {
-            document.getElementById('totalMessages').textContent =
-                data.rtcm_msgs_total ? data.rtcm_msgs_total.toLocaleString() : '--';
-            document.getElementById('dataRate').textContent =
-                data.rtcm_bytes_per_sec ? Math.round(data.rtcm_bytes_per_sec) : '--';
+            const totalMsgEl = document.getElementById('totalMessages');
+            const dataRateEl = document.getElementById('dataRate');
+            if (totalMsgEl) {
+                totalMsgEl.textContent = data.rtcm_msgs_total ? data.rtcm_msgs_total.toLocaleString() : '--';
+            }
+            if (dataRateEl) {
+                dataRateEl.textContent =
+                    data.rtcm_bytes_per_sec ? Math.round(data.rtcm_bytes_per_sec) : '--';
+            }
         }
 
         // Video Feed
@@ -213,6 +222,11 @@ class Rover1Dashboard {
         const volt = document.getElementById('hudVolt');
         const wifi = document.getElementById('hudWifi');
 
+        // Guard against missing HUD elements
+        if (!rtk || !sat || !volt || !wifi) {
+            return;
+        }
+
         if (data.rtk_state) {
             rtk.textContent = `RTK: ${data.rtk_state}`;
             rtk.style.color = data.rtk_state === 'FIXED' ? '#00ff88' :
@@ -311,6 +325,11 @@ class Rover1Dashboard {
         const fill = document.getElementById('batteryFill');
         const statusEl = document.getElementById('batteryStatus');
 
+        // Guard against missing elements - prevents crash when HTML elements don't exist
+        if (!voltageEl || !fill || !statusEl) {
+            return;
+        }
+
         if (voltage && voltage > 0) {
             voltageEl.textContent = voltage.toFixed(2);
 
@@ -355,6 +374,11 @@ class Rover1Dashboard {
     updatePowerStatus(powerStatus) {
         const iconEl = document.getElementById('powerIcon');
         const statusEl = document.getElementById('powerStatus');
+
+        // Guard against missing elements
+        if (!iconEl || !statusEl) {
+            return;
+        }
 
         if (!powerStatus) {
             statusEl.textContent = 'USB-C: --';
