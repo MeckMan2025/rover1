@@ -7,10 +7,11 @@ Only includes essential components for person following functionality:
 - Camera (ascamera hp60c)
 - Person follower (shoe_follower)
 - Battery monitoring
+- GNSS health monitoring
 - Web dashboard with teleop control
 - Basic robot state publisher
 
-Excluded: SLAM, GPS/RTK, Nav2, patrol system, EKF, GNSS monitoring
+Excluded: SLAM, GPS/RTK, Nav2, patrol system, EKF
 """
 
 from launch import LaunchDescription
@@ -82,6 +83,17 @@ def generate_launch_description():
             name='battery_monitor',
             parameters=[{'i2c_bus': 1, 'i2c_address': 0x34, 'publish_rate': 1.0}],
             output='screen'
+        ),
+        
+        # GNSS Health Monitor
+        Node(
+            package='gnss_health_monitor',
+            executable='gnss_health_monitor_node',
+            name='gnss_health_monitor_node',
+            output='screen',
+            parameters=[{
+                'battery_topic': '/battery_voltage'
+            }]
         ),
         
         # Camera Integration (Nuwa-HP60C) - Required for person following
