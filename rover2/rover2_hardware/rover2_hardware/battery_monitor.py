@@ -61,13 +61,13 @@ class BatteryMonitor(Node):
         """Read battery voltage from I2C and publish status."""
         try:
             # Read battery voltage from controller
-            # Adjust register address based on your hardware
-            data = self.bus.read_i2c_block_data(self.i2c_address, 0x30, 2)
+            # Battery voltage is at register 0x00
+            data = self.bus.read_i2c_block_data(self.i2c_address, 0x00, 2)
             
-            # Convert to voltage (adjust scaling based on your hardware)
-            # This is a simplified example - adjust for your setup
+            # Convert to voltage - raw value is in millivolts
+            # (e.g., 14430 = 14.43V)
             raw_value = (data[0] << 8) | data[1]
-            voltage = raw_value * 0.01  # Example scaling factor
+            voltage = raw_value / 1000.0  # Convert millivolts to volts
             
             # Publish voltage
             voltage_msg = Float32()
