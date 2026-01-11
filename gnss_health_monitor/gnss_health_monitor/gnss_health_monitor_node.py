@@ -205,10 +205,10 @@ class GnssHealthMonitorNode(Node):
         # Satellite info subscription (if ublox available)
         if UBLOX_AVAILABLE:
             try:
-                # Create QoS profile compatible with /ubx_nav_sat publisher (RELIABLE, TRANSIENT_LOCAL)
+                # Create QoS profile compatible with /ubx_nav_sat publisher (RELIABLE, VOLATILE)
                 ublox_qos = QoSProfile(
                     reliability=ReliabilityPolicy.RELIABLE,
-                    durability=DurabilityPolicy.TRANSIENT_LOCAL,
+                    durability=DurabilityPolicy.VOLATILE,
                     history=HistoryPolicy.KEEP_LAST,
                     depth=10
                 )

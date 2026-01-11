@@ -51,6 +51,17 @@ def generate_launch_description():
         # NOTE: battery_monitor removed from here - it's launched in rover.launch.py
         # with proper I2C parameters. This avoids duplicate node instances.
 
+        # GNSS Health Monitor
+        Node(
+            package='gnss_health_monitor',
+            executable='gnss_health_monitor_node',
+            name='gnss_health_monitor_node',
+            output='screen',
+            parameters=[{
+                'battery_topic': '/battery/voltage'
+            }]
+        ),
+
         # U-Blox Driver & Converter (Standard Mode)
         # Includes both the driver (for raw UBX) and the converter (UBX -> NavSatFix).
         # Usage: Host internal topic is /ntrip_client/rtcm, so we match that.
