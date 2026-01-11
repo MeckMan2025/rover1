@@ -1,6 +1,6 @@
 # Rover2 - Pack Robot
 
-**Repo**: https://github.com/MeckMan2025/rover2  
+**Repo**: https://github.com/MeckMan2025/rover1 (rover2/ subdirectory)
 **Status**: Pack Robot Implementation Complete
 
 ## Overview
