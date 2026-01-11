@@ -1,0 +1,4 @@
+name: "Rover 2"
+description: "Full stack: SLAM, patrol, dog follower, RTK GPS"
+start_command: "./launch_rover.sh"
+working_directory: "/home/andrewmeckley/rover-brains/rover2"

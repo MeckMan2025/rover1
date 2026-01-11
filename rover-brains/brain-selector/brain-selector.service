@@ -1,0 +1,28 @@
+# Reference systemd service file - NOT USED
+# The shell profile approach is used instead for Wayland/seat access
+# This file is included for reference only
+
+[Unit]
+Description=Brain Selector Touchscreen Interface
+After=graphical.target
+Wants=graphical.target
+
+[Service]
+Type=simple
+User=andrewmeckley
+Group=andrewmeckley
+WorkingDirectory=/home/andrewmeckley/rover-brains/brain-selector
+Environment="DISPLAY=:0"
+Environment="XDG_RUNTIME_DIR=/run/user/1000"
+Environment="QT_QPA_PLATFORM=wayland"
+ExecStart=/usr/bin/cage /home/andrewmeckley/rover-brains/brain-selector/selector.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Note: This service typically fails with "Could not open tty0" error
+# Use the shell profile approach in setup.sh instead
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,4 @@
+name: "Rover 1"
+description: "Original rover stack"
+start_command: "./launch_rover.sh"
+working_directory: "/home/andrewmeckley/ros2_ws/src/rover1"
