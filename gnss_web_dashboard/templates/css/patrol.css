@@ -1,0 +1,403 @@
+/* patrol.css - Minimal Teach & Repeat UI */
+
+/* Patrol Card */
+.patrol-card {
+    grid-column: 1 / -1;
+    max-width: 400px;
+}
+
+/* Emergency Stop Button - Always visible, can't miss it */
+.btn-emergency {
+    width: 100%;
+    padding: 15px;
+    font-size: 1.1rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    background: linear-gradient(135deg, #ff0000, #cc0000);
+    color: white;
+    border: 3px solid #ff0000;
+    border-radius: 8px;
+    cursor: pointer;
+    margin-bottom: 20px;
+    box-shadow: 0 0 10px rgba(255, 0, 0, 0.3);
+    transition: all 0.1s ease;
+}
+
+.btn-emergency:hover {
+    background: linear-gradient(135deg, #ff3333, #ee0000);
+    box-shadow: 0 0 20px rgba(255, 0, 0, 0.5);
+    transform: scale(1.02);
+}
+
+.btn-emergency:active {
+    transform: scale(0.98);
+}
+
+.patrol-mode {
+    padding: 15px 0;
+}
+
+.patrol-divider {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.1);
+    margin: 10px 0;
+}
+
+/* Big Buttons */
+.btn-big {
+    width: 100%;
+    padding: 20px;
+    font-size: 1.2rem;
+    font-weight: 600;
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.btn-big:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-record {
+    background: linear-gradient(135deg, #ff4444, #cc0000);
+    color: white;
+}
+
+.btn-record:hover:not(:disabled) {
+    background: linear-gradient(135deg, #ff6666, #ee0000);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(255, 68, 68, 0.4);
+}
+
+.btn-stop {
+    background: linear-gradient(135deg, #666, #444);
+    color: white;
+}
+
+.btn-stop:hover:not(:disabled) {
+    background: linear-gradient(135deg, #777, #555);
+}
+
+.btn-patrol {
+    background: linear-gradient(135deg, #00ff88, #00cc6a);
+    color: #000;
+}
+
+.btn-patrol:hover:not(:disabled) {
+    background: linear-gradient(135deg, #33ff99, #00ee77);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0, 255, 136, 0.4);
+}
+
+/* Recording Status */
+.recording-status {
+    text-align: center;
+    padding: 20px 0;
+}
+
+.recording-info {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #ff4444;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.recording-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #ff4444;
+    animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.9); }
+}
+
+/* GPS Status */
+.gps-check {
+    font-size: 1.1rem;
+    margin-bottom: 15px;
+    padding: 8px 16px;
+    border-radius: 8px;
+    display: inline-block;
+}
+
+.gps-check.gps-available {
+    background: rgba(0, 255, 136, 0.15);
+    color: #00ff88;
+}
+
+.gps-check.gps-unavailable {
+    background: rgba(255, 193, 7, 0.15);
+    color: #ffc107;
+}
+
+.gps-yes {
+    color: #00ff88;
+    font-weight: bold;
+}
+
+.gps-no {
+    color: #ff4444;
+    font-weight: bold;
+}
+
+/* Save Dialog */
+.save-dialog {
+    padding: 15px 0;
+}
+
+.path-name-input {
+    width: 100%;
+    padding: 15px;
+    font-size: 1.1rem;
+    background: rgba(255, 255, 255, 0.1);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-radius: 10px;
+    color: #fff;
+    margin-bottom: 15px;
+    box-sizing: border-box;
+}
+
+.path-name-input:focus {
+    outline: none;
+    border-color: #00ff88;
+}
+
+.path-name-input::placeholder {
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.save-buttons {
+    display: flex;
+    gap: 10px;
+}
+
+.btn-save {
+    flex: 1;
+    padding: 15px;
+    font-size: 1rem;
+    font-weight: 600;
+    background: linear-gradient(135deg, #00ff88, #00cc6a);
+    color: #000;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-save:hover {
+    background: linear-gradient(135deg, #33ff99, #00ee77);
+}
+
+.btn-discard {
+    flex: 1;
+    padding: 15px;
+    font-size: 1rem;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-discard:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* Autonomy Style Selector */
+.autonomy-selector {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.autonomy-label {
+    font-size: 1rem;
+    color: rgba(255, 255, 255, 0.7);
+    white-space: nowrap;
+}
+
+.autonomy-select {
+    flex: 1;
+    padding: 12px 15px;
+    font-size: 1rem;
+    background: rgba(255, 255, 255, 0.1);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-radius: 10px;
+    color: #fff;
+    cursor: pointer;
+}
+
+.autonomy-select:focus {
+    outline: none;
+    border-color: #00ff88;
+}
+
+.autonomy-select option {
+    background: #1a1a1a;
+    color: #fff;
+}
+
+/* Path Selector */
+.path-selector {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.path-selector label {
+    font-size: 1rem;
+    color: rgba(255, 255, 255, 0.7);
+    white-space: nowrap;
+}
+
+.path-select {
+    flex: 1;
+    padding: 12px 15px;
+    font-size: 1rem;
+    background: rgba(255, 255, 255, 0.1);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-radius: 10px;
+    color: #fff;
+    cursor: pointer;
+}
+
+.path-select:focus {
+    outline: none;
+    border-color: #00ff88;
+}
+
+.path-select option {
+    background: #1a1a1a;
+    color: #fff;
+}
+
+.path-select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Patrol Status */
+.patrol-status {
+    text-align: center;
+    padding: 15px 0;
+}
+
+.patrol-progress-text {
+    font-size: 1.2rem;
+    color: #00ff88;
+    margin-bottom: 15px;
+    padding: 10px;
+    background: rgba(0, 255, 136, 0.1);
+    border-radius: 8px;
+}
+
+/* Error Display */
+.patrol-error {
+    margin-top: 15px;
+    padding: 12px;
+    background: rgba(255, 68, 68, 0.1);
+    border: 1px solid rgba(255, 68, 68, 0.3);
+    border-radius: 8px;
+    color: #ff4444;
+    text-align: center;
+}
+
+/* Map Card (keep existing) */
+.map-card {
+    grid-column: 1 / -1;
+}
+
+.map-container {
+    height: 400px;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #1a1a1a;
+}
+
+#roverMap {
+    height: 100%;
+    width: 100%;
+}
+
+.map-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 15px;
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.coord-display {
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+}
+
+.coord-label {
+    color: rgba(255, 255, 255, 0.6);
+    margin-right: 5px;
+}
+
+.coord-value {
+    color: #00ff88;
+}
+
+.map-controls {
+    display: flex;
+    gap: 10px;
+}
+
+.map-no-fix {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    color: rgba(255, 255, 255, 0.3);
+    font-size: 1.2rem;
+}
+
+/* Leaflet popup styling */
+.leaflet-popup-content-wrapper {
+    background: rgba(26, 26, 26, 0.95);
+    color: #fff;
+    border-radius: 8px;
+}
+
+.leaflet-popup-tip {
+    background: rgba(26, 26, 26, 0.95);
+}
+
+.rover-popup {
+    text-align: center;
+}
+
+.rover-popup .status {
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.rover-popup .coords {
+    font-family: monospace;
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.8);
+}

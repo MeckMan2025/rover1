@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Rover2 Pack Robot Dashboard</title>
+    <title>Rover1 Dashboard</title>
 
     <!-- External dependencies -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -15,13 +15,13 @@
     <link rel="stylesheet" href="css/base.css">
     <link rel="stylesheet" href="css/components.css">
     <link rel="stylesheet" href="css/teleop.css">
+    <link rel="stylesheet" href="css/patrol.css">
     <link rel="stylesheet" href="css/vision.css">
-    <link rel="stylesheet" href="css/map.css">
 </head>
 <body>
     <div class="dashboard">
         <div class="header">
-            <h1>Rover2 Pack Robot</h1>
+            <h1>Rover1 Dashboard</h1>
             <span id="connectionStatus" class="connection-status disconnected">Connecting...</span>
         </div>
 
@@ -114,43 +114,54 @@
             </div>
         </div>
 
-        <!-- Person Follower Quick Controls -->
-        <div class="person-follower-quick">
-            <span class="quick-label">Person Follower</span>
+        <!-- Shoe Follower Quick Controls (Person Follow) -->
+        <div class="shoe-follower-quick">
+            <span class="quick-label">Person Follow</span>
             <div class="quick-toggle-group">
                 <span style="font-size: 0.85rem; color: rgba(255,255,255,0.6);">Detect</span>
                 <label class="toggle-switch">
-                    <input type="checkbox" id="personDetectionToggle" onchange="personFollower.toggleDetection(this.checked)">
+                    <input type="checkbox" id="shoeDetectionToggle" onchange="shoeFollower.toggleDetection(this.checked)">
                     <span class="toggle-slider"></span>
                 </label>
             </div>
-            <button id="btnPersonFollowStart" class="quick-btn quick-btn-start"
-                    onclick="personFollower.enable()" disabled>
+            <button id="btnShoeFollowStart" class="quick-btn quick-btn-start"
+                    onclick="shoeFollower.enable()" disabled>
                 &#x1F6B6; Follow
             </button>
-            <button id="btnPersonFollowStop" class="quick-btn quick-btn-stop"
-                    onclick="personFollower.disable()" disabled>
+            <button id="btnShoeFollowStop" class="quick-btn quick-btn-stop"
+                    onclick="shoeFollower.disable()" disabled>
                 &#x23F9; Stop
             </button>
-            <button id="btnPersonFollowReset" class="quick-btn quick-btn-reset"
-                    onclick="personFollower.reset()">
+            <button id="btnShoeFollowReset" class="quick-btn quick-btn-reset"
+                    onclick="shoeFollower.reset()">
                 &#x21BB; Reset
             </button>
-            <span id="personFollowerStatus" class="quick-status idle">OFF</span>
+            <span id="shoeFollowerStatus" class="quick-status idle">OFF</span>
         </div>
 
-        <!-- Battery Status - Slim Horizontal -->
-        <div class="teleop-controls">
-            <div class="teleop-speed-control">
-                <span class="teleop-speed-label">Battery Status</span>
-                <div class="battery-slim-display">
-                    <span id="batteryVoltageSlim" class="battery-voltage">-- V</span>
-                    <div class="battery-bar-slim">
-                        <div id="batteryFillSlim" class="battery-fill-slim battery-good" style="width: 0%"></div>
-                    </div>
-                    <span id="batteryStatusSlim" class="battery-status-text">--</span>
-                </div>
+        <!-- Dog Follower Quick Controls -->
+        <div class="dog-follower-quick">
+            <span class="quick-label">Dog Follower</span>
+            <div class="quick-toggle-group">
+                <span style="font-size: 0.85rem; color: rgba(255,255,255,0.6);">Detect</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="detectionToggleQuick" onchange="dogFollower.toggleDetection(this.checked)">
+                    <span class="toggle-slider"></span>
+                </label>
             </div>
+            <button id="btnDogFollowStartQuick" class="quick-btn quick-btn-start"
+                    onclick="dogFollower.enable()" disabled>
+                &#x1F43E; Follow
+            </button>
+            <button id="btnDogFollowStopQuick" class="quick-btn quick-btn-stop"
+                    onclick="dogFollower.disable()" disabled>
+                &#x23F9; Stop
+            </button>
+            <button id="btnDogFollowResetQuick" class="quick-btn quick-btn-reset"
+                    onclick="dogFollower.reset()">
+                &#x21BB; Reset
+            </button>
+            <span id="dogFollowerStatusQuick" class="quick-status idle">OFF</span>
         </div>
 
         <!-- Street Map Section -->
@@ -240,8 +251,125 @@
                 </div>
             </div>
 
+            <!-- Battery Status Card -->
+            <div class="card">
+                <div class="card-title">Battery Status</div>
+                <div class="battery-display">
+                    <div id="batteryVoltage" class="metric-value" style="color: #00ff88;">--</div>
+                    <div class="metric-label">Volts</div>
+                </div>
+                <div class="battery-bar">
+                    <div id="batteryFill" class="battery-fill battery-good" style="width: 0%"></div>
+                </div>
+                <div id="batteryStatus" class="metric-label" style="text-align: center; margin-top: 10px;">--</div>
+                <div class="power-status-indicator">
+                    <span class="power-icon" id="powerIcon">⚡</span>
+                    <span class="power-status-text power-unknown" id="powerStatus">USB-C: --</span>
+                </div>
+            </div>
 
+            <!-- Patrol Card - Minimal UI -->
+            <div class="card patrol-card">
+                <div class="card-title">Teach & Repeat</div>
 
+                <!-- EMERGENCY STOP - Always visible -->
+                <button id="btnEmergencyStop" class="btn btn-emergency" onclick="patrol.emergencyStop()">
+                    EMERGENCY STOP
+                </button>
+
+                <!-- RECORD MODE -->
+                <div id="recordMode" class="patrol-mode">
+                    <button id="btnRecord" class="btn btn-big btn-record" onclick="patrol.startRecording()">
+                        Record Path
+                    </button>
+
+                    <!-- Recording status (shown while recording) -->
+                    <div id="recordingStatus" class="recording-status" style="display: none;">
+                        <div class="recording-info">
+                            <span class="recording-dot"></span>
+                            <span id="waypointCount">0</span> waypoints
+                        </div>
+                        <div id="gpsStatus" class="gps-check">GPS: --</div>
+                        <button id="btnStopRecord" class="btn btn-big btn-stop" onclick="patrol.stopRecording()">
+                            Stop Recording
+                        </button>
+                    </div>
+
+                    <!-- Save dialog (shown after stop) -->
+                    <div id="saveDialog" class="save-dialog" style="display: none;">
+                        <input type="text" id="pathNameInput" class="path-name-input" placeholder="Path name...">
+                        <div class="save-buttons">
+                            <button class="btn btn-save" onclick="patrol.savePath()">Save</button>
+                            <button class="btn btn-discard" onclick="patrol.discardRecording()">Discard</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="patrol-divider"></div>
+
+                <!-- PATROL MODE -->
+                <div id="patrolMode" class="patrol-mode">
+                    <div class="path-selector">
+                        <label>Path:</label>
+                        <select id="pathSelect" class="path-select" onchange="patrol.onPathSelect()">
+                            <option value="">Select path...</option>
+                        </select>
+                    </div>
+
+                    <!-- Autonomy Style Selector -->
+                    <div class="autonomy-selector">
+                        <label class="autonomy-label">Autonomy Style:</label>
+                        <select id="autonomyStyle" class="autonomy-select">
+                            <option value="trace">Trace & Retrace</option>
+                            <option value="gps">GPS Navigator</option>
+                        </select>
+                    </div>
+
+                    <button id="btnStartPatrol" class="btn btn-big btn-patrol" onclick="patrol.startPatrol()">
+                        Start Patrol
+                    </button>
+
+                    <!-- Patrol status (shown while patrolling) -->
+                    <div id="patrolStatus" class="patrol-status" style="display: none;">
+                        <div id="patrolProgress" class="patrol-progress-text"></div>
+                        <button id="btnStopPatrol" class="btn btn-big btn-stop" onclick="patrol.stopPatrol()">
+                            Stop
+                        </button>
+                    </div>
+
+                    <!-- Error display -->
+                    <div id="patrolError" class="patrol-error" style="display: none;"></div>
+                </div>
+            </div>
+
+            <!-- 3D Point Cloud Viewer Card -->
+            <div class="card pointcloud-card" id="pointcloudCard" style="display: none;">
+                <div class="card-title">3D Point Cloud Viewer</div>
+                <div class="pointcloud-container" id="pointcloudContainer">
+                    <div class="pointcloud-placeholder" id="pointcloudPlaceholder">
+                        <div class="pointcloud-placeholder-icon">&#x1F4CA;</div>
+                        <div>Select a path and click "View 3D Point Cloud"</div>
+                    </div>
+                    <div class="pointcloud-loading" id="pointcloudLoading" style="display: none;">
+                        <div class="pointcloud-loading-spinner"></div>
+                        <div>Loading point cloud...</div>
+                    </div>
+                </div>
+                <div class="pointcloud-controls">
+                    <div class="btn-group">
+                        <button class="btn btn-secondary" onclick="pointcloudViewer.resetView()">Reset View</button>
+                        <button class="btn btn-secondary" onclick="pointcloudViewer.toggleAxes()">Toggle Axes</button>
+                    </div>
+                    <div class="point-size-control">
+                        <span class="metric-label">Point Size:</span>
+                        <input type="range" class="point-size-slider" id="pointSizeSlider"
+                               min="1" max="10" value="3" oninput="pointcloudViewer.setPointSize(this.value)">
+                    </div>
+                    <div class="pointcloud-info" id="pointcloudInfo">
+                        Points: -- | Drag to rotate, scroll to zoom
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Power Controls Card -->
@@ -276,10 +404,12 @@
 
     <!-- Local JS modules (order matters for dependencies) -->
     <script src="js/dashboard.js"></script>
+    <script src="js/patrol.js"></script>
     <script src="js/map.js"></script>
     <script src="js/teleop.js"></script>
     <script src="js/power.js"></script>
     <script src="js/vision.js"></script>
+    <script src="js/pointcloud.js"></script>
     <script src="js/init.js"></script>
 </body>
 </html>

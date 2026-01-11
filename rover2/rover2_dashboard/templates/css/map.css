@@ -1,0 +1,93 @@
+/* map.css - Map and coordinate display styles */
+
+.map-card {
+    grid-column: 1 / -1;
+}
+
+.map-container {
+    height: 400px;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #1a1a1a;
+}
+
+#roverMap {
+    height: 100%;
+    width: 100%;
+}
+
+.map-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 15px;
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.map-controls {
+    display: flex;
+    gap: 10px;
+}
+
+.map-no-fix {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    color: rgba(255, 255, 255, 0.3);
+    font-size: 1.2rem;
+}
+
+.coord-display {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: wrap;
+}
+
+.coord-label {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.6);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.coord-value {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.9rem;
+    color: #00ff88;
+    font-weight: 600;
+}
+
+/* Leaflet popup styling */
+.leaflet-popup-content-wrapper {
+    background: rgba(26, 26, 26, 0.95);
+    color: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+.leaflet-popup-tip {
+    background: rgba(26, 26, 26, 0.95);
+}
+
+.leaflet-popup-content {
+    margin: 15px;
+    font-size: 0.9rem;
+}
+
+.popup-title {
+    font-weight: 600;
+    color: #00ff88;
+    margin-bottom: 8px;
+}
+
+.popup-coords {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.7);
+}
