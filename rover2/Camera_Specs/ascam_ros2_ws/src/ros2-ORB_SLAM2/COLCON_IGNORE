@@ -1,0 +1,3 @@
+# This package requires Pangolin library which is not installed.
+# Using RTAB-Map instead for indoor SLAM (see Phase 6 in project_plan.md).
+# Remove this file if you need ORB-SLAM functionality.

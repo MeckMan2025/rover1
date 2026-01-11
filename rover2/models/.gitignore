@@ -1,0 +1,9 @@
+# Ignore large model files
+*.hef
+*.onnx
+*.pt
+*.pth
+
+# Keep the README
+!README.md
+!.gitignore

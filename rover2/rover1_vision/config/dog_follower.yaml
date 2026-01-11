@@ -1,0 +1,20 @@
+# Dog Follower Configuration
+# Parameters for YOLOv8 dog detection and following behavior
+
+dog_follower:
+  ros__parameters:
+    # Model Configuration
+    model_path: "/home/andrewmeckley/ros2_ws/src/rover1/models/yolov8s.hef"
+    confidence_threshold: 0.5  # Minimum detection confidence (0.0-1.0)
+
+    # Following Behavior
+    target_box_area_ratio: 0.15  # Target: dog fills 15% of frame area
+    center_tolerance: 0.1        # 10% frame width deadzone for centering
+
+    # Speed Limits (100% power to keep up with fast dogs!)
+    linear_speed: 0.5   # Max forward speed (m/s) - matches teleop max
+    angular_speed: 1.0  # Max rotation speed (rad/s) - matches teleop max
+
+    # Safety Timeouts
+    detection_timeout: 1.0       # Stop if no dog detected (seconds)
+    teleop_override_timeout: 0.5 # Disable if teleop active (seconds)

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Rover1 Auto Updater every 5 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Unit=rover1-updater.service
+
+[Install]
+WantedBy=timers.target

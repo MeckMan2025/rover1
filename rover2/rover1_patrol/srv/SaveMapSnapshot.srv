@@ -1,0 +1,10 @@
+# Save a map snapshot with waypoints overlay
+string path_name
+
+# Waypoint coordinates to draw on map
+float64[] waypoints_x
+float64[] waypoints_y
+---
+bool success
+string image_path
+string message

@@ -1,0 +1,11 @@
+### navsat_transform_node config ###
+navsat_transform:
+  ros__parameters:
+    frequency: 30.0
+    magnetic_declination_radians: 0.0 # Update for specific location if needed (Iowa ~ -0.03 rad)
+    yaw_offset: 0.0 # Assumes robot starts facing East (BSU) or IMU handles true North
+    zero_altitude: true
+    broadcast_cartesian_transform: false # Handled by ekf_global_node
+    publish_filtered_gps: true
+    use_odometry_yaw: false
+    wait_for_datum: false

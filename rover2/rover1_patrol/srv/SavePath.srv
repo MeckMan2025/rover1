@@ -1,0 +1,6 @@
+# Save the currently recorded path with a name
+string path_name
+---
+bool success
+string message
+string saved_file_path

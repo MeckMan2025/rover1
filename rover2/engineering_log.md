@@ -1,0 +1,1583 @@
+# Rover1 Engineering Journal & Technical Specifications
+
+**Maintainer:** MeckMan2025
+**Last Updated:** 2026-01-04
+**Purpose:** Living documentation of the hardware verification, driver protocols, and system architecture for the Rover1 autonomous vehicle. This document serves as the sole source of truth for AI agents and engineering rebuilds.
+
+---
+
+## 1. Hardware Architecture
+
+### 1.1 Compute Unit
+- **Device:** Raspberry Pi 5 Model B Rev 1.1
+- **Architecture:** aarch64 (ARM64)
+- **OS:** Ubuntu 24.04.3 LTS (Noble Numbat)
+- **Kernel:** 6.8.0-1043-raspi (PREEMPT_DYNAMIC)
+- **Host Name:** `rover1`
+- **User:** `andrewmeckley` (Groups: video, dialout, gpio, i2c, spi)
+- **Work Directory:** `~/ros2_ws/src/rover1`
+- **ROS Distribution:** ROS 2 Jazzy Jalisco
+- **IP Address:** `192.168.6.84` (mDNS: `rover1.local`)
+
+### 1.2 Motor Control System
+- **Controller:** Hiwonder Motor Driver HAT (Connected via I2C)
+- **Communication Protocol:** I2C Bus 1, Address `0x34`
+- **Driver Type:** Custom ROS 2 Node (`rover1_hardware/hiwonder_driver.py`) using direct register addressing.
+
+#### Register Protocol (Confirmed Dec 21, 2025)
+Standard Hiwonder protocols (broadcast speed) failed. Direct register addressing is required for independent wheel control.
+
+| Wheel Position | I2C Register (Dec) | I2C Register (Hex) | Driver Index | Direction Invert? |
+| :--- | :--- | :--- | :--- | :--- |
+| **Rear Left** | **51** | `0x33` | 2 | NO |
+| **Front Left** | **52** | `0x34` | 0 | **YES** |
+| **Rear Right** | **53** | `0x35` | 3 | **YES** |
+| **Front Right** | **54** | `0x36` | 1 | NO |
+
+- **Safety Mechanism:** Driver implements a **0.5s Watchdog** (Fine-tuned on Dec 22, 2025 to balance responsiveness vs OS key-repeat delay).
+- **Physical Motors:** 12V Encoder DC Motors.
+- **Encoder Mapping (Confirmed Dec 21, 2025):**
+  - **Register:** `0x3C` (4x 32-bit Signed Ints).
+  - **Front Left**: Index 1 (Motor 2) | Fwd = Decrease
+  - **Front Right**: Index 3 (Motor 4) | Fwd = Increase
+  - **Rear Left**: Index 0 (Motor 1) | Fwd = Increase
+  - **Rear Right**: Index 2 (Motor 3) | Fwd = Decrease
+
+### 1.3 Navigation & Orientation
+- **IMU:** OzzMaker BerryIMU v3 (Stackable header on GPIO)
+    - **Magnetometer:** LIS3MDL (I2C `0x1c`)
+    - **Accel/Gyro:** LSM6DSL (I2C `0x6a`)
+    - **Barometer:** BMP388 (I2C `0x77`)
+    - **Driver:** `rover1_hardware/berry_imu_driver.py`
+- **GNSS (GPS):** u-blox ZED-F9R (High Precision RTK)
+    - **Connection:** USB (Port 1)
+    - **Device ID:** `idVendor=1546`, `idProduct=01a9`
+    - **Correction Source:** NTRIP Client (Iowa RTN)
+
+### 1.4 Power System
+- **Power Source:** 3S or 4S LiPo (~12-16V).
+- **Voltage Monitoring:**
+  - **Register:** `0x00` (2-byte unsigned int).
+  - **Unit:** Millivolts (mV).
+  - **Note:** Register values confirm ~14.5V readings for 4S battery.
+### 1.5 Display & Human Interface
+- **Display:** Hosyond 7" IPS Touchscreen (1024x600)
+- **Touch Controller:** QDTECH MPI7002 (USB HID)
+- **Connection:** USB (Power + Touch) + HDMI (Video)
+- **Driver:** `libinput` (Linux built-in)
+- **Current Mode:** htop system monitor (CPU-efficient during active development)
+- **Kiosk Mode:** DISABLED - Chromium consumed too much CPU alongside ROS stack + Claude Rover sessions
+- **Dashboard Access:** `http://rover1.local:8080` (accessed from external browser)
+
+### 1.6 Vision System (Perception)
+- **Camera Module:** Nuwa-HP60C (ASJ ZNX_NVT)
+- **Manufacturer:** NOVATEK (USB ID: `3482:6723`)
+- **Serial Number:** `510550000000100`
+- **Driver:** `uvcvideo` (Kernel built-in) / `ascamera` ROS 2 driver
+- **Device Paths:** `/dev/video0`, `/dev/video1`, `/dev/media0`
+- **Mounting Height:** 33cm (Measured from ground to bottom surface of camera housing)
+- **Pitch Angle:** -7° (Pointed downward at ground, verified via level)
+- **Formats (MJPG):** 1280x720 @ 30fps (Recommended), 640x480 @ 30fps
+- **Formats (YUYV):** 1280x1040 @ 8fps (Highest res)
+- **Physical Position:** Top-mounted, forward-facing.
+
+---
+
+## 2. Software Architecture
+
+### 2.1 Package Structure
+`rover1/`
+├── `rover1_bringup/`       # Launch files and high-level configurations
+│   ├── `launch/rover.launch.py`   # Master launch (Hardware + Kinematics)
+│   └── `launch/gps.launch.py`     # GPS & NTRIP specific stack
+├── `rover1_control/`       # (Planned) PID and Feedback controllers
+├── `rover1_hardware/`      # Physical Device Drivers
+│   ├── `hiwonder_driver.py`       # I2C Motor Controller
+│   ├── `berry_imu_driver.py`      # IMU Data Publisher
+│   └── `mecanum_kinematics.py`    # Twist -> Wheel Speeds conversion
+├── `scripts/`              # System Utilities
+│   ├── `auto_update.sh`           # Git Pull automation
+│   ├── `load_env.sh`              # Environment variable loader
+│   └── `rover1-updater.service`   # Systemd service definition
+
+### 2.2 Critical Configurations
+
+#### Deployment (Auto-Update)
+- Systemd timer checks GitHub every 5 minutes.
+- Service: `rover1-updater.service`
+- Target: `https://github.com/MeckMan2025/rover1`
+
+#### GPS / NTRIP
+- **Network:** Iowa DOT RTN (IaRTN)
+- **Caster:** `165.206.203.10`
+- **Port:** `10000`
+- **Mountpoint:** `RTCM3_IMAX`
+- **Auth:** Basic Auth (Credentials stored in `.env` file)
+- **Security:** Environment variables loaded via `scripts/load_env.sh`
+#### Network & Port Access
+- **Port Redirect:** Port 80 is redirected to 8080 for easy dashboard access (`http://rover1.local`).
+- **Implementation:** `iptables` NAT rule (Persistent via `iptables-persistent`).
+- **Rule:** `-A PREROUTING -p tcp -m tcp --dport 80 -j REDIRECT --to-ports 8080`
+
+### 2.4 Vision & Perception Stack
+- **OpenCV Version:** 4.6.0 (python3-opencv)
+- **ROS 2 Packages:** 
+    - `ros-jazzy-cv-bridge` (v4.1.0)
+    - `ros-jazzy-image-transport` (v5.1.7)
+    - `ros-jazzy-image-transport-plugins` (compressed, theora)
+    - `ros-jazzy-pcl-ros` (v2.6.2)
+- **Hardware Integration:** `libusb-1.0-0-dev`, `libudev-dev`, `v4l-utils`
+
+### 2.5 Known Issues & Fixes
+- **GPS USB Busy:** `LIBUSB_ERROR_BUSY`.
+    - *Cause:* Linux kernel driver `cdc_acm` grabs the USB device before ROS `ublox_dgnss` can claim it via `libusb`.
+    - *Fix:* [SOLVED] Created `/etc/udev/rules.d/99-ublox-gnss.rules` to detach `cdc_acm`.
+- **Motor Runaway:**
+    - *Cause:* I2C latching on Hiwonder board.
+    - *Fix:* Implemented software watchdog in `hiwonder_driver.py`.
+- **NTRIP / RTK Topic Mismatch (Ghost Network Issue):**
+    - *Symptoms:* NTRIP client connects successfully (log shows connection), but GPS remains in Float/Single mode.
+    - *False Lead:* Suspected Ubuntu 24.04 firewall/network stack dropping packets (Ping failed due to wrong IP, actual internet was fine).
+    - *Root Cause:* Topic namespace mismatch. `ntrip_client` publishes to `/rtcm`. Standard U-Blox launch file (`ublox_rover_hpposllh_navsatfix.launch.py`) expects `/ntrip_client/rtcm`.
+    - *Fix:* Added `GroupAction` and `SetRemap` in `gps.launch.py` to bridge `/ntrip_client/rtcm` -> `/rtcm`.
+    - *Lesson:* Always verify `ros2 topic info` subscribers before debugging network layers.
+
+---
+
+## 3. Operations Manual
+
+### 3.1 Startup Procedure
+1.  **Power On:** Toggle main switch. Pi boots automatically.
+2.  **Verify Services:**
+    ```bash
+    systemctl status rover1-updater.service
+    ```
+3.  **Launch Stack (Automated):**
+    ```bash
+    # GPS only
+    ./launch_gps.sh
+    
+    # Full rover stack
+    ./launch_rover.sh
+    ```
+4.  **Launch Stack (Manual):**
+    ```bash
+    source ~/ros2_ws/install/setup.bash
+    source scripts/load_env.sh  # Load credentials
+    ros2 launch rover1_bringup rover.launch.py
+    ```
+
+### 3.2 Troubleshooting Commands
+- **Check I2C Devices:** `i2cdetect -y 1`
+- **Manually Spin M1 (Rear Left):**
+    ```bash
+    python3 probe_motors.py 51 50
+    ```
+- **View GPS Data:** `ros2 topic echo /ublox/fix`
+
+---
+
+## 4. Development Log (Key Milestones)
+- **Phase 1 (Dec 2025):** Core Hardware Verification.
+    - Established SSH and Auto-Update workflow.
+    - Reverse-engineered Hiwonder Motor Protocol (Registers 51-54).
+    - Verified IMU connectivity.
+    - Configured NTRIP client for RTK corrections.
+- **Phase 2 (Dec 21, 2025):** Sensor Fusion Setup.
+    - Resolved GPS USB conflict (`LIBUSB_ERROR_BUSY`).
+    - Established static TF tree (`base_link` -> `imu_link`/`gps_link`).
+    - **Bench Test (Network):** Confirmed connectivity (Ping 8.8.8.8 OK, Port 10000 OK). "Ubuntu Connectivity Regression" was a false alarm.
+    - **Bench Test (GPS):** Identified topic mismatch (`/rtcm` vs `/ntrip_client/rtcm`).
+    - **Action:** Remapped NTRIP client in `gps.launch.py` to feed U-Blox driver.
+
+### 4.1 RTK/GPS Integration & Debugging (Dec 21, 2025)
+**Problem:** NTRIP Client connected but provided no RTK corrections (Float/Fixed status never achieved).
+**Discovery:**
+1.  **"Ghost" Connection:** The NTRIP client was silent because it requires the Rover's position (NMEA GPGGA) to request VRS corrections from the Caster. The U-Blox driver does NOT publish this by default in a format the client consumes.
+2.  **QoS Mismatch:** The U-Blox driver publishes `/fix` using `SensorData` (Best Effort) QoS. Standard subscribers use `Reliable`. This caused the bridge node to never receive messages.
+3.  **Protocol Strictness:** The NTRIP Caster rejects NMEA sentences longer than 82 characters. This happens if the altitude has too many decimal places.
+
+**Solution (The "Bridge" Pattern):**
+1.  **Created `fix_to_nmea` Node:** A custom node in `rover1_hardware` that subscribes to `/fix` (with `SensorData` QoS) and publishes valid GPGGA sentences to `/nmea`.
+2.  **Formatting:** Truncated altitude to 2 decimal places to ensure NMEA sentence length < 82 chars.
+3.  **Persistence:** Created `rover1_bringup/config/ublox_gps.yaml` to enforce `CFG_USBINPROT_RTCM3X` and `CFG_USBOUTPROT_NMEA` on boot.
+4.  **Launch:** Integrating `fix_to_nmea` into `gps.launch.py`.
+
+### 4.2 IMU Driver Upgrade (Dec 21, 2025)
+**Problem:** `robot_localization` EKF requires Orientation (Quaternion) and Covariance matrices, but raw IMU driver only provided Angular Velocity and Linear Acceleration.
+**Solution:**
+1.  **Calibration:** Implemented a 200-step startup routine to calculate and subtract static Gyroscope bias.
+2.  **Sensor Fusion (Internal):** Implemented a Complementary Filter (Alpha 0.98) to fuse Accelerometer (Gravity Vector - stable long term) and Gyroscope (Rate - accurate short term) to estimate stable Pitch and Roll.
+3.  **Frame Conversion:** Standardized output to ENU (East-North-Up) frame.
+4.  **Result:** `berry_imu_driver.py` now publishes `geometry_msgs/Quaternion` on `/imu/data`, enabling the EKF to function.
+
+### 4.3 Security Hardening & Repository Management (Dec 22, 2025)
+**Problem:** Hardcoded NTRIP credentials exposed in public GitHub repository.
+**Discovery:** Security audit revealed sensitive credentials in `gps.launch.py`:
+- Username: `[REDACTED]`  
+- Password: `[REDACTED]`
+- IP Address: `[REDACTED]`
+
+**Solution (Environment Variable Pattern):**
+1. **Credential Removal:** Replaced hardcoded values with `os.getenv()` calls in launch file
+2. **Environment Management:** Created `.env` file pattern with `.env.example` template
+3. **Git Protection:** Added `.env` to `.gitignore` to prevent future credential exposure
+4. **Automation Scripts:** Created convenience scripts that auto-load environment variables:
+   - `scripts/load_env.sh` - Environment loader utility
+   - `launch_gps.sh` - Auto-load env + GPS launch
+   - `launch_rover.sh` - Auto-load env + full rover launch
+5. **Repository Cleanup:** Removed all markdown documentation from public repo tracking
+
+**Lessons Learned:**
+- **Security First:** Always audit code for hardcoded secrets before initial push
+- **Environment Variables:** Use `.env` files for sensitive configuration data
+- **Documentation Security:** Personal notes and credentials should never be tracked in public repos
+- **Automation:** Convenience scripts eliminate manual steps and reduce credential exposure
+
+**Future Mistake-Proofing:**
+- **Pre-commit Hook:** Consider implementing credential scanning in git hooks
+- **Template Pattern:** Always create `.env.example` files to document required environment variables
+- **Security Checklist:** Audit all configuration files before committing to public repos
+
+### 4.4 Hardware-in-the-Loop Validation & Calibration (Dec 22, 2025)
+**Status:** System is now fully localized and calibrated for physical movement.
+
+**Key Achievements:**
+1.  **URDF & TF Tree Standardization:**
+    *   Created `rover1_description/urdf/rover.urdf.xacro`.
+    *   Replaced static transform publishers in `rover.launch.py` with `robot_state_publisher`.
+    *   **Baseline:** `base_link` -> `imu_link` / `gps_link` / `wheel links` are now geometrically correct.
+    *   **Wheel Spec:** Verified 97mm (0.0485m radius) from official chassis documentation.
+2.  **Physical Odometry Calibration:**
+    *   **Test:** 1.0 meter forward drive (human-verified measurement).
+    *   **Discovery:** `Average Delta Ticks for 1.0m = 12618.75`.
+    *   **Calculated Constant (Updated):** `ticks_per_rev = 3845.33` (Based on 97mm wheel circumference).
+    *   **Action:** Updated `mecanum_kinematics.py` and URDF with official 97mm dimensions.
+3.  **Kinematics & Control Tuning:**
+    *   **Rotation Power:** Added `rotation_scale = 2.0` to compensate for Mecanum friction.
+    *   **Watchdog Timing:** Settled on **0.5s** timeout in `hiwonder_driver.py` for snappy but stable control.
+    *   **Strafing:** Confirmed full 4-axis Mecanum support.
+4.  **Infrastructure Robustness:**
+    *   **Missing Dependencies:** Added `robot_localization`, `xacro`, and `robot_state_publisher` to `setup_on_pi.sh`.
+    *   **Code Bugs:** Resolved `NameError: Odometry` and `SetRemap` import errors.
+
+### 4.5 Battery Monitoring Strategic Pivot (Dec 22, 2025)
+**Status:** Independent node implemented; Reliability prioritized.
+
+**Strategic Pivot (Senior Engineer Feedback):**
+- **Decoupling:** Battery telemetry moved out of the motor driver to prevent coupling of control and monitoring.
+- **Simplification:** Switched from `sensor_msgs/BatteryState` to `std_msgs/Float32`.
+- **Topic:** `/battery_voltage` (1Hz).
+- **Isolation:** Standalone node `battery_monitor.py` with its own I2C direct access.
+
+**Updated Implementation:**
+1.  **Node:** Created `rover1_hardware/battery_monitor.py`.
+2.  **Launch:** Added to `rover.launch.py`.
+3.  **Clean Up:** Removed telemetry logic from `hiwonder_driver.py` to restore focused motor control.
+
+**Verification Status:**
+- **STABILITY:** Stable publication at 1Hz observed via `ros2 topic echo /battery_voltage`.
+
+### 4.6 Field Networking & Failover Strategy (Dec 23, 2025)
+**Status:** VERIFIED WORKING - Multi-tier network failover for field demos.
+
+**Problem:** Need reliable connectivity across multiple environments:
+- Home lab (WiFi)
+- Field demos (phone hotspot)
+- Emergency access (direct Ethernet tether)
+
+**Solution (Priority-Based Failover):**
+NetworkManager handles WiFi with `autoconnect-priority`, Netplan handles Ethernet static fallback.
+
+| Priority | Network | Type | Connection |
+| :--- | :--- | :--- | :--- |
+| 1 (Highest) | Lake Wifi | Home WiFi | Auto-connect when in range |
+| 2 | AJM17ProMax | Phone Hotspot | Fallback when home unavailable |
+| 3 (Always) | Ethernet Tether | Static 10.42.0.1 | Direct laptop connection |
+
+**Prerequisites (Ubuntu 24.04 on Pi):**
+```bash
+sudo apt update && sudo apt install -y network-manager
+```
+
+**Credentials (.env file format):**
+- Stored in `.env` file (not tracked in git)
+- **IMPORTANT:** Values with spaces must be quoted
+```bash
+# WiFi Networks (Priority Order)
+WIFI_HOME_SSID="Lake Wifi"
+WIFI_HOME_PASS="your_password"
+WIFI_HOTSPOT_SSID="AJM17ProMax"
+WIFI_HOTSPOT_PASS="your_password"
+```
+
+**Setup (Run Once on Pi):**
+```bash
+cd ~/ros2_ws/src/rover1
+
+# Create .env with credentials (values with spaces need quotes!)
+nano .env
+
+# Run the setup script
+./scripts/setup_network_failover.sh
+
+# Fix netplan permissions warning
+sudo chmod 600 /etc/netplan/*.yaml
+```
+
+**Verification:**
+```bash
+# Check configured connections
+nmcli connection show
+
+# Check current network status
+nmcli device status
+
+# Verify ethernet static IP
+ip addr show eth0 | grep inet
+# Should show: inet 10.42.0.1/24
+```
+
+**Behavior:**
+- **At Home:** Connects to Lake Wifi automatically (priority 100)
+- **In Field:** When home network unavailable, connects to phone hotspot (priority 50)
+- **Emergency:** Ethernet tether always works at `10.42.0.1`
+
+**Manual Network Switching:**
+```bash
+# Check current connection
+nmcli device status
+
+# Force switch to specific network
+nmcli connection up "Lake Wifi"
+nmcli connection up "AJM17ProMax"
+
+# Disconnect from WiFi to test failover
+nmcli connection down "Lake Wifi"
+```
+
+**Laptop Ethernet Setup (Mac):**
+1. System Settings → Network → Ethernet
+2. Configure IPv4: Manually
+3. IP Address: `10.42.0.2`
+4. Subnet Mask: `255.255.255.0`
+5. Apply
+
+**Mac Smart SSH (Auto-Selects Ethernet vs WiFi):**
+Added to `~/.zshrc` on Mac - automatically uses ethernet when available:
+```bash
+# Smart rover SSH - ethernet first, then WiFi
+ssh() {
+    if [[ "$1" == "andrewmeckley@rover1.local" || "$1" == "rover1.local" ]]; then
+        if ping -c1 -W1 10.42.0.1 &>/dev/null; then
+            echo "→ Using ethernet (10.42.0.1)"
+            command ssh andrewmeckley@10.42.0.1 "${@:2}"
+        else
+            echo "→ Using WiFi (rover1.local)"
+            command ssh andrewmeckley@rover1.local "${@:2}"
+        fi
+    else
+        command ssh "$@"
+    fi
+}
+```
+
+**Usage:** Just type `ssh andrewmeckley@rover1.local` - it auto-detects the best path.
+
+**Netplan Config Created (`/etc/netplan/99-rover-network.yaml`):**
+```yaml
+network:
+  version: 2
+  renderer: NetworkManager
+  ethernets:
+    eth0:
+      dhcp4: true
+      optional: true
+      addresses:
+        - 10.42.0.1/24
+```
+
+**Legacy Script:** `scripts/setup_ethernet_tether.sh` (ethernet-only, superseded by `setup_network_failover.sh`)
+
+### 4.7 Manual Control: Google Stadia Controller Integration (Dec 23, 2025)
+**Status:** VERIFIED WORKING - Full Mecanum teleop operational.
+
+**Hardware Specs:**
+- **Device:** Google Stadia Controller (Unlocked Bluetooth Mode).
+- **MAC Address:** `D1:71:42:54:CB:0F`.
+- **System Service:** `bluez` (Bluetoothctl used for pairing/trusting/connecting).
+
+**Software Stack:**
+- **Driver:** `ros-jazzy-joy` (`joy_node`) with `deadzone: 0.1` and `autorepeat_rate: 20.0`.
+- **Control Logic:** `rover1_hardware/stadia_teleop.py` (Subscribes to `/joy`, Publishes to `/cmd_vel`).
+
+**Controller Mapping (Verified Dec 23, 2025):**
+| Input | Axis Index | Range | ROS Mapping | Behavior |
+| :--- | :--- | :--- | :--- | :--- |
+| **Left Stick Y** | Axis 1 | -1.0 to +1.0 | `linear.x` | Forward (+), Backward (-) |
+| **Left Stick X** | Axis 0 | -1.0 to +1.0 | `angular.z` | Rotate Left (+), Rotate Right (-) |
+| **Right Stick X** | Axis 2 | -1.0 to +1.0 | `linear.y` | Strafe Left (+), Strafe Right (-) |
+| **L2 Trigger** | Axis 5 | +1.0 to -1.0 | Deadman Switch | Released = 1.0, Pressed = -1.0 |
+
+**Tuned Parameters (rover.launch.py):**
+- `max_linear_speed: 0.4` m/s
+- `max_angular_speed: 0.8` rad/s
+- `deadman_threshold: 0.0` (L2 must be pressed past halfway)
+- `debug_axes: False` (Set `True` to log raw axis values for recalibration)
+
+**Safety Mechanism:**
+- **Dead-Man Switch:** Motion is only permitted when the **L2 Trigger** is depressed (axis < 0.0).
+- **Auto-Stop:** Releasing L2 immediately publishes a zero-velocity `Twist` message to `/cmd_vel` to prevent runaway.
+- **Axis Validation:** Node checks for sufficient axes before processing to prevent index errors.
+
+**Usage:**
+```bash
+# Standard launch (joystick enabled by default)
+ros2 launch rover1_bringup rover.launch.py use_joy:=true
+
+# Disable joystick for autonomous-only mode
+ros2 launch rover1_bringup rover.launch.py use_joy:=false
+```
+
+**Bluetooth Reconnection (if controller disconnects):**
+```bash
+bluetoothctl connect D1:71:42:54:CB:0F
+```
+
+**Calibration/Debug Mode:**
+```bash
+# Verify controller is publishing
+ros2 topic echo /joy --field axes
+
+# Enable runtime axis logging
+ros2 param set /stadia_teleop debug_axes true
+```
+
+**Rebuild Instructions (if code changes):**
+```bash
+cd ~/ros2_ws
+colcon build --packages-select rover1_hardware rover1_bringup --symlink-install
+source install/setup.bash
+```
+
+### 4.8 Observability & Autonomous Deployment (Dec 24, 2024)
+**Status:** SYSTEM VERIFIED - Mission Control Dashboard & Autonomous Startup Operational.
+
+**Key Achievements:**
+1.  **Foxglove Bridge Integration:**
+    *   Successfully integrated `foxglove_bridge` into `rover.launch.py` (Port 8765).
+    *   Resolved buffer overflow issues (`Maximum frame size reached`) by increasing `send_buffer_limit` to 100MB.
+    *   **Dashboard Discovery:** Foxglove WebSocket protocol (not Rosbridge) is required for full bandwidth.
+2.  **Autonomous Core (The "Brain"):**
+    *   Implemented `rover1.service` (Systemd) for hands-free startup.
+    *   **Safety Shield:** Built a 15-second "Rescue Delay" into `startup_launch.sh` with a `STOP_ROVER` file bypass and systemd crash backoff.
+    *   **Auto-Maintenance:** Service now performs `git pull` automatically on every boot/restart, ensuring the field rover is always on the latest code.
+3.  **Sensor Fusion Stabilization:**
+    *   Increased Gyroscope calibration from 2s to 15s (1000 samples) to eliminate stationary "yaw creep."
+    *   Adjusted EKF Covariance for Yaw (0.5) to allow GPS heading to correct IMU drift over time.
+4.  **Stadia Teleop "Uncorking":**
+    *   **Ghosting Fix:** Implemented an initialization gate in `stadia_teleop.py`. Node now ignores all input until it sees the L2 trigger report its released state (1.0).
+    *   **Performance Mode:** Increased `max_linear_speed` to 2.0 m/s and `max_angular_speed` to 4.0 rad/s based on user performance request.
+5.  **Engineering Observability (The "Cockpit"):**
+    *   Created `scripts/rover_monitor.sh`.
+    *   Provides a high-speed terminal dashboard for:
+        *   Systemd service status.
+        *   Core Node Health (12 nodes verified).
+        *   Topic Heartbeats (Hz rates for IMU, GPS, Battery, and Cmd_Vel).
+
+**Operational Notes:**
+- **Refresh Required:** If Foxglove loses connection during a software update, a browser/app refresh is required to clear the message buffer.
+- **Wait for Ignition:** Monitor the dashboard; nodes will stay "MISSING" for the first 15 seconds of boot due to the safety window.
+
+
+## 5. Additional Hardware Capabilities (Extracted from Documentation)
+The following capabilities were discovered during PDF audit on Dec 22, 2025:
+
+### 5.1 Motor Driver Board (0x34)
+- **Battery Monitoring:** Register `0x00` returns the battery voltage in millivolts.
+- **Fixed Speed Mode:** Register `0x33` allows for closed-loop speed control (using internal PID) rather than raw PWM.
+- **Total Encoder Ticks:** Register `0x3C` provides total pulse values for all four encoders at once.
+
+### 5.2 IMU (LSM6DSL)
+- **Advanced Motion Sensing:** Hardware support for:
+    - Free-fall detection.
+    - Single/Double tap detection.
+    - Built-in pedometer/step counter.
+    - Tilt detection (6D/4D orientation).
+
+### 5.3 Physical Limits
+- **Payload:** 5.0 kg maximum.
+- **Current Load:** Motors draws up to 3.0A at stall (requires robust watchdog for safety).
+- **Wheels:** 97mm Diameter, Mecanum type.
+
+**Diagnostic Tools:**
+*   `scripts/rover_interactive_check.py`: Full system health check (I2C, Nodes, Topics).
+*   `scripts/calibrate_odometry.py`: Re-run if changing wheel sizes or gearboxes.
+*   `scripts/debug_nodes.sh`: Individual node startup testing.
+
+---
+
+## 6. RTK GPS Technical Specification (CRITICAL REFERENCE)
+
+**Last Verified:** December 24, 2025
+**Hardware:** u-blox ZED-F9R + Iowa DOT RTN (IaRTN)
+**Purpose:** This section exists because RTK integration has failed multiple times due to subtle misconfigurations. Follow this specification exactly.
+
+### 6.1 System Architecture (The RTK Data Flow)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         RTK CORRECTION FLOW                                 │
+│                                                                             │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐ │
+│  │  ZED-F9R    │───▶│ublox_dgnss │───▶│  /fix       │───▶│fix_to_nmea │ │
+│  │  (USB)      │    │  driver     │    │ (NavSatFix) │    │  bridge     │ │
+│  └─────────────┘    └─────────────┘    └─────────────┘    └──────┬──────┘ │
+│        ▲                                                          │        │
+│        │ RTCM                                                     ▼        │
+│        │ Corrections                                        ┌───────────┐  │
+│  ┌─────┴─────────┐                                          │  /nmea    │  │
+│  │/ntrip_client/ │◀───────────────────────────────────────  │ (Sentence)│  │
+│  │    rtcm       │         VRS Position Handshake           └─────┬─────┘  │
+│  └───────────────┘                                                │        │
+│        ▲                                                          ▼        │
+│        │                                                   ┌─────────────┐ │
+│  ┌─────┴─────────┐                                         │ntrip_client │ │
+│  │  Iowa DOT     │◀────────────────────────────────────────│  (VRS)      │ │
+│  │  RTN Caster   │         NMEA GPGGA Position             └─────────────┘ │
+│  │ 165.206.203.10│                                                         │
+│  └───────────────┘                                                         │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 6.2 Critical Topic Configuration
+
+| Topic | Publisher | Subscriber | Message Type | QoS Reliability |
+|-------|-----------|------------|--------------|-----------------|
+| `/fix` | ublox_nav_sat_fix_hp | fix_to_nmea, navsat_transform | `sensor_msgs/NavSatFix` | **BEST_EFFORT** |
+| `/nmea` | fix_to_nmea | ntrip_client | `nmea_msgs/Sentence` | RELIABLE |
+| `/ntrip_client/rtcm` | ntrip_client | ublox_dgnss | `rtcm_msgs/Message` | RELIABLE |
+
+### 6.3 The Three RTK Failure Modes (And How to Diagnose)
+
+#### Failure Mode 1: QoS Mismatch on /fix
+**Symptom:** `ros2 topic echo /fix` returns nothing (hangs or times out).
+**Root Cause:** The ublox_dgnss driver publishes with BEST_EFFORT QoS. Default subscribers use RELIABLE.
+**Diagnosis:**
+```bash
+# This will FAIL (hang/timeout):
+ros2 topic echo /fix --once
+
+# This will SUCCEED:
+ros2 topic echo /fix --qos-reliability best_effort --once
+```
+**Fix:** All subscribers to `/fix` must use BEST_EFFORT QoS:
+```python
+from rclpy.qos import QoSProfile, ReliabilityPolicy
+qos = QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT, depth=10)
+self.create_subscription(NavSatFix, '/fix', callback, qos)
+```
+
+#### Failure Mode 2: Message Type Mismatch on /nmea
+**Symptom:** NTRIP client stays IDLE, no RTCM corrections flow.
+**Root Cause:** `fix_to_nmea` publishes wrong message type.
+**Diagnosis:**
+```bash
+ros2 topic info /nmea -v
+# Check that BOTH publisher AND subscriber show: nmea_msgs/msg/Sentence
+# If publisher shows std_msgs/msg/String → MISMATCH
+```
+**Fix:** `fix_to_nmea.py` MUST publish `nmea_msgs/msg/Sentence`, NOT `std_msgs/msg/String`:
+```python
+from nmea_msgs.msg import Sentence
+nmea_msg = Sentence()
+nmea_msg.header.stamp = self.get_clock().now().to_msg()
+nmea_msg.header.frame_id = 'gps_link'
+nmea_msg.sentence = "$GPGGA,..."
+```
+
+#### Failure Mode 3: RTCM Topic Routing Mismatch
+**Symptom:** NTRIP receives RTCM but GPS stays in Standard 3D mode (no RTK).
+**Root Cause:** NTRIP publishes to `/rtcm`, but ublox subscribes to `/ntrip_client/rtcm`.
+**Diagnosis:**
+```bash
+# Check what ntrip_client publishes:
+ros2 node info /ntrip_client | grep Publishers
+# Check what ublox_dgnss subscribes to:
+ros2 node info /ublox_dgnss | grep -A3 Subscribers
+# If they don't match → no RTCM delivery
+```
+**Fix:** Add remapping in `gps.launch.py`:
+```python
+Node(
+    package='ntrip_client',
+    executable='ntrip_ros.py',
+    remappings=[('/rtcm', '/ntrip_client/rtcm')]
+)
+```
+
+### 6.4 Required Package Dependencies
+
+```bash
+# Install these on the Pi:
+sudo apt install -y ros-jazzy-nmea-msgs ros-jazzy-rtcm-msgs ros-jazzy-ntrip-client ros-jazzy-ublox-dgnss
+```
+
+In `rover1_hardware/package.xml`:
+```xml
+<depend>nmea_msgs</depend>
+```
+
+### 6.5 RTK Verification Checklist
+
+Run these commands IN ORDER after every software rebuild:
+
+```bash
+# 1. Source environment
+source /opt/ros/jazzy/setup.bash && source ~/ros2_ws/install/setup.bash
+
+# 2. Verify USB device is claimed by driver (not cdc_acm)
+lsusb | grep u-blox  # Should show device
+sudo lsof /dev/bus/usb/002/*  # Should show "component" process
+
+# 3. Verify raw GPS is working (28+ satellites expected outdoors)
+timeout 5 ros2 topic echo /ubx_nav_pvt --once | grep -E "num_sv|fix_type"
+# Expected: num_sv: 25+, fix_type: 3
+
+# 4. Verify /fix is publishing (MUST use best_effort QoS)
+timeout 5 ros2 topic echo /fix --qos-reliability best_effort --once
+# Expected: latitude/longitude values
+
+# 5. Verify NMEA bridge is working (correct message type)
+ros2 topic info /nmea -v | grep "Topic type"
+# Expected: nmea_msgs/msg/Sentence (BOTH publisher AND subscriber)
+
+timeout 3 ros2 topic echo /nmea --once
+# Expected: $GPGGA sentence
+
+# 6. Verify RTCM is flowing to correct topic
+timeout 5 ros2 topic echo /ntrip_client/rtcm --once
+# Expected: Binary RTCM data (not empty)
+
+# 7. Verify RTK status
+timeout 5 ros2 topic echo /ubx_nav_pvt --once | grep -E "diff_soln|carr_soln"
+# Expected: diff_soln: true, carr_soln.status: 1 (float) or 2 (fixed)
+
+# 8. Verify accuracy improvement
+timeout 5 ros2 topic echo /ubx_nav_pvt --once | grep h_acc
+# Expected: h_acc < 100 (sub-meter), ideally < 50 (RTK float) or < 20 (RTK fixed)
+```
+
+### 6.6 NTRIP Caster Configuration (Iowa DOT RTN)
+
+```yaml
+Host: 165.206.203.10
+Port: 10000
+Mountpoint: RTCM3_IMAX
+Authentication: Basic Auth (username/password in .env file)
+Protocol: NTRIP v1 with VRS
+```
+
+**VRS Requirement:** This is a Virtual Reference Station network. The caster REQUIRES the rover's position (NMEA GPGGA) to generate corrections. Without the `fix_to_nmea` bridge, NTRIP will connect but send no data.
+
+### 6.7 RTK Status Codes Reference
+
+| Field | Value | Meaning |
+|-------|-------|---------|
+| `gps_fix.fix_type` | 0 | No fix |
+| `gps_fix.fix_type` | 2 | 2D fix |
+| `gps_fix.fix_type` | 3 | 3D fix |
+| `diff_soln` | false | No differential corrections |
+| `diff_soln` | true | RTCM corrections being applied |
+| `carr_soln.status` | 0 | No carrier solution |
+| `carr_soln.status` | 1 | **RTK Float** (~5-50cm accuracy) |
+| `carr_soln.status` | 2 | **RTK Fixed** (~1-2cm accuracy) |
+
+### 6.8 Expected Accuracy by Mode
+
+| Mode | Horizontal Accuracy (h_acc) | Typical Value |
+|------|----------------------------|---------------|
+| Standard 3D Fix | 1000-5000 mm | ~1.2 meters |
+| RTK Float | 20-100 mm | ~5 cm |
+| RTK Fixed | 10-30 mm | ~2 cm |
+
+### 6.9 Troubleshooting Decision Tree
+
+```
+GPS not working?
+├── Is USB device visible? (lsusb | grep u-blox)
+│   └── NO → Check USB cable, power, physical connection
+│   └── YES → Continue
+├── Is /ubx_nav_pvt publishing? (ros2 topic echo /ubx_nav_pvt --once)
+│   └── NO → Driver issue. Check journalctl -u rover1.service
+│   └── YES → Continue
+├── Is /fix publishing? (ros2 topic echo /fix --qos-reliability best_effort --once)
+│   └── NO → QoS mismatch or ublox_nav_sat_fix_hp not running
+│   └── YES → Continue
+├── Is /nmea publishing correct type? (ros2 topic info /nmea -v)
+│   └── Wrong type → Fix fix_to_nmea.py to use nmea_msgs/Sentence
+│   └── Correct type → Continue
+├── Is /ntrip_client/rtcm receiving data? (ros2 topic echo /ntrip_client/rtcm --once)
+│   └── NO → Check NTRIP credentials, network, topic remapping
+│   └── YES → Continue
+├── Is diff_soln: true?
+│   └── NO → RTCM not reaching GPS. Check topic routing.
+│   └── YES → RTK is working! Check carr_soln.status for float/fixed.
+```
+
+---
+
+### 4.9 GPS/RTK "Silent Fix" Debugging Session (Dec 24, 2025)
+**Status:** ROOT CAUSE IDENTIFIED & FIXED - GPS was working the whole time!
+
+**Initial Symptoms:**
+1. `ros2 topic echo /fix` returned nothing (appeared silent).
+2. Monitor dashboard hung when checking GPS Hz rates.
+3. NTRIP client remained IDLE (no RTCM corrections flowing).
+4. System appeared to have no GPS lock despite hardware being confirmed.
+
+**Diagnostic Process:**
+
+**Step 1: Hardware Layer Verification**
+```bash
+lsusb | grep -i u-blox
+# Result: Bus 002 Device 002: ID 1546:01a9 U-Blox AG u-blox GNSS receiver ✓
+
+sudo dmesg | grep cdc_acm
+# Result: "probe of 2-1:1.0 failed with error -16" (EBUSY)
+# Interpretation: cdc_acm tried but FAILED - something else has the device ✓
+
+sudo lsof /dev/bus/usb/002/002
+# Result: component PID 62728 has the device
+# Interpretation: ublox_dgnss driver successfully claimed USB via libusb ✓
+```
+
+**Step 2: ROS Topic Investigation**
+```bash
+ros2 node list | grep ublox
+# Result: /ublox_dgnss, /ublox_nav_sat_fix_hp both running ✓
+
+ros2 topic list | grep ubx
+# Result: 30+ ubx_ topics exist ✓
+
+timeout 3 ros2 topic echo /ubx_nav_pvt --once
+# Result: FULL GPS DATA! 28 satellites, 3D fix, valid coordinates ✓
+```
+
+**Critical Discovery:** The GPS was fully operational. The `/ubx_nav_pvt` topic showed:
+- `gps_fix.fix_type: 3` (3D fix)
+- `gnss_fix_ok: true`
+- `num_sv: 28` (28 satellites!)
+- Valid Iowa coordinates (41.59°N, -90.49°W)
+- Horizontal accuracy: 1.2 meters
+
+**Root Cause #1: QoS Mismatch on /fix Topic**
+```bash
+timeout 3 ros2 topic echo /fix --once
+# Result: SILENT (timeout)
+
+timeout 3 ros2 topic echo /fix --qos-reliability best_effort --once
+# Result: FULL DATA! NavSatFix with lat/lon/alt
+```
+
+The `ublox_dgnss` driver publishes `/fix` with **BEST_EFFORT** QoS (SensorData profile).
+Default `ros2 topic echo` uses **RELIABLE** QoS. These are incompatible in ROS 2 DDS.
+
+**Root Cause #2: Message Type Mismatch on /nmea Topic**
+```bash
+ros2 topic info /nmea -v
+# Publisher: fix_to_nmea → std_msgs/msg/String
+# Subscriber: ntrip_client → nmea_msgs/msg/Sentence
+```
+
+The NTRIP client expects `nmea_msgs/msg/Sentence` but `fix_to_nmea` was publishing `std_msgs/msg/String`.
+These types are incompatible - the messages were never delivered.
+
+**The Fix:**
+
+1. **fix_to_nmea.py v2.0:**
+   - Changed publisher from `std_msgs/msg/String` to `nmea_msgs/msg/Sentence`
+   - Subscriber QoS set to BEST_EFFORT (matches ublox_dgnss)
+   - Publisher QoS set to RELIABLE (matches ntrip_client)
+   - Added proper header with timestamp and frame_id
+
+2. **rover_monitor.sh v2.7:**
+   - Added `--qos-reliability best_effort` to `/fix` topic commands
+   - Increased timeouts from 0.8s to 1.5s for Pi 5 performance
+   - Fixed typo: "HEARTBEETS" → "HEARTBEATS"
+
+3. **package.xml:**
+   - Added `nmea_msgs` dependency to rover1_hardware
+
+**Lessons Learned:**
+- **QoS Matters:** Always check publisher QoS before assuming a topic is dead.
+- **Type Safety:** ROS 2 message types must match exactly between publisher/subscriber.
+- **Debug Command:** `ros2 topic info /topic_name -v` shows QoS and type for both ends.
+- **Diagnostic Sequence:**
+  1. Check hardware layer first (lsusb, dmesg, lsof)
+  2. Check node existence (ros2 node list)
+  3. Check raw driver topics before processed topics
+  4. Always specify QoS when echoing sensor topics
+
+---
+
+### 4.10 GNSS Health Monitor Implementation (Dec 26, 2025)
+**Status:** COMPLETE - Professional Foxglove Dashboard Integration
+
+**Problem:** Monitoring GPS/RTK status required checking 5+ different topics with complex QoS requirements, making field diagnostics cumbersome and error-prone.
+
+**Solution:** Implemented a dedicated `gnss_health_monitor` ROS 2 package that aggregates all GPS/RTK/NTRIP data into a single clean topic optimized for Foxglove visualization.
+
+**Key Features:**
+1. **Single Topic Output:** `/gnss/health` - aggregates all GPS status into one message
+2. **Robust Fallback Logic:** Gracefully handles missing topics and varying message types
+3. **Real-time Statistics:** Rolling 5-second windows for RTCM rates and correction age
+4. **Intelligent RTK State Detection:** Heuristic-based state determination (NO_FIX, DGPS, FLOAT, FIXED)
+5. **Enhanced Accuracy Metrics:** Proper covariance matrix interpretation for horizontal/vertical accuracy
+6. **Foxglove-Optimized:** Clean numeric fields for plots, string states for displays
+
+**Implementation Highlights:**
+
+**Package Structure:**
+```
+gnss_health_monitor/
+├── msg/GnssHealth.msg              # Custom message type
+├── gnss_health_monitor/
+│   └── gnss_health_monitor_node.py # Main aggregation node
+├── launch/gnss_health_monitor.launch.py
+├── setup.py, package.xml           # Standard ROS packaging
+└── README.md                       # Usage documentation
+```
+
+**Message Format:**
+- **Satellite Data:** `sat_visible`, `sat_used` (from `/ubx_nav_sat`)
+- **NTRIP Status:** `ntrip_connected`, `rtcm_msgs_per_sec`, `corr_age_s`
+- **RTK State:** `rtk_state` string, `h_acc_m`, `v_acc_m`
+- **Enhanced Fields:** `last_update_time`, `dgps_id`, `rtcm_msgs_total`
+
+**Smart Fallback Architecture:**
+- **NavSat Topics:** `/gps/filtered` → `/fix` (with BEST_EFFORT QoS handling)
+- **RTCM Topics:** `/ntrip_client/rtcm` → `/rtcm` (multiple message type support)
+- **Message Types:** `rtcm_msgs/Message` → `std_msgs/ByteMultiArray` (automatic detection)
+
+**Benefits for Field Operations:**
+- **Foxglove Integration:** Single topic eliminates need for 5+ panels
+- **Historical Analysis:** Clean time-series data for RTK acquisition tracking  
+- **Rate Monitoring:** Real-time RTCM throughput for NTRIP debugging
+- **Accuracy Trends:** Watch precision improve as RTK locks engage
+- **No More Terminal:** Replaces flashing `rover_monitor.sh` with professional UI
+
+**Usage:**
+```bash
+# Build and launch
+colcon build --packages-select gnss_health_monitor
+ros2 launch gnss_health_monitor gnss_health_monitor.launch.py
+
+# View aggregated status
+ros2 topic echo /gnss/health
+```
+
+**Foxglove Setup:**
+1. Connect to rover at `ws://[IP]:8765`
+2. Add `/gnss/health` panels:
+   - **Raw Messages:** Complete status overview
+   - **Plot:** `h_acc_m`, `sat_used`, `rtcm_msgs_per_sec` time series
+   - **State Transitions:** `rtk_state` changes over time
+   - **Table:** Live numeric dashboard
+
+**Engineering Impact:**
+This implementation represents a significant quality-of-life improvement for rover operations. It transforms complex multi-topic GPS debugging into a streamlined, professional monitoring experience suitable for field demonstrations and development work.
+
+### 4.11 Foxglove Bridge Custom Message Integration (Dec 26, 2025)
+**Status:** COMPLETE - Critical Integration Pattern Documented
+
+**Problem:** After implementing custom ROS 2 message types (like `GnssHealth.msg`), the Foxglove bridge could not discover or advertise the custom topics, making them invisible in Foxglove Studio despite successful ROS publication.
+
+**Root Cause:** The Foxglove bridge was started before the workspace containing custom message definitions was sourced, causing a **message type visibility gap**. Custom message types require the bridge to be launched from a properly sourced environment.
+
+**Solution Pattern (Critical for Future Custom Messages):**
+
+**Diagnostic Commands:**
+```bash
+# 1. Verify topic exists in ROS
+ros2 topic list | grep <your_topic>
+ros2 topic echo <your_topic> --once
+
+# 2. Check topic details and message type
+ros2 topic info <your_topic> -v
+```
+
+**Bridge Restart Procedure:**
+```bash
+# 3. Kill existing bridge (may be in different environment)
+pkill -f foxglove_bridge
+
+# 4. Source workspace properly (CRITICAL ORDER)
+source /opt/ros/jazzy/setup.bash  
+source ~/ros2_ws/install/setup.bash
+
+# 5. Restart bridge with custom message visibility
+ros2 run foxglove_bridge foxglove_bridge --port 8765
+```
+
+**Verification:**
+- Bridge logs should show: `Advertising new channel X for topic "<your_topic>"`
+- Topic appears in Foxglove topic list after reconnection
+
+**Key Insights:**
+- **Environment Dependency:** Custom messages are invisible to improperly sourced bridges
+- **Not a Code Issue:** Publishing works in ROS; visibility to Foxglove requires bridge restart
+- **Sourcing Order:** ROS base environment first, then workspace with custom messages
+- **Bridge State:** Running bridges retain their initial message type knowledge
+
+**Prevention for Future Development:**
+1. Always source workspace before starting Foxglove bridge when using custom messages
+2. When adding new packages with custom messages, restart the bridge
+3. Check bridge logs for "Advertising" messages to confirm topic visibility
+4. Document message sourcing requirements in package README files
+
+**Applied to:** GNSS Health Monitor (`gnss_health_monitor/msg/GnssHealth`) - successfully resolved topic visibility and enabled professional GPS/RTK dashboard integration.
+
+### 4.12 7" Touchscreen Kiosk Mode (Dec 29, 2025)
+**Status:** VERIFIED WORKING - Shell profile approach after systemd fix.
+
+**Hardware Added:**
+- **Display:** Hosyond 7" IPS Touchscreen (1024x600 resolution)
+- **Touch Input:** QDTECH MPI7002 controller (detected as USB HID device)
+- **Connection:** USB for power/touch, HDMI for video signal
+- **Purpose:** On-rover human interaction without laptop/phone
+
+**Software Stack:**
+- **Compositor:** Cage (lightweight Wayland kiosk compositor)
+- **Browser:** Chromium (kiosk mode with all dialogs/updates disabled)
+- **Init System:** Shell profile launch (NOT systemd - see lesson learned below)
+
+**Implementation Files:**
+| File | Purpose |
+|------|---------|
+| `scripts/kiosk_setup.sh` | One-time installer (Cage, Chromium, autologin, .bash_profile) |
+| `scripts/kiosk_disable.sh` | Helper to disable kiosk for debugging |
+| `~/.bash_profile` | Launches cage on tty1 login (created by setup script) |
+
+**Kiosk Architecture (Shell Profile Approach):**
+```
+[Boot] ──▶ [getty@tty1 autologin] ──▶ [.bash_profile]
+                                            │
+                                            ▼
+                                  [Wait for rover1.service]
+                                            │
+                                            ▼
+                                    [exec cage chromium]
+                                            │
+                                            ▼
+                                 [http://localhost:8080]
+```
+
+**Critical Lesson Learned - Why Systemd Doesn't Work:**
+Initial implementation used `kiosk.service` (systemd) to launch cage, but this failed with:
+- `Could not open tty0 to update VT: Permission denied`
+- `Timeout waiting session to become active`
+- `Unable to create the wlroots backend`
+
+**Root Cause:** Wayland compositors (cage, sway, etc.) require VT/seat access that only exists within a login session. Systemd services run in a separate context without seat access. The `seatd` daemon could theoretically help, but the simpler fix is launching from the shell profile.
+
+**Solution:** Launch cage from `~/.bash_profile` on tty1 login:
+```bash
+# In ~/.bash_profile (added by kiosk_setup.sh)
+if [ "$(tty)" = "/dev/tty1" ] && [ -z "$SSH_CONNECTION" ]; then
+    systemctl is-active --wait rover1.service 2>/dev/null || true
+    sleep 3
+    exec cage ~/.config/rover-kiosk/launch-kiosk.sh
+fi
+```
+
+This works because:
+1. The shell runs IN the tty1 login session (has seat0 access)
+2. cage inherits proper VT and seat permissions
+3. SSH sessions skip kiosk (checked via `$SSH_CONNECTION` and `tty`)
+4. `exec` replaces shell with cage, so logout = cage exit = login prompt
+
+**Chromium Flags (Kiosk Hardening):**
+```
+--kiosk                          # Fullscreen, no UI chrome
+--noerrdialogs                   # Suppress error dialogs
+--disable-infobars               # No "Chrome is being controlled" bar
+--disable-translate              # No translation prompts
+--no-first-run                   # Skip first-run wizard
+--disable-features=TranslateUI   # Extra translation suppression
+--check-for-update-interval=31536000  # Disable update checks (1 year)
+--disable-session-crashed-bubble # No "restore session" prompts
+--disable-sync                   # No Google account sync
+--disable-extensions             # No extension popups
+--autoplay-policy=no-user-gesture-required  # Allow video autoplay
+```
+
+**Environment Variables (Wayland/Cage):**
+```bash
+WLR_LIBINPUT_NO_DEVICES=1   # Allow boot without keyboard
+XDG_RUNTIME_DIR=/run/user/1000
+WLR_BACKENDS=drm
+WLR_DRM_DEVICES=/dev/dri/card1
+```
+
+**Management Commands:**
+```bash
+# Start/stop kiosk
+sudo systemctl start kiosk
+sudo systemctl stop kiosk
+
+# Check status
+sudo systemctl status kiosk
+
+# View logs
+journalctl -u kiosk -f
+
+# Enable/disable on boot
+sudo systemctl enable kiosk
+sudo systemctl disable kiosk
+
+# Full disable (remove autologin too)
+./scripts/kiosk_disable.sh
+```
+
+**Troubleshooting:**
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Black screen | Dashboard not ready | Check rover1.service status |
+| No touch | Wrong DRM device | Edit WLR_DRM_DEVICES in environment |
+| Chromium crash | Display driver issue | Check `journalctl -u kiosk` |
+| Can't SSH | Not a kiosk issue | Network still works, SSH in normally |
+
+**Dependencies on rover1.service:**
+- Kiosk binds to rover1.service via `BindsTo=` directive
+- If rover1.service stops/restarts, kiosk automatically stops
+- Dashboard must be running on :8080 before Chromium loads
+
+**Touch Calibration (if needed):**
+```bash
+# Check touch input device
+libinput list-devices | grep -A5 "QDTECH"
+
+# Test touch events
+libinput debug-events --device /dev/input/eventX
+```
+
+### 4.12.1 Kiosk Mode Suspended - Monitor Mode (Dec 30, 2025)
+**Status:** Kiosk disabled, running htop on 7" display instead.
+
+**Problem:** Running Chromium in kiosk mode consumed significant CPU on the Pi 5, which was already running:
+- Full ROS 2 stack (rover base, RTAB-Map SLAM, Nav2, patrol system)
+- Web dashboard backend (WebSocket + HTTP servers)
+- Camera processing pipeline
+
+Additionally, during the active build phase, **Claude Rover (Claude Code CLI) runs directly on the Pi** for hardware testing and debugging. This requires CPU headroom that Chromium was consuming.
+
+**Solution - Monitor Mode:**
+- Disabled kiosk service: `sudo systemctl disable kiosk`
+- Created `scripts/monitor_setup.sh` to display htop on the 7" screen
+- htop provides system monitoring with near-zero CPU overhead
+- Dashboard accessed from Mac browser instead (`http://<rover-ip>:8080`)
+
+**Benefits:**
+- Frees ~10-20% CPU previously used by Chromium
+- Allows Claude Rover to run comfortably on the Pi during testing sessions
+- htop shows thermal throttling, CPU usage, memory - useful for debugging
+- Dashboard still fully functional from external browser
+
+**Commands:**
+```bash
+# Enable monitor mode (htop on display)
+./scripts/monitor_setup.sh
+
+# Disable monitor mode, re-enable kiosk
+./scripts/kiosk_setup.sh
+```
+
+**Future Plan:**
+Once codebase matures and continuous Claude Rover sessions are no longer needed, may revisit kiosk mode. Potential optimizations:
+- Reduce dashboard refresh rate
+- Use lighter browser (e.g., surf, netsurf)
+- Offload dashboard rendering to a separate device
+
+### 4.14 Phase 6 Indoor Autonomy Progress (Dec 29, 2025)
+**Status:** RTAB-Map + Nav2 WORKING after DDS middleware debugging
+
+**RTAB-Map (Visual SLAM) - WORKING:**
+- Installation: `ros-jazzy-rtabmap-ros` ✅
+- Launch file: `rtabmap.launch.py` ✅
+- TF bridge fix: `camera_optical_frame` → `ascamera_hp60c_ascamera_0` ✅
+- Visual odometry: 200-220 features tracked, std dev 0.001-0.005m
+- Map output: `/map` OccupancyGrid (5cm resolution, ~9m × 7.5m tested)
+
+**Nav2 (Navigation Stack) - WORKING:**
+- Installation: `ros-jazzy-navigation2` ✅
+- Config: `nav2_params.yaml` with Regulated Pure Pursuit ✅
+- Launch: `nav2.launch.py` created ✅
+- All lifecycle nodes active and bonded:
+  - controller_server ✅
+  - planner_server ✅
+  - behavior_server ✅
+  - waypoint_follower ✅
+  - velocity_smoother ✅
+  - lifecycle_manager_navigation ✅
+- Global costmap receiving map from RTAB-Map ✅
+
+**Files Created:**
+| File | Purpose |
+|------|---------|
+| `rover1_bringup/launch/rtabmap.launch.py` | RTAB-Map visual SLAM |
+| `rover1_bringup/launch/nav2.launch.py` | Nav2 stack (bt_navigator disabled) |
+| `rover1_bringup/config/nav2_params.yaml` | Nav2 parameters |
+| `rover1_bringup/config/fastrtps_no_shm.xml` | FastRTPS config (SHM disabled) |
+| `scripts/nav_test.py` | Simple navigation test |
+| `.claude/CLAUDE.md` | Instructions for Claude Rover (tmux, roles) |
+
+### 4.15 DDS Middleware Debugging - The Pi 5 SHM Problem (Dec 29, 2025)
+**Status:** RESOLVED - FastRTPS with shared memory disabled is the solution
+
+**Problem Summary:**
+Nav2 lifecycle manager would hang waiting for services. Nodes failed during configuration phase with various cryptic errors. This blocked all Nav2 progress for hours.
+
+**Root Cause Analysis:**
+
+**Issue #1: FastRTPS Shared Memory Transport Failure**
+```
+[RTPS_TRANSPORT_SHM Error] Failed init_port fastrtps_port7002: open_and_lock_file failed
+```
+- FastRTPS uses shared memory (`/dev/shm/fastrtps*`) for inter-process communication
+- After crashes or ungraceful shutdowns, stale lock files remain in `/dev/shm/`
+- New nodes can't acquire SHM ports → DDS discovery fails → services never advertise
+- 195+ stale files found in `/dev/shm/` during diagnosis
+
+**Issue #2: CycloneDDS Participant Limits (Failed Alternative)**
+```
+Failed to find a free participant index for domain 0
+```
+- Tried switching to CycloneDDS to avoid FastRTPS SHM issues
+- CycloneDDS 0.10.5 has a hard limit of ~120 participants per domain
+- Rover stack runs 35+ nodes → limit exceeded when adding RTAB-Map + Nav2
+- Config options (`MaxParticipants`, `SquashParticipants`) don't exist in v0.10.5 schema
+- CycloneDDS was a dead end for this use case
+
+**The Solution: FastRTPS with Shared Memory Disabled**
+
+Created `rover1_bringup/config/fastrtps_no_shm.xml`:
+```xml
+<?xml version="1.0" encoding="UTF-8" ?>
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+    <transport_descriptors>
+        <transport_descriptor>
+            <transport_id>udp_transport</transport_id>
+            <type>UDPv4</type>
+        </transport_descriptor>
+    </transport_descriptors>
+    <participant profile_name="participant_no_shm" is_default_profile="true">
+        <rtps>
+            <useBuiltinTransports>false</useBuiltinTransports>
+            <userTransports>
+                <transport_id>udp_transport</transport_id>
+            </userTransports>
+        </rtps>
+    </participant>
+</profiles>
+```
+
+All launch files set:
+```python
+SetEnvironmentVariable('FASTRTPS_DEFAULT_PROFILES_FILE', fastrtps_config)
+```
+
+**Why This Works:**
+1. FastRTPS is the default RMW (no participant limits like CycloneDDS)
+2. UDP loopback transport is reliable and doesn't leave stale state
+3. Avoids the SHM lock file problem entirely
+4. All nodes communicate via UDP on localhost
+
+**Trade-offs of Disabling SHM:**
+
+| Aspect | With SHM | Without SHM (UDP) |
+|--------|----------|-------------------|
+| Latency | ~0ms (zero-copy) | +1-5ms per large message |
+| Throughput | Optimal for images/pointclouds | Slightly reduced |
+| CPU Usage | Lower (no serialization) | Slightly higher |
+| Reliability | Fails after crashes | Always works |
+| Lock Files | Yes (stale after crash) | None |
+
+**Practical Impact for Rover:**
+- Camera images (~1-2MB) now serialize through UDP loopback
+- Added latency is negligible for rover speeds (walking pace)
+- Pi 5 has CPU headroom (4 cores, not CPU-bound)
+- **Most importantly: It actually works vs. crashing constantly**
+
+**Recovery Procedure (if issues recur):**
+```bash
+# Clean stale FastRTPS files
+sudo rm -f /dev/shm/fastrtps* /dev/shm/sem.fastrtps*
+
+# Rebuild
+cd ~/ros2_ws && colcon build --symlink-install && source install/setup.bash
+```
+
+**Diagnostic Commands:**
+```bash
+# Check for stale SHM files
+ls -la /dev/shm/ | grep -E "fastrtps|cyclone"
+
+# Check RMW implementation
+ros2 doctor --report 2>&1 | grep -i rmw
+
+# Verify node count
+ros2 node list | wc -l
+
+# Check Nav2 lifecycle status
+ros2 lifecycle get /controller_server
+```
+
+**Lessons Learned:**
+1. **DDS middleware matters:** Default FastRTPS + SHM is fragile on Pi 5
+2. **CycloneDDS isn't always better:** Participant limits can be worse than SHM issues
+3. **UDP loopback is underrated:** Reliable, simple, "good enough" for most robotics
+4. **Clean slate debugging:** When stuck, `rm -f /dev/shm/*` and restart fresh
+5. **Document what works:** This bug took hours to diagnose; now it's a 5-minute fix
+
+### 4.16 CycloneDDS + Tailscale Multicast Conflict (Dec 30, 2025)
+**Status:** RESOLVED - Tailscale disabled, CycloneDDS interface pinning added for future protection
+
+**Problem Summary:**
+Teleop was jerky and unreliable despite CPU usage being normal (~30-50%). Commands would stutter, and the rover would move in unpredictable bursts rather than smooth motion.
+
+**Symptoms Observed:**
+| Check | Result |
+|-------|--------|
+| /cmd_vel rate | 34-36 Hz (normal when discoverable) |
+| /joy rate | 15.5 Hz (low, should be 20+) |
+| I2C devices | Working (0x34 motors, 0x6A IMU) |
+| Bluetooth | Connected |
+| CPU usage | ~35% (not overloaded) |
+| DDS discovery | **Intermittent failures** |
+
+**Root Cause Analysis:**
+
+CycloneDDS was joining DDS multicast groups on **both** network interfaces:
+```
+wlan0:      49 members in 239.255.0.1 (DDS multicast)
+tailscale0: 33 members in 239.255.0.1 (DDS multicast) ← PROBLEM!
+```
+
+**Why This Caused Jerkiness:**
+1. DDS uses multicast (239.255.0.1) for node discovery and topic advertisement
+2. Without explicit interface binding, CycloneDDS joins multicast on ALL interfaces
+3. Tailscale creates a `tailscale0` interface for its VPN tunnel
+4. DDS traffic was being **split** between wlan0 and tailscale0
+5. Some messages went to wlan0, others to tailscale0
+6. Nodes couldn't reliably discover each other → intermittent message drops
+7. Dropped /cmd_vel messages → jerky, stuttering motion
+
+**Diagnostic Commands Used:**
+```bash
+# Check multicast group membership - THE KEY DIAGNOSTIC
+netstat -gn | grep 239.255
+
+# Check DDS participant counts
+ros2 node list | wc -l
+
+# Check topic rates
+ros2 topic hz /cmd_vel
+ros2 topic hz /joy
+```
+
+**The Fix (Two-Part Solution):**
+
+**Part 1: Immediate Fix - Disable Tailscale**
+```bash
+sudo systemctl stop tailscaled
+sudo systemctl disable tailscaled
+sudo systemctl restart rover1.service
+```
+
+**Part 2: Permanent Protection - CycloneDDS Interface Pinning**
+
+Created `rover1_bringup/config/cyclonedds_wlan0.xml`:
+```xml
+<?xml version="1.0" encoding="UTF-8" ?>
+<CycloneDDS xmlns="https://cdds.io/config">
+    <Domain>
+        <General>
+            <Interfaces>
+                <NetworkInterface name="wlan0" priority="default" multicast="true" />
+            </Interfaces>
+        </General>
+        <Discovery>
+            <MaxAutoParticipantIndex>120</MaxAutoParticipantIndex>
+        </Discovery>
+        <Tracing>
+            <Verbosity>warning</Verbosity>
+        </Tracing>
+    </Domain>
+</CycloneDDS>
+```
+
+Added to `.env`:
+```bash
+CYCLONEDDS_URI=file://$HOME/ros2_ws/src/rover1/rover1_bringup/config/cyclonedds_wlan0.xml
+RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+```
+
+**Verification After Fix:**
+```bash
+# Should show ONLY wlan0 now
+netstat -gn | grep 239.255
+# Expected: Only wlan0 entries, no tailscale0
+
+# Teleop should be smooth
+ros2 topic hz /cmd_vel  # Expect 50+ Hz, stable
+```
+
+**Lessons Learned:**
+
+1. **VPN interfaces cause DDS chaos:** Tailscale, OpenVPN, WireGuard all create virtual interfaces. DDS will try to use them unless explicitly told not to.
+
+2. **Always pin CycloneDDS to a specific interface:** Even if not using a VPN today, adding one later will break ROS 2 in mysterious ways.
+
+3. **Multicast group membership is the key diagnostic:** `netstat -gn | grep 239.255` immediately reveals the interface split problem.
+
+4. **Jerkiness ≠ CPU overload:** When teleop is jerky but CPU is fine, suspect network/DDS issues first.
+
+5. **CycloneDDS config syntax matters:**
+   - `<MaxParticipants>` under `<General>` = INVALID (will error)
+   - `<MaxAutoParticipantIndex>` under `<Discovery>` = CORRECT
+
+**Configuration Files Changed:**
+| File | Change |
+|------|--------|
+| `rover1_bringup/config/cyclonedds_wlan0.xml` | Created - pins DDS to wlan0 |
+| `.env` | Added CYCLONEDDS_URI and RMW_IMPLEMENTATION |
+
+**Future Pitfall Avoidance:**
+
+If adding any VPN or network overlay in the future:
+1. Check `netstat -gn | grep 239.255` for multicast split
+2. Ensure CYCLONEDDS_URI is set in environment
+3. Verify only wlan0 (or eth0) appears in multicast groups
+4. Test teleop smoothness immediately after network changes
+
+**Related Issues:**
+- Section 4.15 documents FastRTPS SHM issues (different DDS problem, same symptom category)
+- Both issues manifest as "jerky teleop" but have completely different root causes
+
+---
+
+### 4.13 Camera Module Integration & Perception Planning (Dec 27, 2025)
+**Status:** PLANNING COMPLETE - Moving to Phase 5: Perception
+
+**Hardware Specs (Nuwa-HP60C):**
+- **Mounting Height:** 33cm from ground to bottom of housing.
+- **Pitch Angle:** -7° (downward tilt).
+- **Driver Reference:** `Camera_Specs/ascam_ros2_ws/src.zip` (~135MB).
+
+**Implementation Strategy:**
+1. **Perception Foundation:** Deploy AsCam driver workspace and update URDF with precise camera transforms.
+2. **Bandwidth Strategy:** Use `image_transport` compression (JPEG/PNG) to maintain low latency over wireless links.
+3. **Hybrid Logic:** Developing a "Vision Shield" that runs in parallel with Nav2 GPS waypoints.
+4. **Safety Interface:** Monitoring camera node heartbeats in `rover_monitor.sh` v3.0.
+
+**Next Steps:** Unpack SDK and verify camera stream frequency (target 15-20 Hz for autonomous navigation).
+
+---
+
+### 4.17 Project Architecture Overview (Jan 1, 2026)
+**Status:** DOCUMENTED - Full codebase architecture summary for reference
+
+**Purpose:** Comprehensive overview of the rover1 project architecture, package structure, and component interactions for onboarding and reference.
+
+---
+
+#### Package Structure
+
+| Package | Purpose |
+|---------|---------|
+| `rover1_bringup` | Launch files & configs (rover, RTAB-Map, GPS, patrol) |
+| `rover1_hardware` | Drivers: motors (Hiwonder), IMU (BerryIMU), teleop (Stadia), battery, GNSS bridge |
+| `rover1_patrol` | Teach & repeat waypoint system (record, playback, GPS/odom modes) |
+| `rover1_vision` | AI-based vision: Dog follower using Hailo-8L + YOLOv8s |
+| `rover1_description` | URDF robot model definition |
+| `gnss_health_monitor` | GPS/RTK/NTRIP status aggregation for dashboard |
+| `gnss_web_dashboard` | Flask/WebSocket web interface (camera, controls, status) |
+
+---
+
+#### Hardware Integration Summary
+
+| Component | Interface | Driver/Node |
+|-----------|-----------|-------------|
+| Motors (Hiwonder HAT) | I2C @ 0x34 | `hiwonder_driver.py` |
+| IMU (BerryIMU v3) | I2C @ 0x6A | `berry_imu_driver.py` |
+| GNSS (u-blox ZED-F9R) | USB | `ublox_dgnss` + `fix_to_nmea.py` |
+| Camera (Nuwa HP60C) | USB (UVC) | `ascamera` ROS 2 driver |
+| AI Accelerator (Hailo-8L) | PCIe | `hailo_platform` Python SDK |
+| Controller (Stadia) | Bluetooth | `joy_node` + `stadia_teleop.py` |
+| Display (7" Hosyond) | HDMI + USB | htop (kiosk disabled for CPU) |
+
+---
+
+#### Key Architecture Decisions
+
+1. **Hybrid Patrol Recording:** Motion detection from wheel odometry (drift-immune), position from SLAM TF (globally consistent)
+2. **FastRTPS with SHM Disabled:** Avoids Pi 5 stale lock file issues in `/dev/shm/`
+3. **Custom Motor Protocol:** Direct I2C register addressing (registers 51-54) vs broadcast
+4. **Two-Phase Joystick Activation:** Prevents Stadia controller axis drift on startup
+5. **Multi-Threaded Dashboard:** ReentrantCallbackGroup + WebSocket for real-time updates
+6. **CycloneDDS Interface Pinning:** Prevents multicast split with VPN interfaces
+
+---
+
+#### Data Flow Architecture
+
+```
+INPUT LAYER:
+  Stadia Controller → /joy → stadia_teleop → /cmd_vel
+  Dog Follower (Hailo) → /cmd_vel (when enabled)
+  Patrol System → simple_waypoint_follower → /cmd_vel
+
+MOTION CONTROL:
+  /cmd_vel → mecanum_kinematics → /wheel_speeds_raw → hiwonder_driver → Motors
+
+FEEDBACK LOOP:
+  Encoders → /wheel_encoders → mecanum_kinematics → /odom/wheel_odom
+  IMU → /imu/data → EKF fusion
+  Wheel Odom + IMU → robot_localization (EKF) → /odometry/local → TF tree
+
+PERCEPTION:
+  Camera → /ascamera/.../rgb0/image → RTAB-Map (SLAM) → /map
+  Camera → Hailo (YOLOv8s) → dog_follower → /cmd_vel
+
+LOCALIZATION:
+  GPS → /fix → navsat_transform → /odometry/gps
+  RTAB-Map → /odom (visual odometry) → EKF global
+
+MONITORING:
+  All status → gnss_health_monitor → /gnss/health
+  All status → web_dashboard → http://rover1.local:8080
+  ROS topics → foxglove_bridge → ws://rover1.local:8765
+```
+
+---
+
+#### Current System Status (Jan 1, 2026)
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Base Hardware | ✅ WORKING | Motors, IMU, encoders, battery |
+| Teleop (Stadia) | ✅ WORKING | Bluetooth, dead-man switch |
+| RTAB-Map (SLAM) | ✅ WORKING | Visual odometry, mapping |
+| Patrol Lite | ✅ WORKING | Odometry-based waypoint following |
+| GPS/RTK | ✅ WORKING | Iowa RTN NTRIP, RTK float/fixed |
+| Dog Follower | ✅ WORKING | Hailo-8L + YOLOv8s |
+| Web Dashboard | ✅ WORKING | Access from external browser |
+| Nav2 | ⏸️ PAUSED | Crashes during lifecycle bringup on Pi 5/Jazzy |
+| Kiosk Mode | ❌ DISABLED | CPU overhead; using htop on display |
+
+---
+
+### 4.18 RTK Multi-Constellation Debug Session (Jan 4, 2026)
+**Status:** RESOLVED - RTK FLOAT achieved after mountpoint change
+
+**Problem:** RTK status stuck at DGPS (~4-5m accuracy) despite NTRIP showing connected and RTCM messages flowing at 3+ msg/s. The Davenport, IA base station (IADA) is only ~10km from Bettendorf location - well within RTK range.
+
+**Root Cause Analysis:**
+1. **Wrong NTRIP mountpoint**: Was using `RTCM3_IMAX` which only provides GPS+GLONASS corrections (2 constellations)
+2. **F9R underutilized**: The ZED-F9R supports 4 constellations but was only receiving 2
+3. **Ruled out**: Initially suspected RTCM wasn't being forwarded to F9R device. DEBUG logging confirmed `ublox_dgnss` WAS subscribing to `/ntrip_client/rtcm` and writing to USB correctly.
+
+**Solution:**
+Changed NTRIP mountpoint from `RTCM3_IMAX` to `MSM_IMAX`:
+- File: `rover1_bringup/launch/gps.launch.py` line 16
+- MSM_IMAX provides GPS + GLONASS + Galileo + BeiDou (4 constellations)
+- Same Iowa DOT NTRIP server (165.206.203.10:10000)
+
+**Results:**
+| Metric      | Before (RTCM3_IMAX) | After (MSM_IMAX) |
+|-------------|---------------------|------------------|
+| RTK Status  | DGPS                | **FLOAT**        |
+| H_ACC       | 4-5 meters          | **0.20 meters**  |
+| Satellites  | 12-16               | 16-18            |
+| RTCM Rate   | 3 msg/s             | 5-6 msg/s        |
+
+**Debug Commands Used:**
+```bash
+# Enable DEBUG logging on ublox_dgnss (gps.launch.py line 68)
+'log_level': 'DEBUG',
+
+# Verify RTCM subscription and USB writes
+journalctl -u rover1.service -f | grep -iE "rtcm.*callback|write.*buffer"
+
+# Expected output confirming RTCM flow:
+# [DEBUG] rtcm_callback msg.message: 0xd3003d3fb...
+# [DEBUG] usb connection: write_buffer: sending 394 bytes to endpoint 0x1
+# [DEBUG] usb connection: write_buffer: result rc=0 actual_length=394
+```
+
+**Key Learnings:**
+1. **Multi-constellation corrections (MSM) dramatically improve RTK performance** - More satellites = faster ambiguity resolution
+2. **The ublox_dgnss driver (v0.7.0) correctly subscribes to `/ntrip_client/rtcm`** and forwards to device - no manual bridging needed
+3. **DEBUG logging on ublox_dgnss is invaluable** for troubleshooting RTCM flow
+4. **VRS handshake via `fix_to_nmea` → `/nmea` topic is working correctly**
+
+**Iowa RTN Mountpoint Reference (from IaRTNRTKProducts-NTRIP-QuickGuide.pdf):**
+| Mountpoint | Type | Constellations | Use Case |
+|------------|------|----------------|----------|
+| RTCM3_IMAX | VRS Network | GPS/GLO | Legacy dual-constellation |
+| **MSM_IMAX** | VRS Network | **GPS/GLO/GAL/BDS** | **Best for F9R (all constellations)** |
+| RTCM3_NEAR | Single Baseline | GPS/GLO | Fallback to nearest physical base |
+
+**Hardware Reference:**
+- GPS Module: u-blox ZED-F9R (GNSS + IMU sensor fusion)
+- NTRIP Server: Iowa DOT RTN (165.206.203.10:10000)
+- Nearest Base: Davenport, IA (IADA) ~10km from Bettendorf
+- Mountpoint: MSM_IMAX (4-constellation VRS network solution)
+
+---
+
+## 5. Engineering Reference & Verification
+
+### 5.1 Quick Validation Commands
+```bash
+# Check camera hardware detection
+lsusb | grep 3482:6723
+
+# List video devices
+v4l2-ctl --list-devices
+
+# Check supported formats/resolutions
+v4l2-ctl -d /dev/video0 --list-formats-ext
+
+# Test OpenCV capture
+python3 -c "import cv2; cap=cv2.VideoCapture(0); ret,f=cap.read(); print(f'Captured: {f.shape}' if ret else 'FAILED'); cap.release()"
+
+# Test ROS 2 cv_bridge integration
+python3 -c "import cv_bridge; print('cv_bridge OK')"
+
+# Verify port 80 redirect
+sudo iptables -t nat -L PREROUTING -n
+
+# Check web dashboard accessibility
+curl -s -o /dev/null -w '%{http_code}' http://rover1.local
+```
+
+### 5.2 Rebuild & Maintenance
+In case of system failure or fresh install:
+1. **Toolbox:** `sudo apt install -y python3-opencv v4l-utils iptables-persistent`
+2. **ROS Vision:** `sudo apt install -y ros-jazzy-cv-bridge ros-jazzy-image-transport ros-jazzy-image-transport-plugins ros-jazzy-pcl-ros`
+3. **Permissions:** `sudo usermod -aG video $USER`
+4. **Networking:**
+   ```bash
+   sudo iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-ports 8080
+   sudo sh -c 'iptables-save > /etc/iptables/rules.v4'
+   ```
+
+### 5.3 Optimal Camera Configurations
+For Python/OpenCV implementations:
+- **High Performance (Streaming):** `MJPG` @ 1280x720 (30 FPS)
+- **High Resolution (Mapping):** `YUYV` @ 1280x1040 (8 FPS)
+
+---

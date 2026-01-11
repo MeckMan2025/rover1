@@ -1,0 +1,12 @@
+[Unit]
+Description=Rover1 Auto Updater
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+ExecStart=/bin/bash /home/ubuntu/ros2_ws/src/rover1/scripts/auto_update.sh
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,32 @@
+# ROS 2 Generated Artifacts
+build/
+install/
+log/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# System
+.DS_Store
+
+# User Request: Ignore Documents
+# *.pdf (Unlocked by user request)
+
+# Secrets and Environment Files
+.env
+.env.*
+*.env
+**/.env*
+**/secrets/
+**/*credentials*
+
+# Personal scratch notes only
+notes_private.md
+journal_private.md
+
+# Camera SDK Bloat (vendor reference code, not project code)
+Camera_Specs/ascam_ros2_ws/src.zip
+Camera_Specs/ascam_ros2_ws/src/yahboomcar_slam/
+Camera_Specs/ascam_ros2_ws/src/yahboomcar_mediapipe/
+Camera_Specs/ros2_ws/
