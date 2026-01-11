@@ -13,6 +13,7 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         (os.path.join('share', package_name, 'templates'), glob('templates/*')),
+        ('lib/python3.12/site-packages/templates', ['templates/index.html']),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
