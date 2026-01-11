@@ -50,7 +50,6 @@ class Rover2WebDashboard(Node):
         
         # Battery monitoring
         self.battery_voltage = 0.0
-        self.battery_status = "UNKNOWN"
 
         # Broadcast throttling (reduce WebSocket traffic for smoother teleop)
         self.last_health_broadcast = 0
@@ -71,11 +70,10 @@ class Rover2WebDashboard(Node):
             10
         )
         
-        # Direct battery subscriptions
+        # Direct battery subscription (fixed topic name)
         self.battery_voltage_sub = self.create_subscription(
-            Float32, '/battery/voltage', self.battery_voltage_callback, 10)
-        self.battery_status_sub = self.create_subscription(
-            String, '/battery/status', self.battery_status_callback, 10)
+            Float32, '/battery_voltage', self.battery_voltage_callback, 10)
+        # Note: /battery/status has 0 publishers, removed unused subscription
 
         # Person Follower service clients (rover2)
         self.person_follower_clients = {
@@ -195,9 +193,6 @@ class Rover2WebDashboard(Node):
         """Process battery voltage messages"""
         self.battery_voltage = msg.data
 
-    def battery_status_callback(self, msg):
-        """Process battery status messages"""
-        self.battery_status = msg.data
 
     def person_follower_status_callback(self, msg: String):
         """Process incoming person follower status messages"""
@@ -350,7 +345,7 @@ class Rover2WebDashboard(Node):
             payload['teleop_speed'] = self.teleop_speed
             # Include direct battery data
             payload['battery_voltage'] = self.battery_voltage
-            payload['battery_status'] = self.battery_status
+            # Note: battery_status removed - only voltage available from /battery_voltage topic
             # Include person follower status and detection state
             payload['person_follower_status'] = self.latest_person_follower_status
             payload['person_detection_enabled'] = self.person_detection_enabled
