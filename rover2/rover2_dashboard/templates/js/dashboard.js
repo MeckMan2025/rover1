@@ -222,13 +222,12 @@ class Rover1Dashboard {
         
         // Update badge
         badge.textContent = state || 'NO FIX';
-        badge.className = `rtk-badge rtk-${(state || 'no-fix').toLowerCase().replace('_', '-')}`;
+        badge.className = `rtk-badge-slim rtk-${(state || 'no-fix').toLowerCase().replace('_', '-')}`;
         
         // Update accuracy
         if (accuracy && accuracy > 0) {
-            const accMeters = accuracy.toFixed(3);
             const accCm = (accuracy * 100).toFixed(1);
-            accuracyEl.textContent = `Accuracy: ${accCm}cm`;
+            accuracyEl.textContent = `${accCm}cm`;
             
             // Update accuracy bar
             let fillPercent, fillClass;
@@ -245,7 +244,7 @@ class Rover1Dashboard {
             fill.style.width = fillPercent + '%';
             fill.className = `accuracy-fill ${fillClass}`;
         } else {
-            accuracyEl.textContent = 'Accuracy: --';
+            accuracyEl.textContent = '--';
             fill.style.width = '0%';
             fill.className = 'accuracy-fill accuracy-poor';
         }
