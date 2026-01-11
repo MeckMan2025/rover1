@@ -63,5 +63,14 @@ else
     echo ">>> System check passed - no conflicts detected"
 fi
 
+# Launch camera viewer for immediate visual feedback
+echo ">>> Launching camera viewer for touchscreen..."
+cd ~/ros2_ws/src/rover1
+python3 scripts/rover_camera_viewer.py --rover2 &
+CAMERA_PID=$!
+
+echo ">>> Camera viewer launched (PID: $CAMERA_PID)"
+echo ">>> Touch screen to exit camera view"
+
 # Keep process running for brain-selector
 wait $ROVER_PID
