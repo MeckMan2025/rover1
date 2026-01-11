@@ -130,8 +130,22 @@ class PackRobotDashboard(Node):
     def run_http_server(self):
         """Run HTTP server for static files."""
         try:
-            # Serve pack robot HTML and assets from static directory
-            os.chdir(str(Path(__file__).parent.parent / 'static'))
+            # Get absolute path to static directory
+            static_dir = Path(__file__).parent.parent / 'static'
+            self.get_logger().info(f"Serving static files from: {static_dir}")
+            
+            # Verify static directory and index.html exist
+            if not static_dir.exists():
+                self.get_logger().error(f"Static directory not found: {static_dir}")
+                return
+            
+            index_file = static_dir / 'index.html'
+            if not index_file.exists():
+                self.get_logger().error(f"index.html not found: {index_file}")
+                return
+            
+            # Change to static directory
+            os.chdir(str(static_dir))
             
             class CustomHandler(SimpleHTTPRequestHandler):
                 def end_headers(self):
@@ -140,6 +154,7 @@ class PackRobotDashboard(Node):
                     self.send_header('Expires', '0')
                     super().end_headers()
             
+            self.get_logger().info("Starting HTTP server on port 8080")
             httpd = HTTPServer(('0.0.0.0', 8080), CustomHandler)
             httpd.serve_forever()
             
