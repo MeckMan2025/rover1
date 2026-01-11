@@ -112,7 +112,7 @@ class Rover2WebDashboard(Node):
         # Subscribe to raw camera RGB feed - fallback when detection is off
         self.raw_image_sub = self.create_subscription(
             Image,
-            '/ascamera_nuwa/camera_publisher/rgb0/image',
+            '/ascamera_hp60c/camera_publisher/rgb0/image',
             self.raw_image_callback,
             rclpy.qos.qos_profile_sensor_data
         )
