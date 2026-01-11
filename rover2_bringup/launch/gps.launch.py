@@ -12,8 +12,8 @@ def generate_launch_description():
     ntrip_user = LaunchConfiguration('ntrip_user', default=os.getenv('NTRIP_USER', ''))
     ntrip_pass = LaunchConfiguration('ntrip_pass', default=os.getenv('NTRIP_PASS', ''))
     ntrip_host = LaunchConfiguration('ntrip_host', default=os.getenv('NTRIP_HOST', '165.206.203.10'))
-    ntrip_port = LaunchConfiguration('ntrip_port', default='10000')
-    ntrip_mountpoint = LaunchConfiguration('ntrip_mountpoint', default='MSM_IMAX')
+    ntrip_port = LaunchConfiguration('ntrip_port', default=os.getenv('NTRIP_CASTER_PORT', '10000'))
+    ntrip_mountpoint = LaunchConfiguration('ntrip_mountpoint', default=os.getenv('NTRIP_MOUNTPOINT', 'MSM_IMAX'))
 
     return LaunchDescription([
         # NTRIP Client
@@ -51,16 +51,6 @@ def generate_launch_description():
         # NOTE: battery_monitor removed from here - it's launched in rover.launch.py
         # with proper I2C parameters. This avoids duplicate node instances.
 
-        # GNSS Health Monitor
-        Node(
-            package='gnss_health_monitor',
-            executable='gnss_health_monitor_node',
-            name='gnss_health_monitor_node',
-            output='screen',
-            parameters=[{
-                'battery_topic': '/battery/voltage'
-            }]
-        ),
 
         # U-Blox Driver & Converter (Standard Mode)
         # Includes both the driver (for raw UBX) and the converter (UBX -> NavSatFix).
