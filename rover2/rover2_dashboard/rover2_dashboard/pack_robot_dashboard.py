@@ -130,8 +130,8 @@ class PackRobotDashboard(Node):
     def run_http_server(self):
         """Run HTTP server for static files."""
         try:
-            # Serve minimal pack robot HTML from templates directory
-            os.chdir(str(Path(__file__).parent.parent / 'templates'))
+            # Serve pack robot HTML and assets from static directory
+            os.chdir(str(Path(__file__).parent.parent / 'static'))
             
             class CustomHandler(SimpleHTTPRequestHandler):
                 def end_headers(self):
