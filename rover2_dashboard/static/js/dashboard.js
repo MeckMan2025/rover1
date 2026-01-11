@@ -23,7 +23,7 @@ class Rover1Dashboard {
 
     connect() {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.hostname}:8081`;
+        const wsUrl = `${protocol}//${window.location.hostname}:8765`;
 
         console.log('Connecting to:', wsUrl);
         this.websocket = new WebSocket(wsUrl);

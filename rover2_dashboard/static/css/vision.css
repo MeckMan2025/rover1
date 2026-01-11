@@ -443,3 +443,128 @@
     transform: translateY(-1px);
     box-shadow: 0 3px 10px rgba(100, 100, 100, 0.4);
 }
+
+/* Person Follower Quick Controls - Main feature for Rover2 (purple accent) */
+.person-follower-quick {
+    max-width: 800px;
+    margin: 0 auto 20px auto;
+    padding: 12px 20px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(147, 51, 234, 0.3);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.person-follower-quick .quick-label {
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.person-follower-quick .quick-toggle-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.person-follower-quick .quick-btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.person-follower-quick .quick-btn-start {
+    background: linear-gradient(135deg, #9333ea, #7c3aed);
+    color: #fff;
+}
+
+.person-follower-quick .quick-btn-start:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px rgba(147, 51, 234, 0.4);
+}
+
+.person-follower-quick .quick-btn-stop {
+    background: linear-gradient(135deg, #ff4444, #cc0000);
+    color: #fff;
+}
+
+.person-follower-quick .quick-btn-stop:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px rgba(255, 68, 68, 0.4);
+}
+
+.person-follower-quick .quick-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.person-follower-quick .quick-status {
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.person-follower-quick .quick-status.idle {
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.person-follower-quick .quick-status.detecting {
+    background: rgba(147, 51, 234, 0.2);
+    color: #9333ea;
+}
+
+.person-follower-quick .quick-status.searching {
+    background: rgba(255, 193, 7, 0.2);
+    color: #ffc107;
+    animation: visionPulse 1.5s infinite;
+}
+
+.person-follower-quick .quick-status.following {
+    background: rgba(0, 255, 136, 0.2);
+    color: #00ff88;
+    animation: visionPulse 1s infinite;
+}
+
+.person-follower-quick .quick-status.lost-target {
+    background: rgba(255, 152, 0, 0.2);
+    color: #ff9800;
+}
+
+.person-follower-quick .quick-status.teleop-override {
+    background: rgba(255, 68, 68, 0.2);
+    color: #ff4444;
+}
+
+.person-follower-quick .quick-status.recovery-scan {
+    background: rgba(255, 193, 7, 0.2);
+    color: #ffc107;
+    animation: visionPulse 0.8s infinite;
+}
+
+.person-follower-quick .quick-btn-reset {
+    background: linear-gradient(135deg, #666, #444);
+    color: #fff;
+}
+
+.person-follower-quick .quick-btn-reset:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px rgba(100, 100, 100, 0.4);
+}
