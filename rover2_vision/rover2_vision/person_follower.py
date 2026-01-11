@@ -22,7 +22,7 @@ SAFETY FEATURES:
   - Velocity limits enforced in hardware
 
 Subscribes:
-  - /ascamera_nuwa/camera_publisher/rgb0/image (sensor_msgs/Image)
+  - /ascamera_hp60c/camera_publisher/rgb0/image (sensor_msgs/Image)
   - /cmd_vel (geometry_msgs/Twist) - for teleop override detection
 
 Publishes:
@@ -365,7 +365,7 @@ class PersonFollower(Node):
         if self.image_sub is None:
             self.image_sub = self.create_subscription(
                 Image,
-                '/ascamera_nuwa/camera_publisher/rgb0/image',
+                '/ascamera_hp60c/camera_publisher/rgb0/image',
                 self.image_callback,
                 qos_profile_sensor_data,
                 callback_group=self.subscription_cb_group
@@ -435,7 +435,7 @@ class PersonFollower(Node):
             if self.image_sub is None:
                 self.image_sub = self.create_subscription(
                     Image,
-                    '/ascamera_nuwa/camera_publisher/rgb0/image',
+                    '/ascamera_hp60c/camera_publisher/rgb0/image',
                     self.image_callback,
                     qos_profile_sensor_data,
                     callback_group=self.subscription_cb_group
