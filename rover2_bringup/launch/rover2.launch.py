@@ -96,7 +96,7 @@ def generate_launch_description():
             name='gnss_health_monitor_node',
             output='screen',
             parameters=[{
-                'battery_topic': '/battery_voltage'
+                'battery_topic': '/battery/voltage'
             }]
         ),
         

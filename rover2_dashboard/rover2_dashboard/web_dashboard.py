@@ -73,9 +73,9 @@ class Rover2WebDashboard(Node):
         
         # Direct battery subscriptions
         self.battery_voltage_sub = self.create_subscription(
-            Float32, '/battery_voltage', self.battery_voltage_callback, 10)
+            Float32, '/battery/voltage', self.battery_voltage_callback, 10)
         self.battery_status_sub = self.create_subscription(
-            String, '/battery_status', self.battery_status_callback, 10)
+            String, '/battery/status', self.battery_status_callback, 10)
 
         # Person Follower service clients (rover2)
         self.person_follower_clients = {
