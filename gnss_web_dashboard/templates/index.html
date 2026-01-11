@@ -41,7 +41,7 @@
         </div>
 
         <!-- Web Teleop Drive Controls - Two-thumb layout -->
-        <div class="card teleop-card">
+        <div class="card teleop-card" style="max-width: 800px; margin: 0 auto 30px auto;">
             <div class="card-title">Drive Controls</div>
             <div class="teleop-drive-container" id="teleopContainer">
                 <!-- Left thumb zone: Forward/Backward -->
@@ -188,85 +188,58 @@
             </div>
         </div>
 
-        <div class="grid">
-            <!-- RTK Status Card -->
-            <div class="card">
-                <div class="card-title">RTK Status</div>
-                <div class="rtk-status">
-                    <div id="rtkBadge" class="rtk-badge rtk-no-fix">NO FIX</div>
-                    <div id="rtkAccuracy" class="metric-label">Accuracy: --</div>
-                </div>
-                <div class="accuracy-bar">
+        <!-- RTK Status - Slim Horizontal -->
+        <div class="teleop-controls">
+            <div class="teleop-speed-control">
+                <span class="teleop-speed-label">RTK Status</span>
+                <div id="rtkBadge" class="rtk-badge-slim rtk-no-fix">NO FIX</div>
+                <div class="accuracy-bar-slim">
                     <div id="accuracyFill" class="accuracy-fill accuracy-poor" style="width: 0%"></div>
                 </div>
+                <span id="rtkAccuracy" class="teleop-speed-value" style="color: rgba(255,255,255,0.7);">--</span>
             </div>
+        </div>
 
-            <!-- Satellites Card -->
-            <div class="card">
-                <div class="card-title">Satellite Status</div>
-                <div class="satellite-visual">
-                    <div class="sat-group">
-                        <div id="satVisible" class="sat-count sat-visible">--</div>
-                        <div class="metric-label">Visible</div>
-                    </div>
-                    <div style="font-size: 1.5rem; color: rgba(255,255,255,0.3);">/</div>
-                    <div class="sat-group">
-                        <div id="satUsed" class="sat-count sat-used">--</div>
-                        <div class="metric-label">Used</div>
-                    </div>
-                </div>
+        <!-- Satellite Status - Slim Horizontal -->
+        <div class="teleop-controls">
+            <div class="teleop-speed-control">
+                <span class="teleop-speed-label">Satellites</span>
+                <span id="satVisible" class="teleop-speed-value sat-visible">--</span>
+                <span style="color: rgba(255,255,255,0.3); margin: 0 10px;">/</span>
+                <span id="satUsed" class="teleop-speed-value sat-used">--</span>
+                <span class="teleop-speed-label" style="min-width: 80px; text-align: right;">Visible / Used</span>
             </div>
+        </div>
 
-            <!-- NTRIP Status Card -->
-            <div class="card">
-                <div class="card-title">NTRIP Corrections</div>
-                <div class="ntrip-indicator">
-                    <div id="ntripDot" class="status-dot status-disconnected"></div>
-                    <div id="ntripStatus" class="metric-label">DISCONNECTED</div>
-                </div>
-                <div class="stats-grid">
-                    <div class="stat-item">
-                        <div id="rtcmRate" class="stat-value">--</div>
-                        <div class="metric-label">msg/s</div>
-                    </div>
-                    <div class="stat-item">
-                        <div id="rtcmAge" class="stat-value">--</div>
-                        <div class="metric-label">age (s)</div>
-                    </div>
-                </div>
+        <!-- NTRIP Status - Slim Horizontal -->
+        <div class="teleop-controls">
+            <div class="teleop-speed-control">
+                <span class="teleop-speed-label">NTRIP</span>
+                <div id="ntripDot" class="status-dot status-disconnected" style="margin-right: 10px;"></div>
+                <span id="ntripStatus" class="teleop-speed-value" style="color: rgba(255,255,255,0.7); flex: 1;">DISCONNECTED</span>
+                <span id="rtcmRate" class="teleop-speed-value">--</span>
+                <span class="teleop-speed-label" style="min-width: 60px; text-align: right;">msg/s</span>
+                <span id="rtcmAge" class="teleop-speed-value" style="margin-left: 15px;">--</span>
+                <span class="teleop-speed-label" style="min-width: 40px; text-align: right;">age</span>
             </div>
+        </div>
 
-            <!-- Data Statistics Card -->
-            <div class="card">
-                <div class="card-title">Data Statistics</div>
-                <div class="stats-grid">
-                    <div class="stat-item">
-                        <div id="totalMessages" class="stat-value">--</div>
-                        <div class="metric-label">Total RTCM</div>
-                    </div>
-                    <div class="stat-item">
-                        <div id="dataRate" class="stat-value">--</div>
-                        <div class="metric-label">Bytes/s</div>
-                    </div>
-                </div>
+        <!-- Data Statistics - Slim Horizontal -->
+        <div class="teleop-controls">
+            <div class="teleop-speed-control">
+                <span class="teleop-speed-label">Data Stats</span>
+                <span id="totalMessages" class="teleop-speed-value">--</span>
+                <span class="teleop-speed-label" style="min-width: 80px; text-align: right;">Total RTCM</span>
+                <span id="dataRate" class="teleop-speed-value" style="margin-left: 15px;">--</span>
+                <span class="teleop-speed-label" style="min-width: 60px; text-align: right;">Bytes/s</span>
             </div>
+        </div>
 
-            <!-- Battery Status Card -->
-            <div class="card">
-                <div class="card-title">Battery Status</div>
-                <div class="battery-display">
-                    <div id="batteryVoltage" class="metric-value" style="color: #00ff88;">--</div>
-                    <div class="metric-label">Volts</div>
-                </div>
-                <div class="battery-bar">
-                    <div id="batteryFill" class="battery-fill battery-good" style="width: 0%"></div>
-                </div>
-                <div id="batteryStatus" class="metric-label" style="text-align: center; margin-top: 10px;">--</div>
-                <div class="power-status-indicator">
-                    <span class="power-icon" id="powerIcon">⚡</span>
-                    <span class="power-status-text power-unknown" id="powerStatus">USB-C: --</span>
-                </div>
-            </div>
+        <div class="grid">
+
+
+
+
 
             <!-- Patrol Card - Minimal UI -->
             <div class="card patrol-card">
@@ -372,15 +345,15 @@
             </div>
         </div>
 
-        <!-- Power Controls Card -->
-        <div class="card power-card">
-            <div class="card-title">Power Controls</div>
-            <div class="power-btn-group">
-                <button class="power-btn power-btn-reboot" onclick="powerController.requestReboot()">
-                    <span>&#x21BB;</span> Reboot
+        <!-- Power Controls - Slim Horizontal -->
+        <div class="teleop-controls">
+            <div class="teleop-speed-control">
+                <span class="teleop-speed-label">Power Controls</span>
+                <button class="btn btn-secondary" style="margin-right: 10px;" onclick="powerController.requestReboot()">
+                    &#x21BB; Reboot
                 </button>
-                <button class="power-btn power-btn-shutdown" onclick="powerController.requestShutdown()">
-                    <span>&#x23FB;</span> Shutdown
+                <button class="btn btn-danger" onclick="powerController.requestShutdown()">
+                    &#x23FB; Shutdown
                 </button>
             </div>
             <div id="powerConfirmDialog" class="power-confirm-dialog">
