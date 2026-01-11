@@ -57,6 +57,9 @@ class PackRobotDashboard(Node):
         # Connected WebSocket clients
         self.websocket_clients = set()
         
+        # WebSocket event loop (will be set when WebSocket server starts)
+        self.ws_loop = None
+        
         # OpenCV bridge for image processing
         self.bridge = CvBridge()
         
@@ -162,7 +165,10 @@ class PackRobotDashboard(Node):
                 await asyncio.Future()  # Run forever
         
         try:
-            asyncio.run(start_server())
+            # Create and store the WebSocket event loop
+            self.ws_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.ws_loop)
+            self.ws_loop.run_until_complete(start_server())
         except Exception as e:
             self.get_logger().error(f"WebSocket server error: {e}")
     
@@ -324,10 +330,11 @@ class PackRobotDashboard(Node):
             disconnected = set()
             for client in self.websocket_clients:
                 try:
-                    asyncio.run_coroutine_threadsafe(
-                        client.send(message), 
-                        asyncio.new_event_loop()
-                    )
+                    if self.ws_loop is not None:
+                        asyncio.run_coroutine_threadsafe(
+                            client.send(message), 
+                            self.ws_loop
+                        )
                 except Exception:
                     disconnected.add(client)
             
