@@ -125,11 +125,11 @@ def generate_launch_description():
             }]
         ),
         
-        # Rover2 Full Web Dashboard (includes teleop control + all rover1 UI features)
+        # Pack Robot Dashboard (includes teleop control + person follower UI)
         Node(
             package='rover2_dashboard',
-            executable='rover2_web_dashboard',
-            name='rover2_web_dashboard',
+            executable='pack_robot_dashboard',
+            name='pack_robot_dashboard',
             output='screen'
         ),
     ])
