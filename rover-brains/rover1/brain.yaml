@@ -1,4 +1,4 @@
 name: "Rover 1"
-description: "Full-featured rover: SLAM, GPS/RTK, Nav2, patrol, vision, web dashboard"
-start_command: "./launch_rover.sh"
-working_directory: "/home/andrewmeckley/rover1"
+description: "Full-featured rover: patrol, GPS/RTK, vision, web dashboard, git updates"
+start_command: "/home/andrewmeckley/ros2_ws/src/rover1/scripts/brain_launch.sh"
+working_directory: "/home/andrewmeckley/ros2_ws/src/rover1"

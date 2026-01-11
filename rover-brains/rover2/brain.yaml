@@ -1,4 +1,4 @@
-name: "Rover 2"
-description: "Full stack: SLAM, patrol, dog follower, RTK GPS"
-start_command: "./launch_rover.sh"
+name: "Pack Robot"
+description: "Pack configuration: person follower, camera, basic navigation"
+start_command: "/home/andrewmeckley/rover-brains/rover2/launch_pack_robot.sh"
 working_directory: "/home/andrewmeckley/rover-brains/rover2"
