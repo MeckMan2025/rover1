@@ -42,16 +42,20 @@ class Rover1Dashboard {
         };
 
         this.websocket.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            // Check if this is a command response
-            if (data.success !== undefined && !data.patrol) {
-                // This is a response to a command
-                if (this.patrolController) {
-                    this.patrolController.handleResponse(data);
+            try {
+                const data = JSON.parse(event.data);
+                // Check if this is a command response
+                if (data.success !== undefined && !data.patrol) {
+                    // This is a response to a command
+                    if (this.patrolController) {
+                        this.patrolController.handleResponse(data);
+                    }
+                } else {
+                    // This is a status broadcast
+                    this.updateDashboard(data);
                 }
-            } else {
-                // This is a status broadcast
-                this.updateDashboard(data);
+            } catch (error) {
+                console.error('Error processing WebSocket message:', error);
             }
         };
 
@@ -209,6 +213,11 @@ class Rover1Dashboard {
         const img = document.getElementById('videoFeed');
         const placeholder = document.getElementById('videoPlaceholder');
         
+        // Guard against missing elements
+        if (!img || !placeholder) {
+            return;
+        }
+        
         if (base64Data) {
             img.src = `data:image/jpeg;base64,${base64Data}`;
             img.style.display = 'block';
@@ -271,6 +280,11 @@ class Rover1Dashboard {
         const accuracyEl = document.getElementById('rtkAccuracy');
         const fill = document.getElementById('accuracyFill');
         
+        // Guard against missing elements
+        if (!badge || !accuracyEl || !fill) {
+            return;
+        }
+        
         // Update badge
         badge.textContent = state || 'NO FIX';
         badge.className = `rtk-badge rtk-${(state || 'no-fix').toLowerCase().replace('_', '-')}`;
@@ -307,6 +321,11 @@ class Rover1Dashboard {
         const status = document.getElementById('ntripStatus');
         const rateEl = document.getElementById('rtcmRate');
         const ageEl = document.getElementById('rtcmAge');
+
+        // Guard against missing elements
+        if (!dot || !status || !rateEl || !ageEl) {
+            return;
+        }
 
         if (connected) {
             dot.className = 'status-dot status-connected';
@@ -417,6 +436,12 @@ class Rover1Dashboard {
 
     updateLastUpdateDisplay() {
         const updateEl = document.getElementById('lastUpdate');
+        
+        // Guard against missing element
+        if (!updateEl) {
+            return;
+        }
+        
         if (this.lastUpdateTime) {
             const secondsAgo = Math.floor((Date.now() - this.lastUpdateTime) / 1000);
             updateEl.textContent = `Last updated: ${secondsAgo}s ago`;
