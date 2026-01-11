@@ -1,1 +1,0 @@
-# Rover2 Vision Package - Pack Robot person following functionality

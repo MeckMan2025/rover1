@@ -1,1 +1,0 @@
-# Rover2 Hardware Package - Essential drivers for pack robot mobility

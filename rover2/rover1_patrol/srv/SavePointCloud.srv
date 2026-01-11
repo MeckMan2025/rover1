@@ -1,7 +1,0 @@
-# Save current point cloud to PLY file
-string path_name
----
-bool success
-string file_path
-string message
-int32 point_count
