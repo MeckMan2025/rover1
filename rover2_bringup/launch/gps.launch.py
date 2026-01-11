@@ -1,0 +1,71 @@
+from launch import LaunchDescription
+from launch_ros.actions import Node
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch_ros.substitutions import FindPackageShare
+
+def generate_launch_description():
+    # NTRIP credentials are loaded from environment variables
+    # Set these before running: export NTRIP_USER=your_username
+    import os
+    ntrip_user = LaunchConfiguration('ntrip_user', default=os.getenv('NTRIP_USER', ''))
+    ntrip_pass = LaunchConfiguration('ntrip_pass', default=os.getenv('NTRIP_PASS', ''))
+    ntrip_host = LaunchConfiguration('ntrip_host', default=os.getenv('NTRIP_HOST', '165.206.203.10'))
+    ntrip_port = LaunchConfiguration('ntrip_port', default='10000')
+    ntrip_mountpoint = LaunchConfiguration('ntrip_mountpoint', default='MSM_IMAX')
+
+    return LaunchDescription([
+        # NTRIP Client
+        # Publishes RTCM corrections to /rtcm
+        # NTRIP Client
+        # Publishes RTCM corrections to /rtcm
+        Node(
+            package='ntrip_client',
+            executable='ntrip_ros.py',
+            name='ntrip_client',
+            output='screen',
+            parameters=[{
+                'host': ntrip_host,
+                'port': ntrip_port,
+                'mountpoint': ntrip_mountpoint,
+                'authenticate': True,
+                'username': ntrip_user,
+                'password': ntrip_pass,
+                'rtcm_message_package': 'rtcm_msgs'
+            }],
+            remappings=[
+                ('/rtcm', '/ntrip_client/rtcm')  # ublox_dgnss expects /ntrip_client/rtcm
+            ]
+        ),
+
+        # NMEA Bridge (VRS Handshake)
+        # Converts /fix -> /nmea so the NTRIP caster knows where the rover is.
+        Node(
+            package='rover2_hardware',
+            executable='fix_to_nmea',
+            name='fix_to_nmea',
+            output='screen'
+        ),
+
+        # NOTE: battery_monitor removed from here - it's launched in rover.launch.py
+        # with proper I2C parameters. This avoids duplicate node instances.
+
+        # U-Blox Driver & Converter (Standard Mode)
+        # Includes both the driver (for raw UBX) and the converter (UBX -> NavSatFix).
+        # Usage: Host internal topic is /ntrip_client/rtcm, so we match that.
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource([
+                PathJoinSubstitution([
+                    FindPackageShare('ublox_dgnss'),
+                    'launch',
+                    'ublox_rover_hpposllh_navsatfix.launch.py'
+                ])
+            ]),
+            launch_arguments={
+                'device_family': 'F9R',
+                'frame_id': 'gps_link',
+                # 'log_level': 'DEBUG',  # Uncomment for RTCM troubleshooting
+            }.items()
+        )
+    ])

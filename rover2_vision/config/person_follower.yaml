@@ -1,0 +1,25 @@
+# Person Follower Configuration for Rover2
+# Configuration for human detection and following behavior
+
+person_follower:
+  ros__parameters:
+    # YOLOv8 Model Configuration
+    model_path: "/home/andrewmeckley/ros2_ws/src/rover2/models/yolov8s.hef"
+    confidence_threshold: 0.5
+    
+    # Following Behavior Parameters
+    target_foot_y_ratio: 0.70        # Target distance: feet at 70% down the frame
+    too_close_foot_y_ratio: 0.85     # Stop if feet at bottom 15% of frame
+    center_tolerance: 0.12           # 12% of frame width deadzone for centering
+    
+    # Movement Speeds (adjusted for human walking pace)
+    linear_speed: 0.4                # m/s - forward/backward speed
+    angular_speed: 0.8               # rad/s - rotation speed
+    
+    # Safety Timeouts
+    detection_timeout: 2.0           # Stop following if person lost for 2 seconds
+    teleop_override_timeout: 0.5     # How long to wait after teleop before resuming
+    recovery_scan_timeout: 4.0       # Give up recovery scan after 4 seconds
+    
+    # Camera Configuration
+    image_topic: "/ascamera_nuwa/camera_publisher/rgb0/image"
