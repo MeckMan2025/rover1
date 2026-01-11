@@ -24,7 +24,7 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 def generate_launch_description():
     pkg_share = FindPackageShare('rover2_bringup')
-    desc_share = FindPackageShare('rover2_description')
+    desc_share = FindPackageShare('rover1_description')
     
     # Launch Arguments
     enable_person_follower = LaunchConfiguration('enable_person_follower', default='false')
