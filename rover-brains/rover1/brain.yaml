@@ -1,4 +1,4 @@
 name: "Rover 1"
-description: "Original rover stack"
+description: "Full-featured rover: SLAM, GPS/RTK, Nav2, patrol, vision, web dashboard"
 start_command: "./launch_rover.sh"
-working_directory: "/home/andrewmeckley/ros2_ws/src/rover1"
+working_directory: "/home/andrewmeckley/rover1"
