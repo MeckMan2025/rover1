@@ -94,7 +94,10 @@ def generate_launch_description():
             package='gnss_health_monitor',
             executable='gnss_health_monitor_node',
             name='gnss_health_monitor_node',
-            output='screen'
+            output='screen',
+            parameters=[{
+                'battery_topic': '/battery_voltage'
+            }]
         ),
         
         # Rover2 Web Dashboard
