@@ -204,20 +204,6 @@ def generate_launch_description():
             parameters=[{'deadzone': 0.1, 'autorepeat_rate': 20.0}]
         ),
 
-        # Stadia Custom Teleop (Safe-Mecanum)
-        Node(
-            condition=IfCondition(use_joy),
-            package='rover1_hardware',
-            executable='stadia_teleop',
-            name='stadia_teleop',
-            output='screen',
-            parameters=[{
-                'max_linear_speed': 2.0,
-                'max_angular_speed': 4.0,
-                'deadman_threshold': 0.0,
-                'debug_axes': False  # Set True to log raw axis values for tuning
-            }]
-        ),
         
         # Include GPS Launch
         IncludeLaunchDescription(

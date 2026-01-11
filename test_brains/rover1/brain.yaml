@@ -1,0 +1,3 @@
+description: System monitoring and basic rover operations using btop
+name: Rover1 System Monitor
+start_command: btop

@@ -1,0 +1,3 @@
+description: A simple test brain that displays a message
+name: Test Brain
+start_command: echo 'Test brain activated!' && sleep 3

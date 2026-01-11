@@ -26,7 +26,6 @@ setup(
             'hiwonder_driver = rover2_hardware.hiwonder_driver:main',
             'mecanum_kinematics = rover2_hardware.mecanum_kinematics:main',
             'battery_monitor = rover2_hardware.battery_monitor:main',
-            'stadia_teleop = rover2_hardware.stadia_teleop:main',
             'fix_to_nmea = rover2_hardware.fix_to_nmea:main',
         ],
     },
