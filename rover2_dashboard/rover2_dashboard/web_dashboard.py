@@ -142,7 +142,7 @@ class Rover2WebDashboard(Node):
 
         # Get package directory for serving static files
         try:
-            self.package_dir = Path(get_package_share_directory('gnss_web_dashboard'))
+            self.package_dir = Path(get_package_share_directory('rover2_dashboard'))
             self.static_dir = self.package_dir / 'static'
         except Exception:
             # Fallback for development
