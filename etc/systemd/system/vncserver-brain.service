@@ -1,0 +1,16 @@
+[Unit]
+Description=RealVNC Server for Brain Selector
+After=multi-user.target network.target
+
+[Service]
+Type=forking
+User=andrewmeckley
+Group=andrewmeckley
+WorkingDirectory=/home/andrewmeckley
+ExecStart=/usr/bin/vncserver-virtual :1 -geometry 1024x600 -depth 24
+ExecStop=/usr/bin/vncserver-virtual -kill :1
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

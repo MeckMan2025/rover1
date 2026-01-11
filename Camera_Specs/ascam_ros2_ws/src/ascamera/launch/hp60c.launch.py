@@ -14,7 +14,7 @@ def generate_launch_description():
         parameters=[
             {"usb_bus_no": -1},
             {"usb_path": "null"},
-            {"confiPath": "/home/andrewmeckley/ros2_ws/src/ascamera/configurationfiles"},
+            {"confiPath": "/home/andrewmeckley/ros2_ws/src/rover1/Camera_Specs/ascam_ros2_ws/src/ascamera/configurationfiles"},
             {"color_pcl": False},
             {"pub_tfTree": True},
             {"depth_width": 640},

@@ -1,0 +1,10 @@
+#!/bin/sh
+# Custom VNC startup for Rover brain-selector
+# Location: /etc/vnc/xstartup.custom
+
+[ -r $HOME/.Xresources ] && xrdb $HOME/.Xresources
+xsetroot -solid grey
+
+# Launch brain-selector with X11
+export QT_QPA_PLATFORM=xcb
+exec python3 /home/andrewmeckley/rover-brains/brain-selector/selector.py

@@ -116,7 +116,7 @@ def generate_launch_description():
             namespace='ascamera_hp60c',
             output='screen',
             parameters=[{
-                'confiPath': '/home/andrewmeckley/ros2_ws/src/ascamera/configurationfiles',
+                'confiPath': '/home/andrewmeckley/ros2_ws/src/rover1/Camera_Specs/ascam_ros2_ws/src/ascamera/configurationfiles',
                 'fps': 10,
                 'depth_width': 640,
                 'depth_height': 480,
