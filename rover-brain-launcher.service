@@ -1,0 +1,24 @@
+[Unit]
+Description=Rover Brain Selector Launcher
+After=graphical.target
+Wants=graphical.target
+
+[Service]
+Type=simple
+User=andrewmeckley
+Group=andrewmeckley
+WorkingDirectory=/home/andrewmeckley
+Environment="DISPLAY=:0"
+Environment="XAUTHORITY=/home/andrewmeckley/.Xauthority"
+Environment="XDG_RUNTIME_DIR=/run/user/1000"
+ExecStart=/usr/bin/python3 /home/andrewmeckley/brain_launcher.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Ensure we wait for the GUI environment
+ExecStartPre=/bin/bash -c 'while ! pgrep -x "Xorg\\|X" > /dev/null; do sleep 1; done'
+
+[Install]
+WantedBy=default.target

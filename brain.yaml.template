@@ -1,0 +1,22 @@
+# Brain Manifest Template
+# Copy this file to your brain directory and customize
+
+# Display name shown in the launcher
+name: "Example Brain"
+
+# Short description displayed under the name
+description: "A sample rover brain that demonstrates the manifest format"
+
+# Command to execute when this brain is selected
+# This command will be run from the brain's directory
+# Examples:
+#   - "python3 main.py"           # Python script
+#   - "ros2 launch my_pkg my.launch.py"  # ROS2 launch file  
+#   - "btop"                      # System monitor
+#   - "./start.sh"                # Custom shell script
+start_command: "echo 'Hello from Example Brain' && sleep 5"
+
+# Optional: Additional metadata (not used by launcher but can be useful)
+version: "1.0.0"
+author: "Your Name"
+tags: ["example", "demo"]
