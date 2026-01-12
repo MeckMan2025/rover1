@@ -84,10 +84,9 @@ class Rover2WebDashboard(Node):
             'reset': self.create_client(Trigger, '/person_follower/reset'),
         }
 
-        # Person Follower status tracking and process management
+        # Person Follower status tracking
         self.latest_person_follower_status = 'idle'
         self.person_detection_enabled = False  # Track if we should use annotated feed
-        self.person_follower_process = None  # Subprocess for dynamic spawning
         self.person_follower_sub = self.create_subscription(
             String,
             '/person_follower/status',
@@ -512,17 +511,18 @@ class Rover2WebDashboard(Node):
 
 
     def is_follower_running(self, follower_type):
-        """Check if a follower node process is running.
+        """Check if a follower node is running.
 
         Args:
             follower_type: 'person'
 
         Returns:
-            bool: True if the process is running
+            bool: True if the node is running (service available)
         """
         if follower_type == 'person':
-            proc = self.person_follower_process
-            return proc is not None and proc.poll() is None
+            client = self.person_follower_clients.get('detection_enable')
+            if client:
+                return client.service_is_ready()
         return False
 
 
