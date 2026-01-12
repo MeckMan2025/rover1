@@ -197,6 +197,12 @@ class Rover2WebDashboard(Node):
         """Process incoming person follower status messages"""
         with self.health_lock:
             self.latest_person_follower_status = msg.data
+            # Sync detection enabled state from actual status
+            # Detection is on if status is not 'idle' or 'teleop_override'
+            if msg.data not in ('idle', 'teleop_override'):
+                self.person_detection_enabled = True
+            elif msg.data == 'idle':
+                self.person_detection_enabled = False
 
         # Broadcast to all connected WebSocket clients
         if self.ws_clients:
