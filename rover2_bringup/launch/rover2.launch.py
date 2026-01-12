@@ -40,7 +40,7 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             'enable_person_follower',
-            default_value='true',
+            default_value='false',
             description='Whether to start the Person Follower vision node'
         ),
 
