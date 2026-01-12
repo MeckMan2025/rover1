@@ -96,6 +96,10 @@ class PersonFollower(Node):
         self.last_person_foot = None  # (foot_x, foot_y) tuple
         self.last_person_bbox_time = None
         self.bbox_persist_duration = 1.5  # Humans move more predictably than animals
+        
+        # Coast state for smooth motion during brief detection losses
+        self.last_follow_cmd = None  # Store last movement command for coasting
+        self.coast_start_time = None  # When coasting began
 
         # Tracking for predictive recovery when person walks past
         self.last_person_frame_position = None  # 'left', 'center', 'right'
@@ -121,6 +125,7 @@ class PersonFollower(Node):
         self.declare_parameter('detection_timeout', 2.0)          # Stop if no person for 2s
         self.declare_parameter('teleop_override_timeout', 0.5)    # Disable if teleop active
         self.declare_parameter('self_message_timeout', 0.25)      # Ignore own cmd_vel echoes
+        self.declare_parameter('coast_timeout', 0.5)              # Coast with last cmd for smooth motion
         self.declare_parameter('recovery_scan_timeout', 4.0)      # Longer recovery scan for humans
 
         # Load parameters
@@ -134,6 +139,7 @@ class PersonFollower(Node):
         self.detection_timeout = self.get_parameter('detection_timeout').value
         self.teleop_override_timeout = self.get_parameter('teleop_override_timeout').value
         self.self_message_timeout = self.get_parameter('self_message_timeout').value
+        self.coast_timeout = self.get_parameter('coast_timeout').value
         self.recovery_scan_timeout = self.get_parameter('recovery_scan_timeout').value
 
         # Initialize Hailo inference engine (lazy-loaded on first detection enable)
@@ -508,6 +514,10 @@ class PersonFollower(Node):
             self.last_external_cmd_time = None
             self.our_last_publish_time = None
             self.our_last_cmd_vel = None
+        
+        # Clear coast state
+        self.last_follow_cmd = None
+        self.coast_start_time = None
 
         # Destroy image subscription to release resources
         if self.image_sub is not None:
@@ -644,6 +654,8 @@ class PersonFollower(Node):
 
         if person is not None:
             self.last_detection_time = self.get_clock().now()
+            # Clear coast state - we have a valid detection
+            self.coast_start_time = None
             # Reset recovery state - we found the person again
             self.last_person_was_close = False
             self.recovery_scan_start_time = None
@@ -652,7 +664,40 @@ class PersonFollower(Node):
                 self.current_status = 'following'
                 self.publish_status('following')
         else:
-            if self.current_status == 'following':
+            # No detection this frame - check if we should coast
+            now = self.get_clock().now()
+            
+            # If we were following and just lost detection, start coasting
+            if self.current_status == 'following' and self.coast_start_time is None:
+                self.coast_start_time = now
+                self.current_status = 'coasting'
+                self.publish_status('coasting')
+                # Continue with last known command to smooth motion
+                if self.last_follow_cmd is not None:
+                    with self.cmd_vel_lock:
+                        self.our_last_publish_time = now
+                        self.our_last_cmd_vel = self.last_follow_cmd
+                    self.cmd_vel_pub.publish(self.last_follow_cmd)
+                    self.get_logger().debug('Coasting with last command for smooth motion')
+            
+            # If already coasting, check timeout
+            elif self.current_status == 'coasting' and self.coast_start_time is not None:
+                coast_elapsed = (now - self.coast_start_time).nanoseconds / 1e9
+                if coast_elapsed > self.coast_timeout:
+                    # Coast timeout - transition to searching
+                    self.current_status = 'searching'
+                    self.publish_status('searching')
+                    self.coast_start_time = None
+                else:
+                    # Continue coasting
+                    if self.last_follow_cmd is not None:
+                        with self.cmd_vel_lock:
+                            self.our_last_publish_time = now
+                            self.our_last_cmd_vel = self.last_follow_cmd
+                        self.cmd_vel_pub.publish(self.last_follow_cmd)
+            
+            # Direct transition from other states
+            elif self.current_status not in ['coasting', 'searching']:
                 self.current_status = 'searching'
                 self.publish_status('searching')
 
@@ -945,7 +990,8 @@ class PersonFollower(Node):
             twist.linear.x = min(twist.linear.x, self.linear_speed)
         # When person is close but not too close, linear.x stays 0 - rotate only
 
-        # Mark this as our publish time (for teleop detection)
+        # Store command for potential coasting and mark publish time
+        self.last_follow_cmd = twist
         with self.cmd_vel_lock:
             self.our_last_publish_time = self.get_clock().now()
             self.our_last_cmd_vel = twist
