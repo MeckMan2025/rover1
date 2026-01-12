@@ -10,6 +10,13 @@ if [ -f "$HOME/ros2_ws/src/rover1/STOP_ROVER" ]; then
     exit 0
 fi
 
+# Check if rover2 is already running (prevent duplicate launches)
+if pgrep -f "ros2 launch rover2_bringup rover2.launch.py" > /dev/null; then
+    echo ">>> Pack Robot already running - skipping duplicate launch"
+    # Wait to keep brain-selector happy
+    sleep infinity
+fi
+
 echo ">>> Brain-Selector: Starting Pack Robot (Rover2)..."
 
 # 1. Fast Network Check
