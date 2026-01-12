@@ -10,13 +10,20 @@ class MecanumKinematics(Node):
     def __init__(self):
         super().__init__('mecanum_kinematics')
         
-        # Parameters to tune
+        # Physical parameters
         self.declare_parameter('wheel_separation_width', 0.20)  # meters (left to right)
         self.declare_parameter('wheel_separation_length', 0.16) # meters (front to back)
         self.declare_parameter('wheel_radius', 0.04)           # meters
         self.declare_parameter('max_rpm', 200)                 # Motor max RPM
         self.declare_parameter('pwm_limit', 100)               # Max PWM/Speed value for driver
         self.declare_parameter('rotation_scale', 2.0)          # Moderate rotation boost
+        
+        # Inversion flags (for consistency documentation - actual inversion handled by hiwonder_driver)
+        # These flags document which wheels need hardware inversion due to mechanical mounting
+        self.declare_parameter('invert_fl', True)   # Front-left requires inversion (mecanum X-config)
+        self.declare_parameter('invert_fr', False)  # Front-right standard polarity
+        self.declare_parameter('invert_rl', False)  # Rear-left standard polarity  
+        self.declare_parameter('invert_rr', True)   # Rear-right requires inversion (mecanum X-config)
         
         # Topics
         self.subscription = self.create_subscription(
@@ -91,7 +98,9 @@ class MecanumKinematics(Node):
         R = self.get_parameter('wheel_radius').value
         k = Lx + Ly
         
-        # Invert the matrix:
+        # Forward kinematics for mecanum wheels (standard X-configuration)
+        # Note: This assumes positive wheel velocities for forward motion
+        # Physical inversions (FL/RR) are handled by hiwonder_driver based on launch parameters
         # vx = (w_fl + w_fr + w_rl + w_rr) * R / 4
         # vy = (-w_fl + w_fr + w_rl - w_rr) * R / 4
         # wz = (-w_fl + w_fr - w_rl + w_rr) * R / (4 * k)
@@ -123,8 +132,14 @@ class MecanumKinematics(Node):
         self.odom_pub_.publish(odom_msg)
 
     def cmd_vel_callback(self, msg):
-        # 1. Kinematics (Cmd -> Wheels)
-        # ... (Inverse Kinematics Logic Remains Same) ...
+        """
+        Inverse kinematics: Convert cmd_vel to wheel speeds
+        
+        Mecanum X-Configuration Kinematics:
+        - All wheel speeds positive for forward motion (linear.x > 0)
+        - Physical motor inversions handled by hiwonder_driver
+        - FL and RR wheels are mechanically inverted due to roller angle
+        """
         Lx = self.get_parameter('wheel_separation_width').value / 2.0
         Ly = self.get_parameter('wheel_separation_length').value / 2.0
         R = self.get_parameter('wheel_radius').value
@@ -135,10 +150,13 @@ class MecanumKinematics(Node):
         
         k = Lx + Ly
         
-        w_fl = (vx - vy - k * wz) / R
-        w_fr = (vx + vy + k * wz) / R
-        w_rl = (vx + vy - k * wz) / R
-        w_rr = (vx - vy + k * wz) / R
+        # Standard mecanum kinematics (X-configuration)
+        # Note: Output is mathematically correct for standard wheel orientation
+        # Physical inversions applied downstream in hiwonder_driver
+        w_fl = (vx - vy - k * wz) / R  # Will be inverted by hardware driver
+        w_fr = (vx + vy + k * wz) / R  # Direct drive
+        w_rl = (vx + vy - k * wz) / R  # Direct drive
+        w_rr = (vx - vy + k * wz) / R  # Will be inverted by hardware driver
         
         def to_driver_units(rad_s):
             rpm = rad_s * 9.55

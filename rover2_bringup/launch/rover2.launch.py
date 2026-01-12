@@ -77,7 +77,11 @@ def generate_launch_description():
             package='rover2_hardware',
             executable='mecanum_kinematics',
             name='kinematics',
-            output='screen'
+            output='screen',
+            parameters=[{
+                'invert_fl': True,  # Must match hiwonder_driver inversions
+                'invert_rr': True   # Must match hiwonder_driver inversions
+            }]
         ),
         
         # Battery Monitor
@@ -147,6 +151,8 @@ def generate_launch_description():
                 'teleop_override_timeout': 0.5,
                 'self_message_timeout': 0.25,
                 'coast_timeout': 0.5,
+                'follow_gain_yaw': 3.0,
+                'follow_gain_linear': 5.0,
                 'recovery_scan_timeout': 4.0
             }]
         ),

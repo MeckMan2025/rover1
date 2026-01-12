@@ -126,6 +126,8 @@ class PersonFollower(Node):
         self.declare_parameter('teleop_override_timeout', 0.5)    # Disable if teleop active
         self.declare_parameter('self_message_timeout', 0.25)      # Ignore own cmd_vel echoes
         self.declare_parameter('coast_timeout', 0.5)              # Coast with last cmd for smooth motion
+        self.declare_parameter('follow_gain_yaw', 3.0)            # Angular control gain (proportional)
+        self.declare_parameter('follow_gain_linear', 5.0)         # Linear control gain (proportional)
         self.declare_parameter('recovery_scan_timeout', 4.0)      # Longer recovery scan for humans
 
         # Load parameters
@@ -140,6 +142,8 @@ class PersonFollower(Node):
         self.teleop_override_timeout = self.get_parameter('teleop_override_timeout').value
         self.self_message_timeout = self.get_parameter('self_message_timeout').value
         self.coast_timeout = self.get_parameter('coast_timeout').value
+        self.follow_gain_yaw = self.get_parameter('follow_gain_yaw').value
+        self.follow_gain_linear = self.get_parameter('follow_gain_linear').value
         self.recovery_scan_timeout = self.get_parameter('recovery_scan_timeout').value
 
         # Initialize Hailo inference engine (lazy-loaded on first detection enable)
@@ -970,7 +974,7 @@ class PersonFollower(Node):
         # Angular control (centering) - proportional with deadzone
         if abs(center_error) > self.center_tolerance:
             # Negative because positive error (person on right) needs negative angular.z (turn right)
-            twist.angular.z = -center_error * self.angular_speed * 3.0
+            twist.angular.z = -center_error * self.angular_speed * self.follow_gain_yaw
             # Clamp to max speed
             twist.angular.z = np.clip(twist.angular.z, -self.angular_speed, self.angular_speed)
 
@@ -985,7 +989,7 @@ class PersonFollower(Node):
             twist.linear.x = 0.0
         elif distance_error > distance_deadzone:
             # Person is too far (feet too high in frame) - move forward to follow
-            twist.linear.x = distance_error * self.linear_speed * 5.0
+            twist.linear.x = distance_error * self.linear_speed * self.follow_gain_linear
             # Clamp to max forward speed
             twist.linear.x = min(twist.linear.x, self.linear_speed)
         # When person is close but not too close, linear.x stays 0 - rotate only
