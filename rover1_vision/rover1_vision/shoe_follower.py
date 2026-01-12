@@ -106,6 +106,7 @@ class ShoeFollower(Node):
         self.cmd_vel_lock = threading.Lock()
         self.last_external_cmd_time = None
         self.our_last_publish_time = None
+        self.our_last_cmd_vel = None  # Store last published cmd_vel for content comparison
 
         # Declare parameters
         self.declare_parameter('model_path', os.path.expanduser(
@@ -118,6 +119,7 @@ class ShoeFollower(Node):
         self.declare_parameter('center_tolerance', 0.12)          # 12% of frame width deadzone (humans wider)
         self.declare_parameter('detection_timeout', 2.0)          # Stop if no person for 2s
         self.declare_parameter('teleop_override_timeout', 0.5)    # Disable if teleop active
+        self.declare_parameter('self_message_timeout', 0.25)     # Ignore own cmd_vel echoes
         self.declare_parameter('recovery_scan_timeout', 4.0)      # Longer recovery scan for humans
 
         # Load parameters
@@ -130,6 +132,7 @@ class ShoeFollower(Node):
         self.center_tolerance = self.get_parameter('center_tolerance').value
         self.detection_timeout = self.get_parameter('detection_timeout').value
         self.teleop_override_timeout = self.get_parameter('teleop_override_timeout').value
+        self.self_message_timeout = self.get_parameter('self_message_timeout').value
         self.recovery_scan_timeout = self.get_parameter('recovery_scan_timeout').value
 
         # Initialize Hailo inference engine (lazy-loaded on first detection enable)
@@ -503,6 +506,7 @@ class ShoeFollower(Node):
         with self.cmd_vel_lock:
             self.last_external_cmd_time = None
             self.our_last_publish_time = None
+            self.our_last_cmd_vel = None
 
         # Destroy image subscription to release resources
         if self.image_sub is not None:
@@ -530,10 +534,22 @@ class ShoeFollower(Node):
         now = self.get_clock().now()
 
         with self.cmd_vel_lock:
-            # Check if this is our own message (published within last 50ms)
+            # Check if this is our own message using both timing and content comparison
             if self.our_last_publish_time is not None:
                 elapsed = (now - self.our_last_publish_time).nanoseconds / 1e9
-                if elapsed < 0.05:  # 50ms window
+                
+                # Primary check: Content comparison (more reliable)
+                if self.our_last_cmd_vel is not None:
+                    cmd_matches = (
+                        abs(msg.linear.x - self.our_last_cmd_vel.linear.x) < 0.001 and
+                        abs(msg.linear.y - self.our_last_cmd_vel.linear.y) < 0.001 and
+                        abs(msg.angular.z - self.our_last_cmd_vel.angular.z) < 0.001
+                    )
+                    if cmd_matches and elapsed < self.self_message_timeout:
+                        return  # This is our message, ignore
+                
+                # Fallback check: Timing only (for edge cases)
+                elif elapsed < self.self_message_timeout:
                     return  # This is our message, ignore
 
             # This is an external message
@@ -931,6 +947,7 @@ class ShoeFollower(Node):
         # Mark this as our publish time (for teleop detection)
         with self.cmd_vel_lock:
             self.our_last_publish_time = self.get_clock().now()
+            self.our_last_cmd_vel = twist
 
         self.cmd_vel_pub.publish(twist)
 
@@ -1000,6 +1017,7 @@ class ShoeFollower(Node):
                     twist.angular.z = self.recovery_rotation_direction
                     with self.cmd_vel_lock:
                         self.our_last_publish_time = self.get_clock().now()
+                        self.our_last_cmd_vel = twist
                     self.cmd_vel_pub.publish(twist)
                 else:
                     # Normal lost target - stop
@@ -1014,6 +1032,7 @@ class ShoeFollower(Node):
         # Mark as our publish
         with self.cmd_vel_lock:
             self.our_last_publish_time = self.get_clock().now()
+            self.our_last_cmd_vel = Twist()  # Store the stop command
 
         self.cmd_vel_pub.publish(Twist())
 

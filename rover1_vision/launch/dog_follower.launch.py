@@ -59,6 +59,7 @@ def generate_launch_description():
                 'center_tolerance': 0.1,
                 'detection_timeout': 1.0,
                 'teleop_override_timeout': 0.5,
+                'self_message_timeout': 0.25,
             }]
         ),
     ])
