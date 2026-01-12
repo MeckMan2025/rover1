@@ -41,7 +41,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'enable_person_follower',
             default_value='true',
-            description='Whether to start the Person Follower vision node'
+            description='Whether to start the person follower node'
         ),
 
         # Robot State Publisher (TF Tree)
