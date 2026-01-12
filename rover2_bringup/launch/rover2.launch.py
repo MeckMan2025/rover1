@@ -1,6 +1,6 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
-from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, SetEnvironmentVariable
+from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, SetEnvironmentVariable, TimerAction
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import PathJoinSubstitution, Command, LaunchConfiguration
@@ -131,30 +131,36 @@ def generate_launch_description():
         ),
 
         # Person Follower (Main feature for Rover2)
-        Node(
-            condition=IfCondition(enable_person_follower),
-            package='rover2_vision',
-            executable='person_follower',
-            name='person_follower',
-            output='screen',
-            respawn=True,
-            respawn_delay=2.0,
-            parameters=[{
-                'model_path': '/home/andrewmeckley/ros2_ws/src/rover2/models/yolov8s.hef',
-                'confidence_threshold': 0.5,
-                'target_foot_y_ratio': 0.70,
-                'too_close_foot_y_ratio': 0.85,
-                'linear_speed': 0.4,
-                'angular_speed': 0.8,
-                'center_tolerance': 0.12,
-                'detection_timeout': 2.0,
-                'teleop_override_timeout': 0.5,
-                'self_message_timeout': 0.25,
-                'coast_timeout': 0.5,
-                'follow_gain_yaw': 3.0,
-                'follow_gain_linear': 5.0,
-                'recovery_scan_timeout': 4.0
-            }]
+        # Person Follower (Main feature for Rover2) - Delayed to prevent boot resource contention
+        TimerAction(
+            period=10.0,
+            actions=[
+                Node(
+                    condition=IfCondition(enable_person_follower),
+                    package='rover2_vision',
+                    executable='person_follower',
+                    name='person_follower',
+                    output='screen',
+                    respawn=True,
+                    respawn_delay=2.0,
+                    parameters=[{
+                        'model_path': '/home/andrewmeckley/ros2_ws/src/rover2/models/yolov8s.hef',
+                        'confidence_threshold': 0.5,
+                        'target_foot_y_ratio': 0.70,
+                        'too_close_foot_y_ratio': 0.85,
+                        'linear_speed': 0.4,
+                        'angular_speed': 0.8,
+                        'center_tolerance': 0.12,
+                        'detection_timeout': 2.0,
+                        'teleop_override_timeout': 0.5,
+                        'self_message_timeout': 0.25,
+                        'coast_timeout': 0.5,
+                        'follow_gain_yaw': 3.0,
+                        'follow_gain_linear': 5.0,
+                        'recovery_scan_timeout': 4.0
+                    }]
+                )
+            ]
         ),
 
         # EKF Sensor Fusion (Local: Odom -> Base_Link)
