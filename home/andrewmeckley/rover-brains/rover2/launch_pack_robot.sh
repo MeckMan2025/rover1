@@ -49,8 +49,8 @@ source ~/ros2_ws/install/setup.bash
 # 4. Launch Pack Robot Stack (rover2.launch.py)
 echo ">>> Launching Pack Robot Stack (rover2)..."
 
-# Launch rover2 configuration
-ros2 launch rover2_bringup rover2.launch.py &
+# Launch rover2 configuration with person follower enabled
+ros2 launch rover2_bringup rover2.launch.py enable_person_follower:=true &
 ROVER_PID=$!
 
 sleep 15
