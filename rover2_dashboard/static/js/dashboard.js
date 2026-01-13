@@ -193,9 +193,10 @@ class Rover1Dashboard {
         const sat = document.getElementById('hudSat');
         const volt = document.getElementById('hudVolt');
         const wifi = document.getElementById('hudWifi');
+        const detection = document.getElementById('hudDetection');
 
         // Guard against missing HUD elements
-        if (!rtk || !sat || !volt || !wifi) {
+        if (!rtk || !sat || !volt || !wifi || !detection) {
             return;
         }
 
@@ -235,6 +236,49 @@ class Rover1Dashboard {
         } else {
             wifi.textContent = 'WIFI: --%';
             wifi.style.color = '#888888';
+        }
+
+        // Person Detection Status (rover2)
+        this.updateDetectionHUD(data, detection);
+    }
+
+    updateDetectionHUD(data, detection) {
+        const detectionEnabled = data.person_detection_enabled || false;
+        const followerStatus = data.person_follower_status || 'idle';
+        const nodeRunning = data.person_follower_running || false;
+
+        if (!nodeRunning) {
+            // Node not running
+            detection.textContent = 'DETECT: OFF';
+            detection.style.color = '#888888';
+            return;
+        }
+
+        // Map status to display and colors
+        if (!detectionEnabled || followerStatus === 'idle') {
+            detection.textContent = 'DETECT: IDLE';
+            detection.style.color = 'rgba(255, 255, 255, 0.6)';
+        } else if (followerStatus === 'detecting') {
+            detection.textContent = 'DETECT: ON';
+            detection.style.color = '#9333ea';
+        } else if (followerStatus === 'searching') {
+            detection.textContent = 'DETECT: SEARCH';
+            detection.style.color = '#ffc107';
+        } else if (followerStatus === 'following') {
+            detection.textContent = 'DETECT: FOLLOW';
+            detection.style.color = '#00ff88';
+        } else if (followerStatus === 'lost_target') {
+            detection.textContent = 'DETECT: LOST';
+            detection.style.color = '#ff9800';
+        } else if (followerStatus === 'teleop_override') {
+            detection.textContent = 'DETECT: OVERRIDE';
+            detection.style.color = '#ff4444';
+        } else if (followerStatus === 'recovery_scan') {
+            detection.textContent = 'DETECT: SCAN';
+            detection.style.color = '#ffc107';
+        } else {
+            detection.textContent = 'DETECT: UNKNOWN';
+            detection.style.color = '#888888';
         }
     }
 
