@@ -142,6 +142,9 @@ class Rover2WebDashboard(Node):
         self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.pending_cmd_vel = None  # Thread-safe queue for cross-thread publishing
         self.teleop_active = False  # Track if web teleop is actively sending commands
+        
+        # Default autonomy style for command handling
+        self.current_autonomy_style = 'trace'  # Default autonomy style
 
         # Timer to publish pending teleop speed from main thread (thread-safe)
         self.create_timer(0.05, self.publish_pending_teleop)  # 20Hz check
