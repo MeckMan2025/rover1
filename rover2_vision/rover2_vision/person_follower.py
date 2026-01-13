@@ -774,20 +774,8 @@ class PersonFollower(Node):
                 font_thickness
             )
 
-        # Draw status overlay in top-left corner
-        if self.following_enabled:
-            status_text = f'Person Follower: {self.current_status.upper()}'
-            status_color = self.COLOR_STATUS_ACTIVE
-        else:
-            status_text = 'Detection: ON'
-            status_color = self.COLOR_PERSON_DETECTED
-
-        cv2.putText(
-            annotated, status_text,
-            (10, 25),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.6,
-            status_color, 2
-        )
+        # Status overlay removed - now handled by web dashboard HUD overlay
+        # This keeps the video feed clean of embedded UI text
 
         return annotated
 
