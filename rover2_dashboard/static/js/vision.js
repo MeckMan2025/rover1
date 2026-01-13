@@ -7,6 +7,11 @@ class PersonFollowerController {
         this.currentStatus = 'idle';
         this.usingAiFeed = false;
         this.nodeRunning = false;
+        
+        // Debouncing to prevent UI glitchiness
+        this.lastStatusTime = 0;
+        this.statusUpdateDelay = 200; // 200ms minimum between status updates
+        this.pendingStatusUpdate = null;
     }
 
     toggleDetection(enabled) {
@@ -30,8 +35,40 @@ class PersonFollowerController {
     }
 
     updateStatus(status, nodeRunning = true) {
+        // Debounce rapid status updates to prevent glitchy animations
+        const now = Date.now();
+        
+        // If this is the same status, ignore (no need to update)
+        if (status === this.currentStatus && nodeRunning === this.nodeRunning) {
+            return;
+        }
+        
+        // Store the new status
         this.currentStatus = status;
         this.nodeRunning = nodeRunning;
+        
+        // Clear any pending update
+        if (this.pendingStatusUpdate) {
+            clearTimeout(this.pendingStatusUpdate);
+        }
+        
+        // If enough time has passed, update immediately
+        if (now - this.lastStatusTime > this.statusUpdateDelay) {
+            this._applyStatusUpdate();
+            this.lastStatusTime = now;
+        } else {
+            // Otherwise, schedule a delayed update
+            this.pendingStatusUpdate = setTimeout(() => {
+                this._applyStatusUpdate();
+                this.lastStatusTime = Date.now();
+                this.pendingStatusUpdate = null;
+            }, this.statusUpdateDelay);
+        }
+    }
+    
+    _applyStatusUpdate() {
+        const status = this.currentStatus;
+        const nodeRunning = this.nodeRunning;
 
         // If node isn't running, show OFF state
         if (!nodeRunning) {

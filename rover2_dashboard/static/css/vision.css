@@ -315,8 +315,14 @@
 }
 
 @keyframes visionPulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
+    0%, 100% { 
+        opacity: 1; 
+        transform: scale(1);
+    }
+    50% { 
+        opacity: 0.85; 
+        transform: scale(1.02);
+    }
 }
 
 /* Shoe Follower Quick Controls - Matches dog follower style with cyan accent */
@@ -519,6 +525,7 @@
     font-size: 0.8rem;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    transition: background-color 0.3s ease, color 0.3s ease, transform 0.3s ease;
 }
 
 .person-follower-quick .quick-status.idle {
@@ -534,7 +541,7 @@
 .person-follower-quick .quick-status.searching {
     background: rgba(255, 193, 7, 0.2);
     color: #ffc107;
-    animation: visionPulse 1.5s infinite;
+    animation: visionPulse 3s infinite;
 }
 
 .person-follower-quick .quick-status.following {
@@ -556,7 +563,7 @@
 .person-follower-quick .quick-status.recovery-scan {
     background: rgba(255, 193, 7, 0.2);
     color: #ffc107;
-    animation: visionPulse 0.8s infinite;
+    animation: visionPulse 2s infinite;
 }
 
 .person-follower-quick .quick-btn-reset {
