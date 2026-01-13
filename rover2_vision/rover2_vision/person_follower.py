@@ -54,6 +54,7 @@ import cv2
 import numpy as np
 import os
 import threading
+import time
 
 # Hailo SDK imports - lazy loaded in _init_hailo() to save ~96MB when idle
 HAILO_AVAILABLE = None  # Will be set on first _init_hailo() call
@@ -227,6 +228,16 @@ class PersonFollower(Node):
         # Status publishing timer
         self.status_timer = self.create_timer(
             0.5, self.publish_status_timer,
+            callback_group=self.timer_cb_group
+        )
+
+        # Watchdog timer to detect and recover from image processing stalls
+        self.last_image_processed_time = None
+        self.watchdog_timeout = 5.0  # seconds
+        
+        self.watchdog_timer = self.create_timer(
+            2.0,
+            self.watchdog_callback,
             callback_group=self.timer_cb_group
         )
 
@@ -733,6 +744,9 @@ class PersonFollower(Node):
                 self.current_status = 'searching'
                 self.publish_status('searching')
 
+        # Update watchdog timestamp - image successfully processed
+        self.last_image_processed_time = time.time()
+
     def draw_detections(self, image: np.ndarray, detections: list,
                         target_person: dict = None) -> np.ndarray:
         """
@@ -1113,6 +1127,18 @@ class PersonFollower(Node):
     def publish_status_timer(self):
         """Periodic status publishing for dashboard."""
         self.publish_status(self.current_status)
+
+    def watchdog_callback(self):
+        """Detect and recover from processing stalls."""
+        if not self.detection_enabled or self.last_image_processed_time is None:
+            return
+
+        elapsed = time.time() - self.last_image_processed_time
+        if elapsed > self.watchdog_timeout:
+            self.get_logger().warn(f'Watchdog: No images processed for {elapsed:.1f}s - recovering')
+            self._cleanup_hailo()
+            self._init_hailo()
+            self.last_image_processed_time = time.time()
 
     def destroy_node(self):
         """Cleanup on shutdown."""
