@@ -106,6 +106,10 @@ class PersonFollower(Node):
         self.last_person_was_close = False  # Was person in "too close" zone before losing detection
         self.recovery_rotation_direction = 0.0  # Which way to rotate when scanning
         self.recovery_scan_start_time = None  # When we started recovery scan
+        
+        # Detection confirmation during scan to prevent overshoot
+        self.scan_detection_time = None  # When person was re-detected during scan
+        self.scan_confirmation_delay = 0.15  # 150ms confirmation delay to prevent false triggers
 
         # Thread safety for cmd_vel detection
         self.cmd_vel_lock = threading.Lock()
@@ -117,10 +121,11 @@ class PersonFollower(Node):
         self.declare_parameter('model_path', os.path.expanduser(
             '~/ros2_ws/src/rover2/models/yolov8s.hef'))
         self.declare_parameter('confidence_threshold', 0.5)
-        self.declare_parameter('target_foot_y_ratio', 0.70)       # Target: feet at 70% down the frame
-        self.declare_parameter('too_close_foot_y_ratio', 0.85)    # Stop if feet at bottom 15% of frame
+        self.declare_parameter('target_foot_y_ratio', 0.55)       # Target: feet at 55% down (maintain distance)
+        self.declare_parameter('too_close_foot_y_ratio', 0.70)    # Stop if feet at 70% down (stop sooner)
         self.declare_parameter('linear_speed', 0.4)               # m/s - slower for human walking speed
-        self.declare_parameter('angular_speed', 0.8)              # rad/s - slower for humans
+        self.declare_parameter('angular_speed', 0.4)              # rad/s - reduced to prevent overshoot
+        self.declare_parameter('scan_angular_speed', 0.3)         # rad/s - dedicated slower scan speed
         self.declare_parameter('center_tolerance', 0.12)          # 12% of frame width deadzone (humans wider)
         self.declare_parameter('detection_timeout', 2.0)          # Stop if no person for 2s
         self.declare_parameter('teleop_override_timeout', 0.5)    # Disable if teleop active
@@ -137,6 +142,7 @@ class PersonFollower(Node):
         self.too_close_foot_y_ratio = self.get_parameter('too_close_foot_y_ratio').value
         self.linear_speed = self.get_parameter('linear_speed').value
         self.angular_speed = self.get_parameter('angular_speed').value
+        self.scan_angular_speed = self.get_parameter('scan_angular_speed').value
         self.center_tolerance = self.get_parameter('center_tolerance').value
         self.detection_timeout = self.get_parameter('detection_timeout').value
         self.teleop_override_timeout = self.get_parameter('teleop_override_timeout').value
@@ -522,6 +528,9 @@ class PersonFollower(Node):
         # Clear coast state
         self.last_follow_cmd = None
         self.coast_start_time = None
+        
+        # Reset scan confirmation state
+        self.scan_detection_time = None
 
         # Destroy image subscription to release resources
         if self.image_sub is not None:
@@ -657,7 +666,25 @@ class PersonFollower(Node):
             return
 
         if person is not None:
-            self.last_detection_time = self.get_clock().now()
+            now = self.get_clock().now()
+            self.last_detection_time = now
+            
+            # Detection confirmation during recovery scan to prevent overshoot
+            if self.current_status == 'recovery_scan':
+                if self.scan_detection_time is None:
+                    # First detection during scan - start confirmation timer
+                    self.scan_detection_time = now
+                    self.get_logger().debug('Person detected during scan - starting confirmation delay')
+                    return  # Don't act on detection yet
+                else:
+                    # Check if confirmation delay has passed
+                    confirmation_elapsed = (now - self.scan_detection_time).nanoseconds / 1e9
+                    if confirmation_elapsed < self.scan_confirmation_delay:
+                        return  # Still in confirmation delay period
+                    # Confirmation period passed - proceed with following
+                    self.scan_detection_time = None
+                    self.get_logger().info('Scan detection confirmed - resuming following')
+            
             # Clear coast state - we have a valid detection
             self.coast_start_time = None
             # Reset recovery state - we found the person again
@@ -668,7 +695,8 @@ class PersonFollower(Node):
                 self.current_status = 'following'
                 self.publish_status('following')
         else:
-            # No detection this frame - check if we should coast
+            # No detection this frame - reset scan confirmation and check if we should coast
+            self.scan_detection_time = None
             now = self.get_clock().now()
             
             # If we were following and just lost detection, start coasting
@@ -1026,14 +1054,14 @@ class PersonFollower(Node):
                 if self.last_person_was_close and self.current_status not in ['recovery_scan', 'lost_target']:
                     self.current_status = 'recovery_scan'
                     self.recovery_scan_start_time = now
-                    # Rotate toward last known position
+                    # Rotate toward last known position (using slower scan speed)
                     if self.last_person_frame_position == 'left':
-                        self.recovery_rotation_direction = self.angular_speed  # Rotate left (positive)
+                        self.recovery_rotation_direction = self.scan_angular_speed  # Rotate left (positive)
                     elif self.last_person_frame_position == 'right':
-                        self.recovery_rotation_direction = -self.angular_speed  # Rotate right (negative)
+                        self.recovery_rotation_direction = -self.scan_angular_speed  # Rotate right (negative)
                     else:
                         # Was centered - default to rotating right (person likely walked past)
-                        self.recovery_rotation_direction = -self.angular_speed
+                        self.recovery_rotation_direction = -self.scan_angular_speed
                     self.publish_status('recovery_scan')
                     self.get_logger().info(f'Person lost after close contact - scanning {self.last_person_frame_position}')
 
