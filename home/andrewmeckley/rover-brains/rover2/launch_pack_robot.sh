@@ -70,15 +70,13 @@ else
     echo ">>> System check passed - no conflicts detected"
 fi
 
-# Launch PyQt Camera Viewer on touchscreen
-echo ">>> Launching camera viewer on touchscreen..."
+# Launch Touchscreen Dashboard (battery voltage + GPS sats + camera)
+echo ">>> Launching touchscreen dashboard..."
 export DISPLAY=:0
 export QT_QPA_PLATFORM=wayland
-cd ~/ros2_ws/src/rover1
-python3 scripts/rover_camera_viewer.py --rover2 &
-CAMERA_PID=$!
-echo ">>> Camera viewer started (PID: $CAMERA_PID)"
-echo ">>> Touch screen to exit camera view"
+ros2 run rover_touchscreen touchscreen_dashboard &
+DASHBOARD_PID=$!
+echo ">>> Touchscreen dashboard started (PID: $DASHBOARD_PID)"
 
 # Keep process running for brain-selector
-wait $ROVER_PID || wait $CAMERA_PID
+wait $ROVER_PID || wait $DASHBOARD_PID
