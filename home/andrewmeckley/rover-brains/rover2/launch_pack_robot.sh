@@ -70,29 +70,12 @@ else
     echo ">>> System check passed - no conflicts detected"
 fi
 
-# Launch Touchscreen Dashboard (battery voltage + GPS sats + camera)
-echo ">>> Launching touchscreen dashboard..."
-export DISPLAY=:0
-export QT_QPA_PLATFORM=wayland
-# Note: Using direct path because rover_touchscreen installs to bin/ instead of lib/
-# which makes ros2 run unable to find it. TODO: fix package build structure.
-$HOME/ros2_ws/install/rover_touchscreen/bin/touchscreen_dashboard &
-DASHBOARD_PID=$!
-echo ">>> Touchscreen dashboard started (PID: $DASHBOARD_PID)"
-
-# Monitor and restart dashboard if it crashes (runs in background)
-(
-    while true; do
-        sleep 5
-        if ! kill -0 $DASHBOARD_PID 2>/dev/null; then
-            echo ">>> Dashboard crashed, restarting..."
-            WAYLAND_DISPLAY=wayland-0 QT_QPA_PLATFORM=wayland \
-                $HOME/ros2_ws/install/rover_touchscreen/bin/touchscreen_dashboard &
-            DASHBOARD_PID=$!
-            echo ">>> Dashboard restarted (PID: $DASHBOARD_PID)"
-        fi
-    done
-) &
+# Launch Touchscreen Dashboard with Watchdog
+# The watchdog monitors the dashboard and restarts it if frozen or crashed
+echo ">>> Launching touchscreen dashboard with watchdog..."
+~/ros2_ws/src/rover1/scripts/touchscreen_watchdog.sh &
+WATCHDOG_PID=$!
+echo ">>> Touchscreen watchdog started (PID: $WATCHDOG_PID)"
 
 # Keep main process alive while rover runs
 wait $ROVER_PID
