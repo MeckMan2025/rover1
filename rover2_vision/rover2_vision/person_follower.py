@@ -48,6 +48,7 @@ from sensor_msgs.msg import Image
 from geometry_msgs.msg import Twist
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
+from rcl_interfaces.msg import SetParametersResult
 
 from cv_bridge import CvBridge
 import cv2
@@ -126,9 +127,9 @@ class PersonFollower(Node):
         self.declare_parameter('model_path', os.path.expanduser(
             '~/ros2_ws/src/rover2/models/yolov8s.hef'))
         self.declare_parameter('confidence_threshold', 0.5)
-        self.declare_parameter('target_foot_y_ratio', 0.80)       # Target: feet at 80% down (get closer to person)
-        self.declare_parameter('too_close_foot_y_ratio', 0.85)    # Stop if feet at 85% down (very close)
-        self.declare_parameter('linear_speed', 0.4)               # m/s - slower for human walking speed
+        self.declare_parameter('target_foot_y_ratio', 0.90)       # Target: feet at 90% down (~6 feet following)
+        self.declare_parameter('too_close_foot_y_ratio', 0.95)    # Stop only when feet almost off-frame
+        self.declare_parameter('linear_speed', 0.6)               # m/s - faster pursuit speed
         self.declare_parameter('angular_speed', 0.4)              # rad/s - reduced to prevent overshoot
         self.declare_parameter('scan_angular_speed', 0.3)         # rad/s - dedicated slower scan speed
         self.declare_parameter('center_tolerance', 0.12)          # 12% of frame width deadzone (humans wider)
@@ -158,6 +159,9 @@ class PersonFollower(Node):
         self.follow_gain_yaw_d = self.get_parameter('follow_gain_yaw_d').value
         self.follow_gain_linear = self.get_parameter('follow_gain_linear').value
         self.recovery_scan_timeout = self.get_parameter('recovery_scan_timeout').value
+
+        # Register callback for dynamic parameter updates
+        self.add_on_set_parameters_callback(self._parameter_callback)
 
         # Initialize Hailo inference engine (lazy-loaded on first detection enable)
         self.hailo_device = None
@@ -253,6 +257,41 @@ class PersonFollower(Node):
         if not HAILO_AVAILABLE:
             self.get_logger().warn('Running in MOCK MODE - no real inference')
         self.publish_status('idle')
+
+    def _parameter_callback(self, params):
+        """Handle dynamic parameter updates from ros2 param set."""
+        for param in params:
+            if param.name == 'target_foot_y_ratio':
+                self.target_foot_y_ratio = param.value
+                self.get_logger().info(f'Updated target_foot_y_ratio: {param.value}')
+            elif param.name == 'too_close_foot_y_ratio':
+                self.too_close_foot_y_ratio = param.value
+                self.get_logger().info(f'Updated too_close_foot_y_ratio: {param.value}')
+            elif param.name == 'linear_speed':
+                self.linear_speed = param.value
+                self.get_logger().info(f'Updated linear_speed: {param.value}')
+            elif param.name == 'angular_speed':
+                self.angular_speed = param.value
+                self.get_logger().info(f'Updated angular_speed: {param.value}')
+            elif param.name == 'scan_angular_speed':
+                self.scan_angular_speed = param.value
+                self.get_logger().info(f'Updated scan_angular_speed: {param.value}')
+            elif param.name == 'center_tolerance':
+                self.center_tolerance = param.value
+                self.get_logger().info(f'Updated center_tolerance: {param.value}')
+            elif param.name == 'follow_gain_yaw':
+                self.follow_gain_yaw = param.value
+                self.get_logger().info(f'Updated follow_gain_yaw: {param.value}')
+            elif param.name == 'follow_gain_yaw_d':
+                self.follow_gain_yaw_d = param.value
+                self.get_logger().info(f'Updated follow_gain_yaw_d: {param.value}')
+            elif param.name == 'follow_gain_linear':
+                self.follow_gain_linear = param.value
+                self.get_logger().info(f'Updated follow_gain_linear: {param.value}')
+            elif param.name == 'confidence_threshold':
+                self.confidence_threshold = param.value
+                self.get_logger().info(f'Updated confidence_threshold: {param.value}')
+        return SetParametersResult(successful=True)
 
     def _init_hailo(self):
         """Initialize Hailo-8L inference engine with persistent vstreams."""

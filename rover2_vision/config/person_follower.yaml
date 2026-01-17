@@ -7,13 +7,13 @@ person_follower:
     model_path: "/home/andrewmeckley/ros2_ws/src/rover2/models/yolov8s.hef"
     confidence_threshold: 0.5
     
-    # Following Behavior Parameters
-    target_foot_y_ratio: 0.70        # Target distance: feet at 70% down the frame
-    too_close_foot_y_ratio: 0.85     # Stop if feet at bottom 15% of frame
+    # Following Behavior Parameters (aggressive ~6 feet following)
+    target_foot_y_ratio: 0.90        # Target: feet at 90% down (very close ~6 feet)
+    too_close_foot_y_ratio: 0.95     # Only stop when feet almost off-frame
     center_tolerance: 0.12           # 12% of frame width deadzone for centering
-    
-    # Movement Speeds (adjusted for human walking pace)
-    linear_speed: 0.4                # m/s - forward/backward speed
+
+    # Movement Speeds (faster pursuit)
+    linear_speed: 0.6                # m/s - faster forward speed
     angular_speed: 0.8               # rad/s - rotation speed
     
     # Safety Timeouts
