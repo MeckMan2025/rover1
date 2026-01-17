@@ -74,7 +74,9 @@ fi
 echo ">>> Launching touchscreen dashboard..."
 export DISPLAY=:0
 export QT_QPA_PLATFORM=wayland
-ros2 run rover_touchscreen touchscreen_dashboard &
+# Note: Using direct path because rover_touchscreen installs to bin/ instead of lib/
+# which makes ros2 run unable to find it. TODO: fix package build structure.
+$HOME/ros2_ws/install/rover_touchscreen/bin/touchscreen_dashboard &
 DASHBOARD_PID=$!
 echo ">>> Touchscreen dashboard started (PID: $DASHBOARD_PID)"
 
