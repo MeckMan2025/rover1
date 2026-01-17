@@ -80,5 +80,19 @@ $HOME/ros2_ws/install/rover_touchscreen/bin/touchscreen_dashboard &
 DASHBOARD_PID=$!
 echo ">>> Touchscreen dashboard started (PID: $DASHBOARD_PID)"
 
-# Keep process running for brain-selector
-wait $ROVER_PID || wait $DASHBOARD_PID
+# Monitor and restart dashboard if it crashes (runs in background)
+(
+    while true; do
+        sleep 5
+        if ! kill -0 $DASHBOARD_PID 2>/dev/null; then
+            echo ">>> Dashboard crashed, restarting..."
+            WAYLAND_DISPLAY=wayland-0 QT_QPA_PLATFORM=wayland \
+                $HOME/ros2_ws/install/rover_touchscreen/bin/touchscreen_dashboard &
+            DASHBOARD_PID=$!
+            echo ">>> Dashboard restarted (PID: $DASHBOARD_PID)"
+        fi
+    done
+) &
+
+# Keep main process alive while rover runs
+wait $ROVER_PID
