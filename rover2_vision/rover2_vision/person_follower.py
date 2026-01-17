@@ -466,10 +466,14 @@ class PersonFollower(Node):
 
     def detection_disable_callback(self, request, response):
         """Disable detection (stops Hailo inference and releases resources)."""
+        # Auto-disable following if active (user expects Detect Off to stop everything)
         if self.following_enabled:
-            response.success = False
-            response.message = 'Cannot disable detection while following is active. Stop following first.'
-            return response
+            self.following_enabled = False
+            self.stop_robot()
+            self.current_target_person = None
+            self.prev_center_error = 0.0
+            self.prev_error_time = None
+            self.get_logger().info('Auto-disabled following because detection was disabled')
 
         self.detection_enabled = False
         self.current_status = 'idle'
