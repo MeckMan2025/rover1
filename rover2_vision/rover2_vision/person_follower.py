@@ -483,6 +483,11 @@ class PersonFollower(Node):
 
         self.following_enabled = True
         self.last_detection_time = self.get_clock().now()
+
+        # Reset PD controller state to prevent derivative spike on first frame
+        self.prev_center_error = 0.0
+        self.prev_error_time = None
+
         self.current_status = 'searching'
 
         response.success = True
