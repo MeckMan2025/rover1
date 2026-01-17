@@ -112,6 +112,10 @@ class PersonFollower(Node):
         self.scan_detection_time = None  # When person was re-detected during scan
         self.scan_confirmation_delay = 0.15  # 150ms confirmation delay to prevent false triggers
 
+        # PD controller state for angular control (prevents overshoot when target stops)
+        self.prev_center_error = 0.0
+        self.prev_error_time = None
+
         # Thread safety for cmd_vel detection
         self.cmd_vel_lock = threading.Lock()
         self.last_external_cmd_time = None
@@ -133,6 +137,7 @@ class PersonFollower(Node):
         self.declare_parameter('self_message_timeout', 0.25)      # Ignore own cmd_vel echoes
         self.declare_parameter('coast_timeout', 0.5)              # Coast with last cmd for smooth motion
         self.declare_parameter('follow_gain_yaw', 3.0)            # Angular control gain (proportional)
+        self.declare_parameter('follow_gain_yaw_d', 1.5)          # Angular control gain (derivative/damping)
         self.declare_parameter('follow_gain_linear', 5.0)         # Linear control gain (proportional)
         self.declare_parameter('recovery_scan_timeout', 4.0)      # Longer recovery scan for humans
 
@@ -150,6 +155,7 @@ class PersonFollower(Node):
         self.self_message_timeout = self.get_parameter('self_message_timeout').value
         self.coast_timeout = self.get_parameter('coast_timeout').value
         self.follow_gain_yaw = self.get_parameter('follow_gain_yaw').value
+        self.follow_gain_yaw_d = self.get_parameter('follow_gain_yaw_d').value
         self.follow_gain_linear = self.get_parameter('follow_gain_linear').value
         self.recovery_scan_timeout = self.get_parameter('recovery_scan_timeout').value
 
@@ -492,6 +498,10 @@ class PersonFollower(Node):
         self.stop_robot()
         self.current_target_person = None
 
+        # Reset PD controller state
+        self.prev_center_error = 0.0
+        self.prev_error_time = None
+
         # Keep detection on so user can still see bounding boxes
         if self.detection_enabled:
             self.current_status = 'detecting'
@@ -542,6 +552,10 @@ class PersonFollower(Node):
         
         # Reset scan confirmation state
         self.scan_detection_time = None
+
+        # Reset PD controller state
+        self.prev_center_error = 0.0
+        self.prev_error_time = None
 
         # Destroy image subscription to release resources
         if self.image_sub is not None:
@@ -1001,12 +1015,32 @@ class PersonFollower(Node):
 
         twist = Twist()
 
-        # Angular control (centering) - proportional with deadzone
+        # Angular control (centering) - PD controller with deadzone
         if abs(center_error) > self.center_tolerance:
-            # Negative because positive error (person on right) needs negative angular.z (turn right)
-            twist.angular.z = -center_error * self.angular_speed * self.follow_gain_yaw
+            # Proportional term
+            p_term = -center_error * self.angular_speed * self.follow_gain_yaw
+
+            # Derivative term (damping when approaching target)
+            d_term = 0.0
+            current_time = self.get_clock().now()
+            if self.prev_error_time is not None:
+                dt = (current_time - self.prev_error_time).nanoseconds / 1e9
+                if dt > 0 and dt < 0.5:  # Sanity check on dt
+                    error_derivative = (center_error - self.prev_center_error) / dt
+                    d_term = -error_derivative * self.angular_speed * self.follow_gain_yaw_d
+
+            # Store for next iteration
+            self.prev_center_error = center_error
+            self.prev_error_time = current_time
+
+            # Combined PD output
+            twist.angular.z = p_term + d_term
             # Clamp to max speed
             twist.angular.z = np.clip(twist.angular.z, -self.angular_speed, self.angular_speed)
+        else:
+            # In deadzone - reset derivative tracking
+            self.prev_center_error = 0.0
+            self.prev_error_time = None
 
         # Linear control (distance) - FORWARD ONLY based on foot Y position
         # When person is very close (feet low in frame), stop
