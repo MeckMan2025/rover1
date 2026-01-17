@@ -465,6 +465,9 @@ class Rover2WebDashboard(Node):
         elif action == 'person_detection_disable':
             result = await self.call_person_follower_service('detection_disable')
             self.person_detection_enabled = False
+            # Force immediate switch to raw feed - don't wait for timeout
+            self.last_annotated_time = 0
+            self.using_annotated_feed = False
             return result
         elif action == 'person_follow_enable':
             result = await self.call_person_follower_service('enable')
@@ -476,6 +479,9 @@ class Rover2WebDashboard(Node):
         elif action == 'person_follow_reset':
             result = await self.call_person_follower_service('reset')
             self.person_detection_enabled = False
+            # Force immediate switch to raw feed
+            self.last_annotated_time = 0
+            self.using_annotated_feed = False
             return result
         else:
             return {'success': False, 'message': f'Unknown action: {action}'}
