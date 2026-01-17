@@ -10,6 +10,16 @@ class Rover1Dashboard {
         this.lastValidBatteryTime = null;
         this.batteryStaleTimeout = 5000; // Show '--' only if no valid data for 5 seconds
 
+        // WiFi signal staleness tracking - same pattern as battery
+        this.lastValidWifiSignal = null;
+        this.lastValidWifiTime = null;
+        this.wifiStaleTimeout = 5000;
+
+        // Detection status staleness tracking - same pattern
+        this.lastValidDetectionState = null;
+        this.lastValidDetectionTime = null;
+        this.detectionStaleTimeout = 3000; // Shorter timeout for detection state
+
         this.connect();
 
         // Update "last updated" every second
@@ -222,16 +232,21 @@ class Rover1Dashboard {
             }
         }
 
-        // WiFi signal strength with color coding
+        // WiFi signal strength with staleness protection (same pattern as battery)
         if (data.wifi_signal !== undefined && data.wifi_signal !== null) {
-            wifi.textContent = `WIFI: ${data.wifi_signal}%`;
-            // Color code: green >60%, yellow 30-60%, red <30%
-            if (data.wifi_signal >= 60) {
-                wifi.style.color = '#00ff88';
-            } else if (data.wifi_signal >= 30) {
-                wifi.style.color = '#ffc107';
+            // Valid reading - update and cache
+            this.lastValidWifiSignal = data.wifi_signal;
+            this.lastValidWifiTime = Date.now();
+            this.updateWifiHUD(wifi, data.wifi_signal);
+        } else if (this.lastValidWifiSignal !== null) {
+            // Invalid reading - check staleness before showing '--'
+            if (Date.now() - this.lastValidWifiTime < this.wifiStaleTimeout) {
+                // Keep showing last valid value
+                this.updateWifiHUD(wifi, this.lastValidWifiSignal);
             } else {
-                wifi.style.color = '#ff4444';
+                // Data is stale, show '--'
+                wifi.textContent = 'WIFI: --%';
+                wifi.style.color = '#888888';
             }
         } else {
             wifi.textContent = 'WIFI: --%';
@@ -242,12 +257,54 @@ class Rover1Dashboard {
         this.updateDetectionHUD(data, detection);
     }
 
+    updateWifiHUD(wifi, signal) {
+        wifi.textContent = `WIFI: ${signal}%`;
+        // Color code: green >60%, yellow 30-60%, red <30%
+        if (signal >= 60) {
+            wifi.style.color = '#00ff88';
+        } else if (signal >= 30) {
+            wifi.style.color = '#ffc107';
+        } else {
+            wifi.style.color = '#ff4444';
+        }
+    }
+
     updateDetectionHUD(data, detection) {
         const detectionEnabled = data.person_detection_enabled || false;
         const followerStatus = data.person_follower_status || 'idle';
         const nodeRunning = data.person_follower_running || false;
 
-        if (!nodeRunning) {
+        // Build current state for caching
+        const currentState = {
+            enabled: detectionEnabled,
+            status: followerStatus,
+            running: nodeRunning
+        };
+
+        // Check if we have valid state data (not just default/missing)
+        const hasValidData = data.person_follower_status !== undefined;
+
+        if (hasValidData) {
+            // Valid data - cache it
+            this.lastValidDetectionState = currentState;
+            this.lastValidDetectionTime = Date.now();
+        } else if (this.lastValidDetectionState !== null) {
+            // No valid data - use cached if not stale
+            if (Date.now() - this.lastValidDetectionTime < this.detectionStaleTimeout) {
+                // Use cached state
+                currentState.enabled = this.lastValidDetectionState.enabled;
+                currentState.status = this.lastValidDetectionState.status;
+                currentState.running = this.lastValidDetectionState.running;
+            }
+        }
+
+        // Skip updates during teleop_override to prevent flickering
+        if (currentState.status === 'teleop_override' && this.lastValidDetectionState) {
+            // Keep showing the pre-override state to avoid flicker
+            return;
+        }
+
+        if (!currentState.running) {
             // Node not running
             detection.textContent = 'DETECT: OFF';
             detection.style.color = '#888888';
@@ -255,25 +312,22 @@ class Rover1Dashboard {
         }
 
         // Map status to display and colors
-        if (!detectionEnabled || followerStatus === 'idle') {
+        if (!currentState.enabled || currentState.status === 'idle') {
             detection.textContent = 'DETECT: IDLE';
             detection.style.color = 'rgba(255, 255, 255, 0.6)';
-        } else if (followerStatus === 'detecting') {
+        } else if (currentState.status === 'detecting') {
             detection.textContent = 'DETECT: ON';
             detection.style.color = '#9333ea';
-        } else if (followerStatus === 'searching') {
+        } else if (currentState.status === 'searching') {
             detection.textContent = 'DETECT: SEARCH';
             detection.style.color = '#ffc107';
-        } else if (followerStatus === 'following') {
+        } else if (currentState.status === 'following') {
             detection.textContent = 'DETECT: FOLLOW';
             detection.style.color = '#00ff88';
-        } else if (followerStatus === 'lost_target') {
+        } else if (currentState.status === 'lost_target') {
             detection.textContent = 'DETECT: LOST';
             detection.style.color = '#ff9800';
-        } else if (followerStatus === 'teleop_override') {
-            detection.textContent = 'DETECT: OVERRIDE';
-            detection.style.color = '#ff4444';
-        } else if (followerStatus === 'recovery_scan') {
+        } else if (currentState.status === 'recovery_scan') {
             detection.textContent = 'DETECT: SCAN';
             detection.style.color = '#ffc107';
         } else {

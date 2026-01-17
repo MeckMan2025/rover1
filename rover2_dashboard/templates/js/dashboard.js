@@ -10,6 +10,11 @@ class Rover1Dashboard {
         this.lastValidBatteryTime = null;
         this.batteryStaleTimeout = 5000; // Show '--' only if no valid data for 5 seconds
 
+        // WiFi signal staleness tracking - same pattern as battery
+        this.lastValidWifiSignal = null;
+        this.lastValidWifiTime = null;
+        this.wifiStaleTimeout = 5000;
+
         this.connect();
 
         // Update "last updated" every second
@@ -198,20 +203,37 @@ class Rover1Dashboard {
             }
         }
 
-        // WiFi signal strength with color coding
+        // WiFi signal strength with staleness protection (same pattern as battery)
         if (data.wifi_signal !== undefined && data.wifi_signal !== null) {
-            wifi.textContent = `WIFI: ${data.wifi_signal}%`;
-            // Color code: green >60%, yellow 30-60%, red <30%
-            if (data.wifi_signal >= 60) {
-                wifi.style.color = '#00ff88';
-            } else if (data.wifi_signal >= 30) {
-                wifi.style.color = '#ffc107';
+            // Valid reading - update and cache
+            this.lastValidWifiSignal = data.wifi_signal;
+            this.lastValidWifiTime = Date.now();
+            this.updateWifiHUD(wifi, data.wifi_signal);
+        } else if (this.lastValidWifiSignal !== null) {
+            // Invalid reading - check staleness before showing '--'
+            if (Date.now() - this.lastValidWifiTime < this.wifiStaleTimeout) {
+                // Keep showing last valid value
+                this.updateWifiHUD(wifi, this.lastValidWifiSignal);
             } else {
-                wifi.style.color = '#ff4444';
+                // Data is stale, show '--'
+                wifi.textContent = 'WIFI: --%';
+                wifi.style.color = '#888888';
             }
         } else {
             wifi.textContent = 'WIFI: --%';
             wifi.style.color = '#888888';
+        }
+    }
+
+    updateWifiHUD(wifi, signal) {
+        wifi.textContent = `WIFI: ${signal}%`;
+        // Color code: green >60%, yellow 30-60%, red <30%
+        if (signal >= 60) {
+            wifi.style.color = '#00ff88';
+        } else if (signal >= 30) {
+            wifi.style.color = '#ffc107';
+        } else {
+            wifi.style.color = '#ff4444';
         }
     }
 
