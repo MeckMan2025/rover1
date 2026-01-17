@@ -323,7 +323,7 @@ class Rover2WebDashboard(Node):
                 ['nmcli', '-t', '-f', 'IN-USE,SIGNAL', 'dev', 'wifi', 'list'],
                 capture_output=True,
                 text=True,
-                timeout=5.0
+                timeout=2.0  # Reduced timeout
             )
             if result.returncode == 0:
                 for line in result.stdout.strip().split('\n'):
@@ -331,10 +331,10 @@ class Rover2WebDashboard(Node):
                         # Line format: "*:75" where 75 is signal strength
                         self.wifi_signal = int(line.split(':')[1])
                         return
-            self.wifi_signal = None
+            # Don't clear on failure - keep last known value
         except Exception as e:
             self.get_logger().debug(f"WiFi signal check failed: {e}")
-            self.wifi_signal = None
+            # Don't clear on failure - keep last known value
 
     def broadcast_data(self):
         """Prepare and broadcast combined health + image + patrol data"""

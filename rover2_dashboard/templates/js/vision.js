@@ -56,12 +56,12 @@ class PersonFollowerController {
 
         // Following is active for searching, following, lost_target, recovery_scan states
         this.followingEnabled = ['searching', 'following', 'lost_target', 'recovery_scan'].includes(status);
-        // Detection is on if not idle or teleop_override
-        const detectionOn = (status !== 'idle' && status !== 'teleop_override');
+        // Detection is on if not idle (teleop_override is temporary, detection stays on)
+        const detectionOn = (status !== 'idle');
 
-        // Update toggle state
+        // Update toggle state (skip during teleop_override to avoid flickering)
         const toggle = document.getElementById('personDetectionToggle');
-        if (toggle && toggle.checked !== detectionOn) {
+        if (toggle && status !== 'teleop_override' && toggle.checked !== detectionOn) {
             toggle.checked = detectionOn;
         }
         this.detectionEnabled = detectionOn;
