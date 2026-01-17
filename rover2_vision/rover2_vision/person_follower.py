@@ -126,8 +126,8 @@ class PersonFollower(Node):
         self.declare_parameter('model_path', os.path.expanduser(
             '~/ros2_ws/src/rover2/models/yolov8s.hef'))
         self.declare_parameter('confidence_threshold', 0.5)
-        self.declare_parameter('target_foot_y_ratio', 0.55)       # Target: feet at 55% down (maintain distance)
-        self.declare_parameter('too_close_foot_y_ratio', 0.70)    # Stop if feet at 70% down (stop sooner)
+        self.declare_parameter('target_foot_y_ratio', 0.80)       # Target: feet at 80% down (get closer to person)
+        self.declare_parameter('too_close_foot_y_ratio', 0.85)    # Stop if feet at 85% down (very close)
         self.declare_parameter('linear_speed', 0.4)               # m/s - slower for human walking speed
         self.declare_parameter('angular_speed', 0.4)              # rad/s - reduced to prevent overshoot
         self.declare_parameter('scan_angular_speed', 0.3)         # rad/s - dedicated slower scan speed
@@ -1013,6 +1013,11 @@ class PersonFollower(Node):
         # Positive error = person too far (feet too high in frame), move forward
         # Negative error = person too close (feet too low in frame), stop/backup
 
+        # Debug: log control values periodically
+        if not hasattr(self, '_last_linear_debug') or (self.get_clock().now() - self._last_linear_debug).nanoseconds / 1e9 > 2.0:
+            self._last_linear_debug = self.get_clock().now()
+            self.get_logger().info(f'Linear control: foot_y={foot_y_ratio:.2f}, target={self.target_foot_y_ratio:.2f}, error={distance_error:.2f}')
+
         twist = Twist()
 
         # Angular control (centering) - PD controller with deadzone
@@ -1046,7 +1051,7 @@ class PersonFollower(Node):
         # When person is very close (feet low in frame), stop
         # When person is at target distance, stay still
         # When person moves away (feet high in frame), follow forward
-        distance_deadzone = 0.05  # 5% foot_y variation is acceptable
+        distance_deadzone = 0.03  # 3% foot_y variation is acceptable
 
         if foot_y_ratio > self.too_close_foot_y_ratio:
             # Person is very close - stop forward motion, rotate only to track
