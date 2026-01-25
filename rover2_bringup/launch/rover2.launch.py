@@ -11,6 +11,7 @@ from launch_ros.parameter_descriptions import ParameterValue
 def generate_launch_description():
     pkg_share = FindPackageShare('rover2_bringup')
     desc_share = FindPackageShare('rover2_description')
+    vision_share = FindPackageShare('rover2_vision')
     
     # Launch Arguments
     use_joy = LaunchConfiguration('use_joy', default='true')
@@ -130,8 +131,8 @@ def generate_launch_description():
             }]
         ),
 
-        # Person Follower (Main feature for Rover2)
         # Person Follower (Main feature for Rover2) - Delayed to prevent boot resource contention
+        # Parameters loaded from YAML config for tunable gains without code changes
         TimerAction(
             period=10.0,
             actions=[
@@ -143,22 +144,7 @@ def generate_launch_description():
                     output='screen',
                     respawn=True,
                     respawn_delay=2.0,
-                    parameters=[{
-                        'model_path': '/home/andrewmeckley/ros2_ws/src/rover2/models/yolov8s.hef',
-                        'confidence_threshold': 0.5,
-                        'target_foot_y_ratio': 0.70,
-                        'too_close_foot_y_ratio': 0.85,
-                        'linear_speed': 0.4,
-                        'angular_speed': 0.8,
-                        'center_tolerance': 0.12,
-                        'detection_timeout': 2.0,
-                        'teleop_override_timeout': 0.5,
-                        'self_message_timeout': 0.25,
-                        'coast_timeout': 0.5,
-                        'follow_gain_yaw': 3.0,
-                        'follow_gain_linear': 5.0,
-                        'recovery_scan_timeout': 4.0
-                    }]
+                    parameters=[PathJoinSubstitution([vision_share, 'config', 'person_follower.yaml'])]
                 )
             ]
         ),
