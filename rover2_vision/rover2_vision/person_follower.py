@@ -116,6 +116,10 @@ class PersonFollower(Node):
         # PD controller state for angular control (prevents overshoot when target stops)
         self.prev_center_error = 0.0
         self.prev_error_time = None
+        # Filtered error state (EMA low-pass filter)
+        self.filtered_center_error = 0.0
+        # Angular slew rate limiting state
+        self.prev_angular_cmd = 0.0
 
         # Thread safety for cmd_vel detection
         self.cmd_vel_lock = threading.Lock()
@@ -137,10 +141,15 @@ class PersonFollower(Node):
         self.declare_parameter('teleop_override_timeout', 0.5)    # Disable if teleop active
         self.declare_parameter('self_message_timeout', 0.25)      # Ignore own cmd_vel echoes
         self.declare_parameter('coast_timeout', 0.5)              # Coast with last cmd for smooth motion
-        self.declare_parameter('follow_gain_yaw', 3.0)            # Angular control gain (proportional)
-        self.declare_parameter('follow_gain_yaw_d', 1.5)          # Angular control gain (derivative/damping)
+        self.declare_parameter('follow_gain_yaw', 1.8)            # Angular control gain (proportional)
+        self.declare_parameter('follow_gain_yaw_d', 2.5)          # Angular control gain (derivative/damping)
         self.declare_parameter('follow_gain_linear', 5.0)         # Linear control gain (proportional)
         self.declare_parameter('recovery_scan_timeout', 4.0)      # Longer recovery scan for humans
+        # Robustness parameters for stable tracking
+        self.declare_parameter('error_filter_alpha', 0.3)         # EMA filter coefficient for center error
+        self.declare_parameter('max_ang_accel', 1.5)              # rad/s^2 - angular slew rate limit
+        self.declare_parameter('err_slowdown', 0.35)              # Lateral error to start slowing forward
+        self.declare_parameter('err_turn_in_place', 0.45)         # Lateral error to stop and turn in place
 
         # Load parameters
         self.model_path = self.get_parameter('model_path').value
@@ -159,6 +168,10 @@ class PersonFollower(Node):
         self.follow_gain_yaw_d = self.get_parameter('follow_gain_yaw_d').value
         self.follow_gain_linear = self.get_parameter('follow_gain_linear').value
         self.recovery_scan_timeout = self.get_parameter('recovery_scan_timeout').value
+        self.error_filter_alpha = self.get_parameter('error_filter_alpha').value
+        self.max_ang_accel = self.get_parameter('max_ang_accel').value
+        self.err_slowdown = self.get_parameter('err_slowdown').value
+        self.err_turn_in_place = self.get_parameter('err_turn_in_place').value
 
         # Register callback for dynamic parameter updates
         self.add_on_set_parameters_callback(self._parameter_callback)
@@ -291,6 +304,18 @@ class PersonFollower(Node):
             elif param.name == 'confidence_threshold':
                 self.confidence_threshold = param.value
                 self.get_logger().info(f'Updated confidence_threshold: {param.value}')
+            elif param.name == 'error_filter_alpha':
+                self.error_filter_alpha = param.value
+                self.get_logger().info(f'Updated error_filter_alpha: {param.value}')
+            elif param.name == 'max_ang_accel':
+                self.max_ang_accel = param.value
+                self.get_logger().info(f'Updated max_ang_accel: {param.value}')
+            elif param.name == 'err_slowdown':
+                self.err_slowdown = param.value
+                self.get_logger().info(f'Updated err_slowdown: {param.value}')
+            elif param.name == 'err_turn_in_place':
+                self.err_turn_in_place = param.value
+                self.get_logger().info(f'Updated err_turn_in_place: {param.value}')
         return SetParametersResult(successful=True)
 
     def _init_hailo(self):
@@ -530,6 +555,8 @@ class PersonFollower(Node):
         # Reset PD controller state to prevent derivative spike on first frame
         self.prev_center_error = 0.0
         self.prev_error_time = None
+        self.filtered_center_error = 0.0
+        self.prev_angular_cmd = 0.0
 
         self.current_status = 'searching'
 
@@ -549,6 +576,8 @@ class PersonFollower(Node):
         # Reset PD controller state
         self.prev_center_error = 0.0
         self.prev_error_time = None
+        self.filtered_center_error = 0.0
+        self.prev_angular_cmd = 0.0
 
         # Keep detection on so user can still see bounding boxes
         if self.detection_enabled:
@@ -604,6 +633,8 @@ class PersonFollower(Node):
         # Reset PD controller state
         self.prev_center_error = 0.0
         self.prev_error_time = None
+        self.filtered_center_error = 0.0
+        self.prev_angular_cmd = 0.0
 
         # Destroy image subscription to release resources
         if self.image_sub is not None:
@@ -1041,19 +1072,33 @@ class PersonFollower(Node):
         Generate cmd_vel to follow the detected person.
 
         Control strategy:
-        - Angular: Turn to keep person's feet centered in frame
-        - Linear: Move forward when feet high in frame, stop when feet low
+        - Angular: Turn to keep person's feet centered in frame (PD with EMA filtering)
+        - Linear: Move forward when feet high in frame, reduced when turning hard
 
         Distance is estimated by foot Y position in frame:
         - Higher foot_y (lower in frame) = person is closer
         - Lower foot_y (higher in frame) = person is farther
+
+        Robustness features:
+        - EMA low-pass filter on center_error to reduce detection jitter
+        - Angular slew rate limiting to prevent jerky rotation
+        - Forward speed coupling: reduce/stop linear when lateral error is large
         """
         h, w = image_shape[:2]
         frame_center_x = w / 2
+        current_time = self.get_clock().now()
 
-        # Centering error calculation
+        # Raw centering error calculation
         # Positive center_error = person is right of center, need to turn right (negative angular.z)
-        center_error = (person['foot_x'] - frame_center_x) / w  # -0.5 to 0.5
+        raw_center_error = (person['foot_x'] - frame_center_x) / w  # -0.5 to 0.5
+
+        # Step 1: Apply EMA low-pass filter to center_error (reduces detection jitter)
+        # err_f = alpha * err_raw + (1 - alpha) * err_f_prev
+        self.filtered_center_error = (
+            self.error_filter_alpha * raw_center_error +
+            (1.0 - self.error_filter_alpha) * self.filtered_center_error
+        )
+        center_error = self.filtered_center_error
 
         # Distance error based on foot Y position
         foot_y_ratio = person['foot_y'] / h  # 0.0 = top, 1.0 = bottom
@@ -1062,38 +1107,52 @@ class PersonFollower(Node):
         # Negative error = person too close (feet too low in frame), stop/backup
 
         # Debug: log control values periodically
-        if not hasattr(self, '_last_linear_debug') or (self.get_clock().now() - self._last_linear_debug).nanoseconds / 1e9 > 2.0:
-            self._last_linear_debug = self.get_clock().now()
-            self.get_logger().info(f'Linear control: foot_y={foot_y_ratio:.2f}, target={self.target_foot_y_ratio:.2f}, error={distance_error:.2f}')
+        if not hasattr(self, '_last_linear_debug') or (current_time - self._last_linear_debug).nanoseconds / 1e9 > 2.0:
+            self._last_linear_debug = current_time
+            self.get_logger().info(
+                f'Control: err_raw={raw_center_error:.3f}, err_filt={center_error:.3f}, '
+                f'foot_y={foot_y_ratio:.2f}, dist_err={distance_error:.2f}'
+            )
 
         twist = Twist()
 
+        # Compute dt for derivative and slew limiting (Step 3: clamp for stability)
+        dt = 0.033  # Default ~30Hz assumption
+        if self.prev_error_time is not None:
+            dt = (current_time - self.prev_error_time).nanoseconds / 1e9
+            # Clamp dt to prevent derivative spikes from message lag
+            dt = np.clip(dt, 0.01, 0.1)
+
         # Angular control (centering) - PD controller with deadzone
+        angular_cmd = 0.0
         if abs(center_error) > self.center_tolerance:
             # Proportional term
             p_term = -center_error * self.angular_speed * self.follow_gain_yaw
 
             # Derivative term (damping when approaching target)
             d_term = 0.0
-            current_time = self.get_clock().now()
-            if self.prev_error_time is not None:
-                dt = (current_time - self.prev_error_time).nanoseconds / 1e9
-                if dt > 0 and dt < 0.5:  # Sanity check on dt
-                    error_derivative = (center_error - self.prev_center_error) / dt
-                    d_term = -error_derivative * self.angular_speed * self.follow_gain_yaw_d
+            if self.prev_error_time is not None and dt > 0:
+                error_derivative = (center_error - self.prev_center_error) / dt
+                d_term = -error_derivative * self.angular_speed * self.follow_gain_yaw_d
 
-            # Store for next iteration
-            self.prev_center_error = center_error
-            self.prev_error_time = current_time
-
-            # Combined PD output
-            twist.angular.z = p_term + d_term
+            # Combined PD output (before slew limiting)
+            angular_cmd = p_term + d_term
             # Clamp to max speed
-            twist.angular.z = np.clip(twist.angular.z, -self.angular_speed, self.angular_speed)
-        else:
-            # In deadzone - reset derivative tracking
-            self.prev_center_error = 0.0
-            self.prev_error_time = None
+            angular_cmd = np.clip(angular_cmd, -self.angular_speed, self.angular_speed)
+
+        # Store error for next iteration
+        self.prev_center_error = center_error
+        self.prev_error_time = current_time
+
+        # Step 2: Apply angular slew rate limiting
+        # ang_out = clamp(ang_prev + clamp(ang_cmd - ang_prev, -max_accel*dt, +max_accel*dt), -max, +max)
+        max_delta = self.max_ang_accel * dt
+        angular_delta = np.clip(angular_cmd - self.prev_angular_cmd, -max_delta, max_delta)
+        twist.angular.z = np.clip(
+            self.prev_angular_cmd + angular_delta,
+            -self.angular_speed, self.angular_speed
+        )
+        self.prev_angular_cmd = twist.angular.z
 
         # Linear control (distance) - FORWARD ONLY based on foot Y position
         # When person is very close (feet low in frame), stop
@@ -1101,20 +1160,35 @@ class PersonFollower(Node):
         # When person moves away (feet high in frame), follow forward
         distance_deadzone = 0.03  # 3% foot_y variation is acceptable
 
+        # Calculate base linear speed from distance error
+        linear_x_base = 0.0
         if foot_y_ratio > self.too_close_foot_y_ratio:
-            # Person is very close - stop forward motion, rotate only to track
-            twist.linear.x = 0.0
+            # Person is very close - stop forward motion
+            linear_x_base = 0.0
         elif distance_error > distance_deadzone:
-            # Person is too far (feet too high in frame) - move forward to follow
-            twist.linear.x = distance_error * self.linear_speed * self.follow_gain_linear
+            # Person is too far - move forward to follow
+            linear_x_base = distance_error * self.linear_speed * self.follow_gain_linear
             # Clamp to max forward speed
-            twist.linear.x = min(twist.linear.x, self.linear_speed)
-        # When person is close but not too close, linear.x stays 0 - rotate only
+            linear_x_base = min(linear_x_base, self.linear_speed)
+
+        # Step 3: Forward speed coupling to lateral error
+        # When turning hard, reduce or stop forward speed to prevent losing person from FOV
+        abs_err = abs(center_error)
+        if abs_err > self.err_turn_in_place:
+            # Large lateral error - stop forward motion, turn in place
+            twist.linear.x = 0.0
+        elif abs_err > 0:
+            # Moderate lateral error - reduce forward speed proportionally
+            # linear_x = base * (1 - min(abs_err / err_slowdown, 1))
+            slowdown_factor = 1.0 - min(abs_err / self.err_slowdown, 1.0)
+            twist.linear.x = linear_x_base * slowdown_factor
+        else:
+            twist.linear.x = linear_x_base
 
         # Store command for potential coasting and mark publish time
         self.last_follow_cmd = twist
         with self.cmd_vel_lock:
-            self.our_last_publish_time = self.get_clock().now()
+            self.our_last_publish_time = current_time
             self.our_last_cmd_vel = twist
 
         self.cmd_vel_pub.publish(twist)
