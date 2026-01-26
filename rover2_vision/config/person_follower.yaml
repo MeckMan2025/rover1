@@ -7,9 +7,9 @@ person_follower:
     model_path: "/home/andrewmeckley/ros2_ws/src/rover2/models/yolov8s.hef"
     confidence_threshold: 0.5
 
-    # Following Behavior Parameters (conservative ~8-10 feet following)
-    target_foot_y_ratio: 0.75        # Target: feet at 75% down (safer distance ~8-10 feet)
-    too_close_foot_y_ratio: 0.85     # Stop when feet at 85% (buffer before frame exit)
+    # Following Behavior Parameters (conservative ~10-12 feet following)
+    target_foot_y_ratio: 0.65        # Target: feet at 65% down (~10-12 feet)
+    too_close_foot_y_ratio: 0.75     # Stop when feet at 75% (larger buffer)
     center_tolerance: 0.12           # 12% of frame width deadzone for centering
 
     # Movement Speeds
@@ -36,7 +36,7 @@ person_follower:
     detection_timeout: 2.0           # Stop following if person lost for 2 seconds
     teleop_override_timeout: 0.5     # How long to wait after teleop before resuming
     recovery_scan_timeout: 4.0       # Give up recovery scan after 4 seconds
-    coast_timeout: 0.5               # Coast with last cmd during brief detection drops
+    coast_timeout: 0.15              # Coast 150ms during brief detection drops (tighter response)
     self_message_timeout: 0.25       # Ignore own cmd_vel echoes within this window
 
     # Camera Configuration
