@@ -19,11 +19,11 @@ person_follower:
 
     # Angular Control Gains (PD controller for yaw tracking)
     follow_gain_yaw: 1.8             # Proportional gain for angular control (baseline: 1.6-1.9)
-    follow_gain_yaw_d: 2.5           # Derivative gain for angular damping (baseline: 2.2-3.0)
+    follow_gain_yaw_d: 3.0           # Derivative gain for angular damping (increased for less overshoot)
     follow_gain_linear: 5.0          # Proportional gain for linear control
 
     # Error Filtering (prevents jitter from detection noise)
-    error_filter_alpha: 0.3          # EMA filter coefficient (0=no filtering, 1=no smoothing)
+    error_filter_alpha: 0.25         # EMA filter coefficient (lower = more smoothing, less oscillation)
 
     # Angular Slew Rate Limiting (prevents jerky rotation)
     max_ang_accel: 1.5               # rad/s^2 - maximum angular acceleration
