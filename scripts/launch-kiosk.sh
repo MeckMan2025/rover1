@@ -24,6 +24,9 @@ done
 
 # cage = single-window Wayland compositor for kiosks. Chromium runs inside it
 # in app mode (no URL bar, no tabs) and fullscreen via --kiosk.
+#
+# Pointed at /qr instead of / so the kiosk is a passive viewer (no WebSocket).
+# The phone is the sole drive client — scan the QR to connect from your phone.
 exec cage -- chromium-browser \
     --kiosk \
     --noerrdialogs \
@@ -32,4 +35,4 @@ exec cage -- chromium-browser \
     --disable-pinch \
     --overscroll-history-navigation=0 \
     --disable-features=TranslateUI \
-    --app=http://localhost:8080
+    --app=http://localhost:8080/qr

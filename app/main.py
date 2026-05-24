@@ -34,18 +34,38 @@ Launch:
 from __future__ import annotations
 
 import asyncio
+import io
+import socket
 import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
+import segno
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 
 from app.camera import Camera
 from app.kinematics import cartesian_to_wheels
 from app.motors import HiwonderHardware
+
+
+def _primary_ip() -> str:
+    """Return the IP a remote client would use to reach this host.
+
+    Uses a UDP "connect" (no packets actually sent) so we get the kernel's
+    choice of source address for outbound traffic — which on a Pi with
+    Wi-Fi up is the Wi-Fi IP, exactly what a phone on the same LAN needs.
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        s.close()
 
 MAX_LINEAR = 0.5    # m/s when |joystick| == 1.0 (legacy stadia_teleop default)
 MAX_ANGULAR = 1.0   # rad/s when |joystick| == 1.0 (legacy default; kinematics
@@ -151,6 +171,28 @@ app = FastAPI(lifespan=lifespan)
 @app.get("/")
 async def index() -> FileResponse:
     return FileResponse(WEB_DIR / "index.html")
+
+
+@app.get("/qr")
+async def qr_page() -> HTMLResponse:
+    """Kiosk-side passive view: QR code linking to /, plus the live camera.
+
+    The kiosk loads this so it's not a second WebSocket client fighting the
+    phone for the motor target. Scan the QR → phone opens / → phone is the
+    sole drive client.
+    """
+    url = f"http://{_primary_ip()}:8080/"
+    html = (WEB_DIR / "qr.html").read_text().replace("__URL__", url)
+    return HTMLResponse(html)
+
+
+@app.get("/qr.svg")
+async def qr_svg() -> Response:
+    url = f"http://{_primary_ip()}:8080/"
+    qr = segno.make(url, error="L")
+    buf = io.BytesIO()
+    qr.save(buf, kind="svg", scale=10, border=2, dark="#111")
+    return Response(content=buf.getvalue(), media_type="image/svg+xml")
 
 
 @app.get("/telemetry")

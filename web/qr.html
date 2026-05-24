@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rover · scan to drive</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100vh; width: 100vw; background: #0a0a0a; color: #eee; font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif; overflow: hidden; }
+    #stage { display: flex; width: 100vw; height: 100vh; align-items: stretch; }
+
+    #left {
+      flex: 0 0 42%;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 24px;
+    }
+    .qr-frame {
+      background: #fff; padding: 22px; border-radius: 14px;
+      box-shadow: 0 4px 22px rgba(0,0,0,0.5);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .qr-frame img, .qr-frame svg {
+      width: clamp(200px, 28vw, 320px);
+      height: clamp(200px, 28vw, 320px);
+      display: block;
+    }
+    .label { margin-top: 22px; font-size: 22px; opacity: 0.85; letter-spacing: 0.02em; }
+    .url { margin-top: 6px; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; opacity: 0.55; }
+
+    #right {
+      flex: 1;
+      display: flex; align-items: center; justify-content: center;
+      border-left: 1px solid rgba(255,255,255,0.08);
+      background: #050505;
+    }
+    #video { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+    #status {
+      position: fixed; bottom: 14px; left: 14px;
+      background: rgba(0,0,0,0.6); padding: 8px 14px; border-radius: 8px;
+      font-size: 14px; font-variant-numeric: tabular-nums;
+    }
+    #status .v { color: #6f6; font-weight: 600; }
+    #status .v.low { color: #f66; }
+    #status .sep { opacity: 0.4; margin: 0 6px; }
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <div id="left">
+      <div class="qr-frame">
+        <img src="/qr.svg" alt="scan to drive">
+      </div>
+      <div class="label">scan to drive</div>
+      <div class="url">__URL__</div>
+    </div>
+    <div id="right">
+      <img id="video" src="/video.mjpg" alt="rover camera">
+    </div>
+  </div>
+
+  <div id="status">
+    <span class="v" id="bat">— V</span>
+    <span class="sep">·</span><span id="fps">— fps</span>
+    <span class="sep">·</span>gain <span id="gain">—</span>
+  </div>
+
+<script>
+(async function pollTelemetry() {
+  const bat  = document.getElementById("bat");
+  const fps  = document.getElementById("fps");
+  const gain = document.getElementById("gain");
+  while (true) {
+    try {
+      const r = await fetch("/telemetry");
+      if (r.ok) {
+        const j = await r.json();
+        if (j.battery_v   != null) { bat.textContent  = j.battery_v.toFixed(2) + " V"; bat.classList.toggle("low", j.battery_v < 11.0); }
+        if (j.camera_fps  != null) { fps.textContent  = j.camera_fps.toFixed(1) + " fps"; }
+        if (j.camera_gain != null) { gain.textContent = j.camera_gain.toFixed(1) + "×"; }
+      }
+    } catch (_) {}
+    await new Promise(r => setTimeout(r, 1000));
+  }
+})();
+</script>
+</body>
+</html>
