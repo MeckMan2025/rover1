@@ -184,3 +184,21 @@ ros2 service call /person_follower/reset std_srvs/srv/Trigger
 ---
 
 **Rover2**: Your autonomous pack companion. Simple. Focused. Reliable.
+---
+
+## Thermal budget (passive cooling)
+
+This rover runs **without an active cooler**. Idle SoC sits around 78 °C; the
+Pi 5 soft-throttles at 80 °C. Treat thermal as a hard constraint, not a
+tunable.
+
+- Boot config caps `arm_freq=2000` — see [`boot/`](boot/). Don't raise it.
+- Check temperature anytime: `vcgencmd measure_temp`
+- Check for throttle events since boot: `vcgencmd get_throttled`
+  - `0x0` → never throttled (good)
+  - non-zero → a thermal (or undervoltage) event occurred — investigate workload
+- If temp climbs past 78 °C during a mission: disconnect remote
+  `/video.mjpg` viewers (drops the encoder to 6 Hz) or pause driving for a
+  minute to let it coast back down.
+- Longer-term mitigations: physical airflow over the SoC, larger passive
+  heatsink, or relocate the Pi to a less enclosed spot in the chassis.
