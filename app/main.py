@@ -127,6 +127,29 @@ class MotorTarget:
             return self._power
 
 
+class BatterySmoother:
+    """Low-pass filter on the battery voltage so motor-load droops don't flicker the UI.
+
+    With /telemetry polled at 2 Hz and alpha=0.15:
+      ~58% of a step settled after 2.5 s, ~95% after ~7 s.
+    Fast enough to register a real discharge, slow enough that sub-second
+    current spikes don't push the indicator into amber and back.
+    """
+
+    def __init__(self, alpha: float = 0.15) -> None:
+        self._alpha = alpha
+        self._value: Optional[float] = None
+
+    def update(self, raw: Optional[float]) -> Optional[float]:
+        if raw is None:
+            return self._value
+        if self._value is None:
+            self._value = raw
+        else:
+            self._value = (1.0 - self._alpha) * self._value + self._alpha * raw
+        return self._value
+
+
 def _set_display(on: bool) -> bool:
     """Toggle the HDMI output via wlr-randr. Returns True on success.
 
@@ -171,6 +194,7 @@ state: dict = {
     "target": MotorTarget(),
     "motor_thread": None,
     "motor_stop": None,
+    "battery_smoother": BatterySmoother(),
 }
 
 
@@ -256,8 +280,14 @@ async def telemetry() -> JSONResponse:
     cam: Optional[Camera] = state["camera"]
     # Reading battery_v acquires the I²C lock too; quick (~1 ms) so fine inline.
     target: MotorTarget = state["target"]
+    smoother: BatterySmoother = state["battery_smoother"]
+    battery_raw = hw.read_battery_voltage() if hw else None
+    battery_smoothed = smoother.update(battery_raw)
     return JSONResponse({
-        "battery_v": hw.read_battery_voltage() if hw else None,
+        # Smoothed value is what the UI colors the indicator from.
+        "battery_v": battery_smoothed,
+        # Raw is exposed too for diagnostics — useful for spotting load droop.
+        "battery_v_raw": battery_raw,
         "camera_fps": cam.fps() if cam else 0.0,
         "camera_gain": cam.gain() if cam else None,
         "camera_target_mean": cam.target_mean() if cam else None,
