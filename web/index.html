@@ -190,13 +190,30 @@
     }
     _down(e) { if (this.activeId !== null) return; this.activeId = e.pointerId; this.element.setPointerCapture(e.pointerId); this._set(e.clientX, e.clientY); }
     _move(e) { if (e.pointerId === this.activeId) this._set(e.clientX, e.clientY); }
-    _up(e)   { if (e.pointerId === this.activeId) { this.activeId = null; this._reset(); } }
+    _up(e)   {
+      if (e.pointerId !== this.activeId) return;
+      this.activeId = null;
+      this._reset();
+      // Send a drive packet immediately on release instead of waiting up to
+      // 50 ms for the next setInterval tick. Cuts post-release coast almost
+      // entirely on a buffered link; the OS often flushes an explicit send()
+      // sooner than a periodic one.
+      sendDriveNow();
+    }
   }
   const left  = new Joystick("joystickLeft",  "knobLeft");
   const right = new Joystick("joystickRight", "knobRight");
 
   function drive() {
     return { vx: -left.y, vy: -right.x, omega: -left.x };
+  }
+
+  // Send the current drive state immediately. Called by the 20 Hz tick
+  // and also by Joystick._up() on release for a faster stop response.
+  function sendDriveNow() {
+    if (!wsReady) return;
+    const d = drive();
+    ws.send(JSON.stringify({ type: "drive", vx: d.vx, vy: d.vy, omega: d.omega }));
   }
 
   // --- Power slider --------------------------------------------------------
@@ -252,11 +269,7 @@
 
   // --- Ticks ---------------------------------------------------------------
   connect();
-  setInterval(() => {
-    if (!wsReady) return;
-    const d = drive();
-    send({ type: "drive", vx: d.vx, vy: d.vy, omega: d.omega });
-  }, 50);
+  setInterval(sendDriveNow, 50);
 
   const bat  = document.getElementById("bat");
   const fps  = document.getElementById("fps");

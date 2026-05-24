@@ -79,7 +79,11 @@ MAX_ANGULAR = 1.0   # rad/s when |joystick| == 1.0 (legacy default; kinematics
 
 MOTOR_HZ = 50.0     # motor-thread write rate; well above the hiwonder board's
                     # internal timeouts and the human reaction time
-MOTOR_TIMEOUT = 0.5 # seconds before stale drive command -> zero target
+MOTOR_TIMEOUT = 0.15 # seconds before stale drive command -> zero target.
+                     # Client sends at 20 Hz (50 ms), so 150 ms tolerates losing
+                     # ~3 packets in a row before the motor stops on its own.
+                     # Belt-and-suspenders backup for the JS-side explicit-zero
+                     # send on joystick release.
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
