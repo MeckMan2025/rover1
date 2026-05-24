@@ -33,6 +33,71 @@ def generate_launch_description():
             output='screen'
         ),
         
+        # EKF Sensor Fusion (Local: Odom -> Base_Link)
+        Node(
+            package='robot_localization',
+            executable='ekf_node',
+            name='ekf_filter_node',
+            output='screen',
+            parameters=[PathJoinSubstitution([
+                FindPackageShare('rover1_bringup'),
+                'config',
+                'ekf.yaml'
+            ])],
+            remappings=[
+                ('odometry/filtered', 'odometry/local')
+            ]
+        ),
+
+        # EKF Sensor Fusion (Global: Map -> Odom)
+        Node(
+            package='robot_localization',
+            executable='ekf_node',
+            name='ekf_global_node',
+            output='screen',
+            parameters=[PathJoinSubstitution([
+                FindPackageShare('rover1_bringup'),
+                'config',
+                'ekf_global.yaml'
+            ])],
+            remappings=[
+                ('odometry/filtered', 'odometry/global')
+            ]
+        ),
+
+        # GPS Integration (NavSat Transform)
+        Node(
+            package='robot_localization',
+            executable='navsat_transform_node',
+            name='navsat_transform',
+            output='screen',
+            parameters=[PathJoinSubstitution([
+                FindPackageShare('rover1_bringup'),
+                'config',
+                'navsat.yaml'
+            ])],
+            remappings=[
+                ('gps/fix', '/fix'),
+                ('imu/data', '/imu/data'),
+                ('odometry/filtered', 'odometry/local'),
+                ('odometry/gps', 'odometry/gps')
+            ]
+        ),
+        
+        # Static Transforms
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='base_link_to_imu',
+            arguments = ['0', '0', '0.1', '0', '0', '0', 'base_link', 'imu_link']
+        ),
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='base_link_to_gps',
+            arguments = ['0', '0', '0.2', '0', '0', '0', 'base_link', 'gps_link']
+        ),
+
         # Include GPS Launch
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource([

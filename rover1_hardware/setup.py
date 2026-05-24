@@ -25,6 +25,7 @@ setup(
             'berry_imu_driver = rover1_hardware.berry_imu_driver:main',
             'hiwonder_driver = rover1_hardware.hiwonder_driver:main',
             'mecanum_kinematics = rover1_hardware.mecanum_kinematics:main',
+            'fix_to_nmea = rover1_hardware.fix_to_nmea:main',
         ],
     },
 )

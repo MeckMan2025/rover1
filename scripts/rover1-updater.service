@@ -5,8 +5,8 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=ubuntu
-ExecStart=/bin/bash /home/ubuntu/ros2_ws/src/rover1/scripts/auto_update.sh
+User=andrewmeckley
+ExecStart=/bin/bash /home/andrewmeckley/ros2_ws/src/rover1/scripts/auto_update.sh
 
 [Install]
 WantedBy=multi-user.target
