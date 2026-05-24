@@ -1,0 +1,4 @@
+# rover1 thermal-safe defaults (passive cooling only).
+# Caps peak CPU clock so we stay below the 80 °C Pi 5 throttle point.
+arm_freq=2000
+# Pi 5 ignores arm_boost in [pi4] blocks; leave default.
