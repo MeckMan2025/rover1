@@ -49,7 +49,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 import segno
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 
 from app.camera import Camera
@@ -241,6 +241,10 @@ state: dict = {
     # in /telemetry and forces an MJPEG reconnect when it changes — chromium
     # doesn't auto-recover a stream that dropped while HDMI was off.
     "display_on_count": 0,
+    # Count of remote (non-localhost) MJPEG viewers currently streaming.
+    # When > 0 we encode at ~12 Hz; when 0 we drop to ~6 Hz — encoding for
+    # nobody (or only the on-board kiosk) is the biggest CPU waste on the Pi.
+    "mjpeg_viewers": 0,
 }
 
 
@@ -341,28 +345,43 @@ async def telemetry() -> JSONResponse:
         # Increments each time the kiosk screen comes back on. The qr.html
         # poller watches this and forces an MJPEG reconnect on change.
         "display_on_count": state["display_on_count"],
+        # Visible for verification that the adaptive framerate is doing its
+        # thing — 0 means we're running the kiosk-only slow path.
+        "mjpeg_viewers": state["mjpeg_viewers"],
     })
 
 
 @app.get("/video.mjpg")
-async def video_mjpg() -> StreamingResponse:
+async def video_mjpg(request: Request) -> StreamingResponse:
     boundary = "frame"
+    # Localhost = the on-board kiosk Chromium. Same SoC, so encoding for it
+    # is a pure CPU tax. We still serve it (the kiosk needs preview frames)
+    # but halve the rate when no real remote viewer is on the line.
+    is_remote = bool(request.client) and request.client.host != "127.0.0.1"
 
     async def gen():
+        if is_remote:
+            state["mjpeg_viewers"] += 1
         loop = asyncio.get_event_loop()
-        while True:
-            cam: Optional[Camera] = state["camera"]
-            # Offload the JPEG encode so it can't block the event loop —
-            # otherwise drive commands queue up behind cv2.imencode.
-            jpeg = await loop.run_in_executor(None, cam.get_jpeg) if cam else None
-            if jpeg:
-                head = (
-                    f"--{boundary}\r\n"
-                    f"Content-Type: image/jpeg\r\n"
-                    f"Content-Length: {len(jpeg)}\r\n\r\n"
-                ).encode()
-                yield head + jpeg + b"\r\n"
-            await asyncio.sleep(0.08)  # ~12 Hz; camera caps at ~10 fps
+        try:
+            while True:
+                cam: Optional[Camera] = state["camera"]
+                # Offload the JPEG encode so it can't block the event loop —
+                # otherwise drive commands queue up behind cv2.imencode.
+                jpeg = await loop.run_in_executor(None, cam.get_jpeg) if cam else None
+                if jpeg:
+                    head = (
+                        f"--{boundary}\r\n"
+                        f"Content-Type: image/jpeg\r\n"
+                        f"Content-Length: {len(jpeg)}\r\n\r\n"
+                    ).encode()
+                    yield head + jpeg + b"\r\n"
+                # 12 Hz when a remote phone/iPad is watching, 6 Hz when only
+                # the kiosk is. Halves CPU during idle / docked operation.
+                await asyncio.sleep(0.08 if state["mjpeg_viewers"] > 0 else 0.16)
+        finally:
+            if is_remote:
+                state["mjpeg_viewers"] -= 1
 
     return StreamingResponse(
         gen(), media_type=f"multipart/x-mixed-replace; boundary={boundary}"
