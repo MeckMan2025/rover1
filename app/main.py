@@ -1,20 +1,31 @@
 """FastAPI server: drive the rover from a browser with a live camera feed.
 
+Architecture
+------------
+The asyncio loop only handles network I/O. Motor writes live on a dedicated
+background thread that ticks at 50 Hz regardless of what the loop is doing.
+MJPEG encoding runs in a thread executor so cv2.imencode can never starve
+the WebSocket handler. Result: drive commands and motor updates are
+independent of camera load, network jitter, or any one slow call.
+
 Endpoints
 ---------
-GET  /              static HTML UI (phone-friendly)
+GET  /              static HTML UI
 GET  /video.mjpg    multipart MJPEG live feed
-GET  /telemetry     JSON snapshot: battery voltage, camera fps
-WS   /ws            drive commands from the client:
+GET  /telemetry     JSON: battery_v, camera_fps, camera_gain
+WS   /ws            client → server:
                       {"type": "drive", "vx": -1..1, "vy": -1..1, "omega": -1..1}
                       {"type": "estop"}
 
 Safety
 ------
-- Motors stop if no drive command arrives within CMD_TIMEOUT seconds (watchdog).
-- WebSocket disconnect immediately stops motors.
-- Joystick values are normalized [-1, 1] and scaled to MAX_LINEAR / MAX_ANGULAR
-  before kinematics; the rover never receives "go full speed" by accident.
+- Motor target is zeroed if no drive command arrives within MOTOR_TIMEOUT
+  (handled inside the motor thread, no separate watchdog needed).
+- WebSocket disconnect immediately zeros the target.
+- E-stop latches a zero target until the next drive command clears it.
+- Joystick values are normalized [-1, 1] and scaled to MAX_LINEAR /
+  MAX_ANGULAR before kinematics; the rover never gets "full speed" by
+  accident.
 
 Launch:
     uvicorn app.main:app --host 0.0.0.0 --port 8080
@@ -23,6 +34,7 @@ Launch:
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -35,38 +47,98 @@ from app.camera import Camera
 from app.kinematics import cartesian_to_wheels
 from app.motors import HiwonderHardware
 
-MAX_LINEAR = 0.5    # m/s when |joystick| == 1.0  (legacy stadia_teleop default)
-MAX_ANGULAR = 1.0   # rad/s when |joystick| == 1.0 (legacy stadia_teleop default;
-                    # kinematics.ROTATION_SCALE=2.0 further multiplies this internally)
-CMD_TIMEOUT = 0.5   # motor watchdog window
+MAX_LINEAR = 0.5    # m/s when |joystick| == 1.0 (legacy stadia_teleop default)
+MAX_ANGULAR = 1.0   # rad/s when |joystick| == 1.0 (legacy default; kinematics
+                    # multiplies internally by ROTATION_SCALE=2.0)
+
+MOTOR_HZ = 50.0     # motor-thread write rate; well above the hiwonder board's
+                    # internal timeouts and the human reaction time
+MOTOR_TIMEOUT = 0.5 # seconds before stale drive command -> zero target
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+
+
+class MotorTarget:
+    """Target velocity shared between the WebSocket handler and the motor thread."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._vx = 0.0
+        self._vy = 0.0
+        self._omega = 0.0
+        self._last_update = 0.0
+        self._estop = False
+
+    def set_drive(self, vx: float, vy: float, omega: float) -> None:
+        with self._lock:
+            self._vx, self._vy, self._omega = vx, vy, omega
+            self._last_update = time.monotonic()
+            self._estop = False
+
+    def trigger_estop(self) -> None:
+        with self._lock:
+            self._estop = True
+            self._vx = self._vy = self._omega = 0.0
+
+    def get(self) -> tuple[float, float, float]:
+        """Return (vx, vy, omega) — zero if stale or e-stopped."""
+        with self._lock:
+            if self._estop:
+                return (0.0, 0.0, 0.0)
+            if time.monotonic() - self._last_update > MOTOR_TIMEOUT:
+                return (0.0, 0.0, 0.0)
+            return (self._vx, self._vy, self._omega)
+
 
 state: dict = {
     "camera": None,
     "hardware": None,
-    "last_cmd_time": 0.0,
+    "target": MotorTarget(),
+    "motor_thread": None,
+    "motor_stop": None,
 }
 
 
-async def _watchdog() -> None:
-    while True:
-        hw: Optional[HiwonderHardware] = state["hardware"]
-        if hw is not None and time.monotonic() - state["last_cmd_time"] > CMD_TIMEOUT:
-            hw.stop()
-        await asyncio.sleep(0.1)
+def _motor_loop(hw: HiwonderHardware, target: MotorTarget, stop_event: threading.Event) -> None:
+    """50 Hz: read target, compute wheel speeds, write I²C. Never touches asyncio."""
+    period = 1.0 / MOTOR_HZ
+    next_tick = time.monotonic()
+    while not stop_event.is_set():
+        try:
+            vx, vy, omega = target.get()
+            fl, fr, rl, rr = cartesian_to_wheels(
+                vx * MAX_LINEAR, vy * MAX_LINEAR, omega * MAX_ANGULAR
+            )
+            hw.set_wheel_speeds(fl, fr, rl, rr)
+        except Exception:
+            # I²C hiccups must not kill the loop; the next tick will retry.
+            pass
+
+        next_tick += period
+        sleep_for = next_tick - time.monotonic()
+        if sleep_for > 0:
+            time.sleep(sleep_for)
+        else:
+            # We fell behind; resync rather than spin.
+            next_tick = time.monotonic()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     state["camera"] = Camera()
     state["hardware"] = HiwonderHardware()
-    state["last_cmd_time"] = time.monotonic()
-    watchdog_task = asyncio.create_task(_watchdog())
+    state["motor_stop"] = threading.Event()
+    state["motor_thread"] = threading.Thread(
+        target=_motor_loop,
+        args=(state["hardware"], state["target"], state["motor_stop"]),
+        daemon=True,
+    )
+    state["motor_thread"].start()
     try:
         yield
     finally:
-        watchdog_task.cancel()
+        state["motor_stop"].set()
+        state["motor_thread"].join(timeout=1.0)
         try:
             state["hardware"].close()
         finally:
@@ -85,6 +157,7 @@ async def index() -> FileResponse:
 async def telemetry() -> JSONResponse:
     hw: Optional[HiwonderHardware] = state["hardware"]
     cam: Optional[Camera] = state["camera"]
+    # Reading battery_v acquires the I²C lock too; quick (~1 ms) so fine inline.
     return JSONResponse({
         "battery_v": hw.read_battery_voltage() if hw else None,
         "camera_fps": cam.fps() if cam else 0.0,
@@ -97,9 +170,12 @@ async def video_mjpg() -> StreamingResponse:
     boundary = "frame"
 
     async def gen():
+        loop = asyncio.get_event_loop()
         while True:
             cam: Optional[Camera] = state["camera"]
-            jpeg = cam.get_jpeg() if cam else None
+            # Offload the JPEG encode so it can't block the event loop —
+            # otherwise drive commands queue up behind cv2.imencode.
+            jpeg = await loop.run_in_executor(None, cam.get_jpeg) if cam else None
             if jpeg:
                 head = (
                     f"--{boundary}\r\n"
@@ -107,7 +183,7 @@ async def video_mjpg() -> StreamingResponse:
                     f"Content-Length: {len(jpeg)}\r\n\r\n"
                 ).encode()
                 yield head + jpeg + b"\r\n"
-            await asyncio.sleep(0.08)  # ~12 Hz, capped by camera's ~10 fps
+            await asyncio.sleep(0.08)  # ~12 Hz; camera caps at ~10 fps
 
     return StreamingResponse(
         gen(), media_type=f"multipart/x-mixed-replace; boundary={boundary}"
@@ -117,24 +193,19 @@ async def video_mjpg() -> StreamingResponse:
 @app.websocket("/ws")
 async def ws(websocket: WebSocket) -> None:
     await websocket.accept()
+    target: MotorTarget = state["target"]
     try:
         while True:
             msg = await websocket.receive_json()
             t = msg.get("type")
-            hw: Optional[HiwonderHardware] = state["hardware"]
-            if hw is None:
-                continue
             if t == "drive":
-                vx = float(msg.get("vx", 0.0)) * MAX_LINEAR
-                vy = float(msg.get("vy", 0.0)) * MAX_LINEAR
-                omega = float(msg.get("omega", 0.0)) * MAX_ANGULAR
-                fl, fr, rl, rr = cartesian_to_wheels(vx, vy, omega)
-                hw.set_wheel_speeds(fl, fr, rl, rr)
-                state["last_cmd_time"] = time.monotonic()
+                # No I²C, no kinematics — just store the normalized target.
+                # The motor thread picks it up on its next 50 Hz tick.
+                vx = float(msg.get("vx", 0.0))
+                vy = float(msg.get("vy", 0.0))
+                omega = float(msg.get("omega", 0.0))
+                target.set_drive(vx, vy, omega)
             elif t == "estop":
-                hw.stop()
-                state["last_cmd_time"] = 0.0
+                target.trigger_estop()
     except WebSocketDisconnect:
-        hw = state["hardware"]
-        if hw is not None:
-            hw.stop()
+        target.set_drive(0.0, 0.0, 0.0)
