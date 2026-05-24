@@ -204,6 +204,7 @@ async def telemetry() -> JSONResponse:
         "battery_v": hw.read_battery_voltage() if hw else None,
         "camera_fps": cam.fps() if cam else 0.0,
         "camera_gain": cam.gain() if cam else None,
+        "camera_target_mean": cam.target_mean() if cam else None,
     })
 
 

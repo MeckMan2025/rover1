@@ -63,10 +63,15 @@ class Camera:
             return self._current_fps
 
     def gain(self) -> float:
+        """Current AE-computed software gain multiplier."""
         return self._cam.gain
 
-    def set_gain(self, value: float) -> None:
-        self._cam.gain = value
+    def target_mean(self) -> float:
+        """Target BGR mean the AE loop converges toward."""
+        return self._cam.target_mean
+
+    def set_target_mean(self, value: float) -> None:
+        self._cam.target_mean = value
 
     def get_jpeg(
         self,

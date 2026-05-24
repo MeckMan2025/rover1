@@ -5,7 +5,7 @@ After=default.target
 [Service]
 Type=simple
 WorkingDirectory=%h/ros2_ws/src/rover1
-Environment=ROVER_CAM_GAIN=3
+Environment=ROVER_CAM_TARGET_MEAN=100
 ExecStart=%h/code/rover1-venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8080
 Restart=on-failure
 RestartSec=3
