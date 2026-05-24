@@ -20,6 +20,35 @@
     #status .v.low { color: #f66; }
     #status .sep { opacity: 0.4; margin: 0 6px; }
 
+    #power-box {
+      position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,0.55); padding: 8px 14px; border-radius: 8px;
+      font-size: 13px; font-variant-numeric: tabular-nums;
+      display: flex; align-items: center; gap: 10px;
+    }
+    #power-box label { opacity: 0.75; letter-spacing: 0.04em; text-transform: uppercase; font-size: 11px; }
+    #power-slider {
+      -webkit-appearance: none; appearance: none;
+      width: 150px; height: 6px;
+      background: linear-gradient(to right, #f66 0%, #ffc107 40%, #6f6 70%);
+      border-radius: 6px; outline: none; cursor: pointer; touch-action: none;
+    }
+    #power-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 22px; height: 22px; border-radius: 50%; background: #eee; border: 2px solid #444; cursor: pointer; }
+    #power-slider::-moz-range-thumb     { width: 22px; height: 22px; border-radius: 50%; background: #eee; border: 2px solid #444; cursor: pointer; }
+    #power-value { min-width: 42px; text-align: right; font-weight: 600; color: #6f6; }
+    #power-value.mid { color: #ffc107; }
+    #power-value.low { color: #f66; }
+
+    #screen-toggle {
+      position: absolute; top: 12px; right: 100px;
+      width: 76px; height: 76px; border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.3);
+      background: rgba(60,60,60,0.5); color: #ddd;
+      font-size: 11px; font-weight: bold; cursor: pointer;
+      transition: background 0.1s, color 0.1s, border-color 0.1s;
+    }
+    #screen-toggle.off { background: rgba(80,40,40,0.5); color: #f99; border-color: rgba(255,100,100,0.4); }
+
     #estop {
       position: absolute; top: 12px; right: 12px;
       width: 76px; height: 76px; border-radius: 50%;
@@ -36,7 +65,6 @@
     }
     #joystickLeft  { left: 24px; }
     #joystickRight { right: 24px; }
-
     .knob {
       position: absolute; top: 50%; left: 50%; width: 70px; height: 70px;
       border-radius: 50%; background: rgba(255,255,255,0.45);
@@ -44,12 +72,7 @@
       transform: translate(-50%, -50%); pointer-events: none;
       transition: transform 0.06s linear;
     }
-
-    .joy-label {
-      position: absolute; left: 50%; transform: translateX(-50%); bottom: -22px;
-      font-size: 11px; color: rgba(255,255,255,0.65); letter-spacing: 0.05em;
-      text-transform: uppercase; pointer-events: none; white-space: nowrap;
-    }
+    .joy-label { position: absolute; left: 50%; transform: translateX(-50%); bottom: -22px; font-size: 11px; color: rgba(255,255,255,0.65); letter-spacing: 0.05em; text-transform: uppercase; pointer-events: none; white-space: nowrap; }
 
     #ws-state {
       position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
@@ -59,12 +82,14 @@
     #ws-state.ok  { color: #6f6; }
     #ws-state.bad { color: #f66; }
 
-    /* Small phone portrait — shrink the joysticks so they don't overlap. */
     @media (max-width: 600px) {
       .joystick { width: 130px; height: 130px; bottom: 20px; }
       .knob { width: 52px; height: 52px; }
       #joystickLeft  { left: 16px; }
       #joystickRight { right: 16px; }
+      #power-slider  { width: 110px; }
+      #screen-toggle { right: 96px; width: 70px; height: 70px; }
+      #estop         { width: 70px; height: 70px; }
     }
   </style>
 </head>
@@ -78,17 +103,17 @@
       <span class="sep">·</span>gain <span id="gain">—</span>
     </div>
 
+    <div id="power-box">
+      <label for="power-slider">Speed</label>
+      <input id="power-slider" type="range" min="10" max="100" step="5" value="100">
+      <span id="power-value">100%</span>
+    </div>
+
+    <button id="screen-toggle" title="Toggle rover screen">SCREEN<br>ON</button>
     <button id="estop">E-STOP</button>
 
-    <div id="joystickLeft" class="joystick">
-      <div id="knobLeft" class="knob"></div>
-      <div class="joy-label">drive · turn</div>
-    </div>
-
-    <div id="joystickRight" class="joystick">
-      <div id="knobRight" class="knob"></div>
-      <div class="joy-label">strafe</div>
-    </div>
+    <div id="joystickLeft"  class="joystick"><div id="knobLeft"  class="knob"></div><div class="joy-label">drive · turn</div></div>
+    <div id="joystickRight" class="joystick"><div id="knobRight" class="knob"></div><div class="joy-label">strafe</div></div>
 
     <div id="ws-state" class="bad">disconnected</div>
   </div>
@@ -100,94 +125,115 @@
   let ws = null;
   let wsReady = false;
 
+  function send(msg) { if (wsReady) ws.send(JSON.stringify(msg)); }
+
   function connect() {
     ws = new WebSocket(`ws://${location.host}/ws`);
-    ws.onopen  = () => { wsReady = true;  wsState.textContent = "connected";    wsState.className = "ok";  };
+    ws.onopen  = () => {
+      wsReady = true;
+      wsState.textContent = "connected"; wsState.className = "ok";
+      // Sync server with our current slider value (which may have come from localStorage).
+      send({ type: "set_power", value: powerValue() / 100 });
+    };
     ws.onclose = () => { wsReady = false; wsState.textContent = "reconnecting…"; wsState.className = "bad"; setTimeout(connect, 1000); };
     ws.onerror = () => { try { ws.close(); } catch (e) {} };
   }
-  connect();
 
-  // --- Joystick widget -----------------------------------------------------
-  // x in [-1, 1] horizontal (positive = right on screen)
-  // y in [-1, 1] vertical   (positive = down  on screen — screen-coord convention)
+  // --- Joystick ------------------------------------------------------------
   class Joystick {
     constructor(elementId, knobId) {
-      this.element  = document.getElementById(elementId);
-      this.knob     = document.getElementById(knobId);
-      this.x        = 0;
-      this.y        = 0;
-      this.activeId = null;
-
-      this.element.addEventListener("pointerdown", e => this._down(e));
-      this.element.addEventListener("pointermove", e => this._move(e));
+      this.element = document.getElementById(elementId);
+      this.knob    = document.getElementById(knobId);
+      this.x = 0; this.y = 0; this.activeId = null;
+      this.element.addEventListener("pointerdown",  e => this._down(e));
+      this.element.addEventListener("pointermove",  e => this._move(e));
       this.element.addEventListener("pointerup",     e => this._up(e));
       this.element.addEventListener("pointercancel", e => this._up(e));
       this.element.addEventListener("pointerleave",  e => this._up(e));
     }
-
     _half() { return this.element.getBoundingClientRect().width / 2; }
-
-    _set(clientX, clientY) {
+    _set(cx, cy) {
       const r = this.element.getBoundingClientRect();
-      const dx = clientX - (r.left + r.width  / 2);
-      const dy = clientY - (r.top  + r.height / 2);
-      const m  = this._half();
+      const dx = cx - (r.left + r.width / 2);
+      const dy = cy - (r.top + r.height / 2);
+      const m = this._half();
       this.x = Math.max(-1, Math.min(1, dx / m));
       this.y = Math.max(-1, Math.min(1, dy / m));
       this._drawKnob();
     }
-
     _reset() { this.x = 0; this.y = 0; this._drawKnob(); }
-
     _drawKnob() {
       const offset = this._half() - (this.knob.offsetWidth / 2);
       this.knob.style.transform = `translate(calc(-50% + ${this.x * offset}px), calc(-50% + ${this.y * offset}px))`;
     }
-
-    _down(e) {
-      if (this.activeId !== null) return;
-      this.activeId = e.pointerId;
-      this.element.setPointerCapture(e.pointerId);
-      this._set(e.clientX, e.clientY);
-    }
+    _down(e) { if (this.activeId !== null) return; this.activeId = e.pointerId; this.element.setPointerCapture(e.pointerId); this._set(e.clientX, e.clientY); }
     _move(e) { if (e.pointerId === this.activeId) this._set(e.clientX, e.clientY); }
     _up(e)   { if (e.pointerId === this.activeId) { this.activeId = null; this._reset(); } }
   }
-
   const left  = new Joystick("joystickLeft",  "knobLeft");
   const right = new Joystick("joystickRight", "knobRight");
 
-  // --- Velocity mapping (matches legacy stadia_teleop.py + bench-verified motors)
-  //   LEFT  stick Y axis -> vx     (push up    = forward)
-  //   LEFT  stick X axis -> omega  (push left  = rotate CCW, ROS convention)
-  //   RIGHT stick X axis -> vy     (push left  = strafe left, ROS convention)
-  // Screen y is inverted (positive = down), so we negate.
   function drive() {
-    return {
-      vx:    -left.y,
-      vy:    -right.x,
-      omega: -left.x,
-    };
+    return { vx: -left.y, vy: -right.x, omega: -left.x };
   }
 
-  // --- E-stop --------------------------------------------------------------
-  document.getElementById("estop").addEventListener("click", () => {
-    if (wsReady) ws.send(JSON.stringify({ type: "estop" }));
+  // --- Power slider --------------------------------------------------------
+  const slider = document.getElementById("power-slider");
+  const sliderValueEl = document.getElementById("power-value");
+
+  function powerValue() { return parseInt(slider.value, 10); }
+
+  function reflectPower() {
+    const v = powerValue();
+    sliderValueEl.textContent = v + "%";
+    sliderValueEl.classList.toggle("mid", v < 70 && v >= 40);
+    sliderValueEl.classList.toggle("low", v < 40);
+  }
+
+  // Persist across refreshes
+  const savedPower = parseInt(localStorage.getItem("rover_power") || "100", 10);
+  slider.value = Math.max(10, Math.min(100, savedPower || 100));
+  reflectPower();
+
+  // Debounce the WS send so dragging doesn't flood
+  let powerSendTimer = null;
+  slider.addEventListener("input", () => {
+    reflectPower();
+    localStorage.setItem("rover_power", String(powerValue()));
+    clearTimeout(powerSendTimer);
+    powerSendTimer = setTimeout(() => send({ type: "set_power", value: powerValue() / 100 }), 80);
   });
 
-  // --- 20 Hz drive tick. Keeps the server watchdog fed and the rover responsive.
+  // --- Screen toggle -------------------------------------------------------
+  const screenBtn = document.getElementById("screen-toggle");
+  let screenOn = true;
+
+  function reflectScreen() {
+    screenBtn.innerHTML = screenOn ? "SCREEN<br>ON" : "SCREEN<br>OFF";
+    screenBtn.classList.toggle("off", !screenOn);
+  }
+  reflectScreen();
+
+  screenBtn.addEventListener("click", () => {
+    screenOn = !screenOn;
+    reflectScreen();
+    send({ type: "set_display", on: screenOn });
+  });
+
+  // --- E-stop --------------------------------------------------------------
+  document.getElementById("estop").addEventListener("click", () => send({ type: "estop" }));
+
+  // --- 20 Hz drive tick + 2 Hz telemetry -----------------------------------
+  connect();
   setInterval(() => {
     if (!wsReady) return;
     const d = drive();
-    ws.send(JSON.stringify({ type: "drive", vx: d.vx, vy: d.vy, omega: d.omega }));
+    send({ type: "drive", vx: d.vx, vy: d.vy, omega: d.omega });
   }, 50);
 
-  // --- 2 Hz telemetry poll -------------------------------------------------
   const bat  = document.getElementById("bat");
   const fps  = document.getElementById("fps");
   const gain = document.getElementById("gain");
-
   async function pollTelemetry() {
     try {
       const r = await fetch("/telemetry");

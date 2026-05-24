@@ -36,6 +36,7 @@ from __future__ import annotations
 import asyncio
 import io
 import socket
+import subprocess
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -79,7 +80,12 @@ WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
 
 class MotorTarget:
-    """Target velocity shared between the WebSocket handler and the motor thread."""
+    """Target velocity shared between the WebSocket handler and the motor thread.
+
+    Also owns the power scale — a multiplier in [0.05, 1.0] that the UI's
+    speed slider sends so the driver can throttle the rover for tight spaces
+    without losing joystick range.
+    """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -88,6 +94,7 @@ class MotorTarget:
         self._omega = 0.0
         self._last_update = 0.0
         self._estop = False
+        self._power = 1.0  # slider scale, 0.05..1.0
 
     def set_drive(self, vx: float, vy: float, omega: float) -> None:
         with self._lock:
@@ -95,19 +102,48 @@ class MotorTarget:
             self._last_update = time.monotonic()
             self._estop = False
 
+    def set_power(self, value: float) -> None:
+        with self._lock:
+            self._power = max(0.05, min(1.0, float(value)))
+
     def trigger_estop(self) -> None:
         with self._lock:
             self._estop = True
             self._vx = self._vy = self._omega = 0.0
 
     def get(self) -> tuple[float, float, float]:
-        """Return (vx, vy, omega) — zero if stale or e-stopped."""
+        """Return (vx, vy, omega) — already power-scaled, zero if stale or e-stopped."""
         with self._lock:
             if self._estop:
                 return (0.0, 0.0, 0.0)
             if time.monotonic() - self._last_update > MOTOR_TIMEOUT:
                 return (0.0, 0.0, 0.0)
-            return (self._vx, self._vy, self._omega)
+            p = self._power
+            return (self._vx * p, self._vy * p, self._omega * p)
+
+    @property
+    def power(self) -> float:
+        with self._lock:
+            return self._power
+
+
+def _set_display(on: bool) -> bool:
+    """Toggle the HDMI output via wlr-randr. Returns True on success.
+
+    Requires WAYLAND_DISPLAY and XDG_RUNTIME_DIR to be set in the systemd
+    unit so this process can talk to cage's Wayland socket. Output name
+    HDMI-A-1 matches the rover's 7" touchscreen.
+    """
+    arg = "--on" if on else "--off"
+    try:
+        result = subprocess.run(
+            ["wlr-randr", "--output", "HDMI-A-1", arg],
+            capture_output=True,
+            timeout=3.0,
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
 
 
 state: dict = {
@@ -200,11 +236,13 @@ async def telemetry() -> JSONResponse:
     hw: Optional[HiwonderHardware] = state["hardware"]
     cam: Optional[Camera] = state["camera"]
     # Reading battery_v acquires the I²C lock too; quick (~1 ms) so fine inline.
+    target: MotorTarget = state["target"]
     return JSONResponse({
         "battery_v": hw.read_battery_voltage() if hw else None,
         "camera_fps": cam.fps() if cam else 0.0,
         "camera_gain": cam.gain() if cam else None,
         "camera_target_mean": cam.target_mean() if cam else None,
+        "power": target.power,
     })
 
 
@@ -237,6 +275,7 @@ async def video_mjpg() -> StreamingResponse:
 async def ws(websocket: WebSocket) -> None:
     await websocket.accept()
     target: MotorTarget = state["target"]
+    loop = asyncio.get_event_loop()
     try:
         while True:
             msg = await websocket.receive_json()
@@ -248,6 +287,13 @@ async def ws(websocket: WebSocket) -> None:
                 vy = float(msg.get("vy", 0.0))
                 omega = float(msg.get("omega", 0.0))
                 target.set_drive(vx, vy, omega)
+            elif t == "set_power":
+                target.set_power(float(msg.get("value", 1.0)))
+            elif t == "set_display":
+                # wlr-randr is a quick subprocess — off-thread it so the WS
+                # loop stays responsive for the next drive command.
+                on = bool(msg.get("on", True))
+                await loop.run_in_executor(None, _set_display, on)
             elif t == "estop":
                 target.trigger_estop()
     except WebSocketDisconnect:
