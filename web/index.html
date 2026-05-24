@@ -267,8 +267,15 @@
         if (j.battery_v != null) {
           bat.textContent = j.battery_v.toFixed(2) + " V";
           bat.classList.remove("mid", "low");
-          if      (j.battery_v < 11.0) bat.classList.add("low");
-          else if (j.battery_v < 12.5) bat.classList.add("mid");
+          // Tuned for the rover's CYCLENBATT 12V 10Ah LiFePO4 pack.
+          // LiFePO4 has a very flat discharge curve — almost all useful
+          // capacity sits between 13.0V (50% SOC) and 12.5V (20% SOC).
+          // BMS cutoff is ~10V, so red has to fire well before that.
+          //   green  ≥ 13.0V  (>50% SOC)
+          //   amber  12.5–13.0V (20–50% SOC, charge when convenient)
+          //   red    <  12.5V  (<20% SOC, charge soon)
+          if      (j.battery_v < 12.5) bat.classList.add("low");
+          else if (j.battery_v < 13.0) bat.classList.add("mid");
         }
         if (j.camera_fps  != null) { fps.textContent  = j.camera_fps.toFixed(1) + " fps"; }
         if (j.camera_gain != null) { gain.textContent = j.camera_gain.toFixed(1) + "×"; }
