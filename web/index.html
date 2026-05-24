@@ -11,15 +11,18 @@
     #stage { position: relative; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
     #video { max-width: 100%; max-height: 100%; object-fit: contain; }
 
+    /* Status (top-left) */
     #status {
       position: absolute; top: 12px; left: 12px;
       background: rgba(0,0,0,0.55); padding: 8px 12px; border-radius: 8px;
       font-size: 14px; font-variant-numeric: tabular-nums; pointer-events: none;
     }
-    #status .v { color: #6f6; font-weight: 600; }
+    #status .v   { color: #6f6; font-weight: 600; }
+    #status .v.mid { color: #ffc107; }
     #status .v.low { color: #f66; }
     #status .sep { opacity: 0.4; margin: 0 6px; }
 
+    /* Speed slider (top-center) */
     #power-box {
       position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
       background: rgba(0,0,0,0.55); padding: 8px 14px; border-radius: 8px;
@@ -39,25 +42,40 @@
     #power-value.mid { color: #ffc107; }
     #power-value.low { color: #f66; }
 
-    #screen-toggle {
-      position: absolute; top: 12px; right: 100px;
-      width: 76px; height: 76px; border-radius: 50%;
-      border: 2px solid rgba(255,255,255,0.3);
-      background: rgba(60,60,60,0.5); color: #ddd;
-      font-size: 11px; font-weight: bold; cursor: pointer;
+    /* Right-side button column ----------------------------------------------*/
+    .right-btn {
+      position: absolute; right: 12px;
+      border-radius: 12px; font-weight: bold; cursor: pointer;
       transition: background 0.1s, color 0.1s, border-color 0.1s;
     }
-    #screen-toggle.off { background: rgba(80,40,40,0.5); color: #f99; border-color: rgba(255,100,100,0.4); }
-
     #estop {
-      position: absolute; top: 12px; right: 12px;
-      width: 76px; height: 76px; border-radius: 50%;
-      border: 3px solid #f33; background: #511; color: #f99;
-      font-weight: bold; font-size: 13px; cursor: pointer;
-      transition: background 0.1s, color 0.1s;
+      top: 12px; width: 76px; height: 76px; border-radius: 50%;
+      border: 3px solid #f33; background: #511; color: #f99; font-size: 13px;
     }
     #estop:active { background: #f33; color: #fff; }
 
+    #screen-toggle {
+      top: 100px; width: 76px; height: 76px;
+      border: 2px solid rgba(255,255,255,0.3);
+      background: rgba(60,60,60,0.5); color: #ddd; font-size: 11px;
+    }
+    #screen-toggle.off { background: rgba(80,40,40,0.5); color: #f99; border-color: rgba(255,100,100,0.4); }
+
+    #reboot-btn {
+      top: 190px; width: 76px; height: 52px;
+      border: 2px solid rgba(120,160,255,0.4);
+      background: rgba(40,55,90,0.5); color: #abf; font-size: 11px;
+    }
+    #reboot-btn:active { background: rgba(60,90,160,0.6); color: #fff; }
+
+    #poweroff-btn {
+      top: 254px; width: 76px; height: 52px;
+      border: 2px solid rgba(255,255,255,0.2);
+      background: rgba(40,40,40,0.5); color: #aaa; font-size: 11px;
+    }
+    #poweroff-btn:active { background: rgba(80,80,80,0.6); color: #fff; }
+
+    /* Joysticks (bottom corners) */
     .joystick {
       position: absolute; bottom: 24px; width: 180px; height: 180px;
       border-radius: 50%; background: rgba(255,255,255,0.06);
@@ -88,8 +106,10 @@
       #joystickLeft  { left: 16px; }
       #joystickRight { right: 16px; }
       #power-slider  { width: 110px; }
-      #screen-toggle { right: 96px; width: 70px; height: 70px; }
       #estop         { width: 70px; height: 70px; }
+      #screen-toggle { top: 90px;  width: 70px; height: 70px; }
+      #reboot-btn    { top: 170px; width: 70px; height: 46px; }
+      #poweroff-btn  { top: 224px; width: 70px; height: 46px; }
     }
   </style>
 </head>
@@ -109,8 +129,10 @@
       <span id="power-value">100%</span>
     </div>
 
-    <button id="screen-toggle" title="Toggle rover screen">SCREEN<br>ON</button>
-    <button id="estop">E-STOP</button>
+    <button id="estop"          class="right-btn">E-STOP</button>
+    <button id="screen-toggle"  class="right-btn">SCREEN<br>ON</button>
+    <button id="reboot-btn"     class="right-btn">REBOOT</button>
+    <button id="poweroff-btn"   class="right-btn">POWER<br>OFF</button>
 
     <div id="joystickLeft"  class="joystick"><div id="knobLeft"  class="knob"></div><div class="joy-label">drive · turn</div></div>
     <div id="joystickRight" class="joystick"><div id="knobRight" class="knob"></div><div class="joy-label">strafe</div></div>
@@ -132,7 +154,6 @@
     ws.onopen  = () => {
       wsReady = true;
       wsState.textContent = "connected"; wsState.className = "ok";
-      // Sync server with our current slider value (which may have come from localStorage).
       send({ type: "set_power", value: powerValue() / 100 });
     };
     ws.onclose = () => { wsReady = false; wsState.textContent = "reconnecting…"; wsState.className = "bad"; setTimeout(connect, 1000); };
@@ -180,22 +201,16 @@
   // --- Power slider --------------------------------------------------------
   const slider = document.getElementById("power-slider");
   const sliderValueEl = document.getElementById("power-value");
-
   function powerValue() { return parseInt(slider.value, 10); }
-
   function reflectPower() {
     const v = powerValue();
     sliderValueEl.textContent = v + "%";
     sliderValueEl.classList.toggle("mid", v < 70 && v >= 40);
     sliderValueEl.classList.toggle("low", v < 40);
   }
-
-  // Persist across refreshes
   const savedPower = parseInt(localStorage.getItem("rover_power") || "100", 10);
   slider.value = Math.max(10, Math.min(100, savedPower || 100));
   reflectPower();
-
-  // Debounce the WS send so dragging doesn't flood
   let powerSendTimer = null;
   slider.addEventListener("input", () => {
     reflectPower();
@@ -207,23 +222,33 @@
   // --- Screen toggle -------------------------------------------------------
   const screenBtn = document.getElementById("screen-toggle");
   let screenOn = true;
-
   function reflectScreen() {
     screenBtn.innerHTML = screenOn ? "SCREEN<br>ON" : "SCREEN<br>OFF";
     screenBtn.classList.toggle("off", !screenOn);
   }
   reflectScreen();
-
   screenBtn.addEventListener("click", () => {
     screenOn = !screenOn;
     reflectScreen();
     send({ type: "set_display", on: screenOn });
   });
 
+  // --- Reboot / Power off (confirm before firing) --------------------------
+  document.getElementById("reboot-btn").addEventListener("click", () => {
+    if (confirm("Reboot the rover? It'll come back in about 30 seconds.")) {
+      send({ type: "shutdown", action: "reboot" });
+    }
+  });
+  document.getElementById("poweroff-btn").addEventListener("click", () => {
+    if (confirm("Power off the rover? You'll need to power it back on manually.")) {
+      send({ type: "shutdown", action: "poweroff" });
+    }
+  });
+
   // --- E-stop --------------------------------------------------------------
   document.getElementById("estop").addEventListener("click", () => send({ type: "estop" }));
 
-  // --- 20 Hz drive tick + 2 Hz telemetry -----------------------------------
+  // --- Ticks ---------------------------------------------------------------
   connect();
   setInterval(() => {
     if (!wsReady) return;
@@ -239,7 +264,12 @@
       const r = await fetch("/telemetry");
       if (r.ok) {
         const j = await r.json();
-        if (j.battery_v   != null) { bat.textContent  = j.battery_v.toFixed(2) + " V"; bat.classList.toggle("low", j.battery_v < 11.0); }
+        if (j.battery_v != null) {
+          bat.textContent = j.battery_v.toFixed(2) + " V";
+          bat.classList.remove("mid", "low");
+          if      (j.battery_v < 11.0) bat.classList.add("low");
+          else if (j.battery_v < 12.5) bat.classList.add("mid");
+        }
         if (j.camera_fps  != null) { fps.textContent  = j.camera_fps.toFixed(1) + " fps"; }
         if (j.camera_gain != null) { gain.textContent = j.camera_gain.toFixed(1) + "×"; }
       }

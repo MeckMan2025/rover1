@@ -146,6 +146,25 @@ def _set_display(on: bool) -> bool:
         return False
 
 
+def _shutdown(action: str) -> bool:
+    """Trigger a system poweroff or reboot via systemctl. Returns True on success.
+
+    Requires passwordless sudo for systemctl (already true on this Pi for the
+    user andrewmeckley — verified during earlier setup).
+    """
+    if action not in ("poweroff", "reboot"):
+        return False
+    try:
+        result = subprocess.run(
+            ["sudo", "systemctl", "--no-block", action],
+            capture_output=True,
+            timeout=3.0,
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
 state: dict = {
     "camera": None,
     "hardware": None,
@@ -294,6 +313,12 @@ async def ws(websocket: WebSocket) -> None:
                 # loop stays responsive for the next drive command.
                 on = bool(msg.get("on", True))
                 await loop.run_in_executor(None, _set_display, on)
+            elif t == "shutdown":
+                # Acknowledged power actions from the UI. systemctl --no-block
+                # returns immediately so the response goes back before the box dies.
+                action = str(msg.get("action", ""))
+                if action in ("poweroff", "reboot"):
+                    await loop.run_in_executor(None, _shutdown, action)
             elif t == "estop":
                 target.trigger_estop()
     except WebSocketDisconnect:
