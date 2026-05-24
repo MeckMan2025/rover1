@@ -57,18 +57,26 @@ CONFIDENCE_THRESHOLD = 0.5
 TARGET_AREA_RATIO    = 0.15    # dog fills ~15 % of frame at follow distance
 TOO_CLOSE_RATIO      = 0.40    # dog filling 40 %+ → back up
 AREA_DEADZONE        = 0.03    # area is within deadzone → vertical fine-tune
-CENTER_TOLERANCE     = 0.05    # ±5 % horizontal deadzone
+CENTER_TOLERANCE     = 0.08    # ±8 % horizontal deadzone — wider stops the rover
+                               # fighting tiny detection-jitter errors at center
 
 # Horizontal correction — strafe is the primary "follow the dog sideways"
 # mechanism because mecanum strafe is direct (no rotation latency). Yaw is
 # a secondary orientation fix so the rover ends up facing the dog rather
 # than crab-walking forever.
-STRAFE_GAIN          = 5.0     # aggressive — dog moving left/right tracks fast
-YAW_GAIN             = 2.0     # gentler — orient toward dog over time
+#
+# Gains tuned down from the initial (5.0 / 2.0) tuning that overshot and
+# oscillated. With the 10 Hz inference cycle there's ~100 ms of loop delay,
+# which compounds high gain into ringing — these values respond firmly at
+# moderate errors but stop short of overshoot.
+STRAFE_GAIN          = 3.0
+YAW_GAIN             = 1.5
 
-# Distance / forward-back control.
+# Distance / forward-back control. REVERSE_GAIN reduced from 8.0 for the
+# same overshoot reason — too snappy a backup tends to overshoot past the
+# target distance and then have to creep forward again.
 LINEAR_GAIN          = 10.0    # forward gain when dog is too far
-REVERSE_GAIN         = 8.0     # reverse gain when dog is too close
+REVERSE_GAIN         = 5.0     # reverse gain when dog is too close
 REVERSE_CAP          = 0.7     # normalized reverse cap — slightly safer than fwd
                                # (no rear obstacle sensor, so cap a bit)
 
