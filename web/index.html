@@ -5,143 +5,100 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Rover</title>
   <style>
-    * {
-      box-sizing: border-box;
-      user-select: none;
-      -webkit-user-select: none;
-      -webkit-touch-callout: none;
-      -webkit-tap-highlight-color: transparent;
-    }
-    html, body {
-      margin: 0;
-      padding: 0;
-      height: 100vh;
-      width: 100vw;
-      background: #0a0a0a;
-      color: #eee;
-      font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-      overflow: hidden;
-    }
-    #stage {
-      position: relative;
-      width: 100vw;
-      height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    #video {
-      max-width: 100%;
-      max-height: 100%;
-      object-fit: contain;
-    }
+    *  { box-sizing: border-box; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; padding: 0; height: 100vh; width: 100vw; background: #0a0a0a; color: #eee; font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif; overflow: hidden; }
+
+    #stage { position: relative; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
+    #video { max-width: 100%; max-height: 100%; object-fit: contain; }
+
     #status {
-      position: absolute;
-      top: 12px;
-      left: 12px;
-      background: rgba(0, 0, 0, 0.55);
-      padding: 8px 12px;
-      border-radius: 8px;
-      font-size: 14px;
-      font-variant-numeric: tabular-nums;
-      pointer-events: none;
+      position: absolute; top: 12px; left: 12px;
+      background: rgba(0,0,0,0.55); padding: 8px 12px; border-radius: 8px;
+      font-size: 14px; font-variant-numeric: tabular-nums; pointer-events: none;
     }
     #status .v { color: #6f6; font-weight: 600; }
     #status .v.low { color: #f66; }
     #status .sep { opacity: 0.4; margin: 0 6px; }
+
     #estop {
-      position: absolute;
-      top: 12px;
-      right: 12px;
-      width: 76px;
-      height: 76px;
-      border-radius: 50%;
-      border: 3px solid #f33;
-      background: #511;
-      color: #f99;
-      font-weight: bold;
-      font-size: 13px;
-      cursor: pointer;
+      position: absolute; top: 12px; right: 12px;
+      width: 76px; height: 76px; border-radius: 50%;
+      border: 3px solid #f33; background: #511; color: #f99;
+      font-weight: bold; font-size: 13px; cursor: pointer;
       transition: background 0.1s, color 0.1s;
     }
-    #estop:active {
-      background: #f33;
-      color: #fff;
+    #estop:active { background: #f33; color: #fff; }
+
+    .joystick {
+      position: absolute; bottom: 24px; width: 180px; height: 180px;
+      border-radius: 50%; background: rgba(255,255,255,0.06);
+      border: 2px solid rgba(255,255,255,0.18); touch-action: none;
     }
-    #joystick {
-      position: absolute;
-      bottom: 40px;
-      right: 40px;
-      width: 200px;
-      height: 200px;
-      border-radius: 50%;
-      background: rgba(255, 255, 255, 0.06);
-      border: 2px solid rgba(255, 255, 255, 0.18);
-      touch-action: none;
-    }
-    #knob {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      width: 70px;
-      height: 70px;
-      border-radius: 50%;
-      background: rgba(255, 255, 255, 0.45);
-      border: 2px solid rgba(255, 255, 255, 0.75);
-      transform: translate(-50%, -50%);
-      pointer-events: none;
+    #joystickLeft  { left: 24px; }
+    #joystickRight { right: 24px; }
+
+    .knob {
+      position: absolute; top: 50%; left: 50%; width: 70px; height: 70px;
+      border-radius: 50%; background: rgba(255,255,255,0.45);
+      border: 2px solid rgba(255,255,255,0.75);
+      transform: translate(-50%, -50%); pointer-events: none;
       transition: transform 0.06s linear;
     }
-    #ws-state {
-      position: absolute;
-      bottom: 14px;
-      left: 14px;
-      font-size: 12px;
-      padding: 4px 10px;
-      border-radius: 4px;
-      background: rgba(0, 0, 0, 0.55);
+
+    .joy-label {
+      position: absolute; left: 50%; transform: translateX(-50%); bottom: -22px;
+      font-size: 11px; color: rgba(255,255,255,0.65); letter-spacing: 0.05em;
+      text-transform: uppercase; pointer-events: none; white-space: nowrap;
     }
-    #ws-state.ok { color: #6f6; }
+
+    #ws-state {
+      position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+      font-size: 12px; padding: 4px 10px; border-radius: 4px;
+      background: rgba(0,0,0,0.55); pointer-events: none;
+    }
+    #ws-state.ok  { color: #6f6; }
     #ws-state.bad { color: #f66; }
-    #hint {
-      position: absolute;
-      bottom: 14px;
-      left: 50%;
-      transform: translateX(-50%);
-      font-size: 11px;
-      color: rgba(255, 255, 255, 0.4);
-      pointer-events: none;
+
+    /* Small phone portrait — shrink the joysticks so they don't overlap. */
+    @media (max-width: 600px) {
+      .joystick { width: 130px; height: 130px; bottom: 20px; }
+      .knob { width: 52px; height: 52px; }
+      #joystickLeft  { left: 16px; }
+      #joystickRight { right: 16px; }
     }
   </style>
 </head>
 <body>
   <div id="stage">
     <img id="video" src="/video.mjpg" alt="rover camera">
+
     <div id="status">
       <span class="v" id="bat">— V</span>
-      <span class="sep">·</span>
-      <span id="fps">— fps</span>
+      <span class="sep">·</span><span id="fps">— fps</span>
+      <span class="sep">·</span>gain <span id="gain">—</span>
     </div>
+
     <button id="estop">E-STOP</button>
-    <div id="joystick">
-      <div id="knob"></div>
+
+    <div id="joystickLeft" class="joystick">
+      <div id="knobLeft" class="knob"></div>
+      <div class="joy-label">drive · turn</div>
     </div>
+
+    <div id="joystickRight" class="joystick">
+      <div id="knobRight" class="knob"></div>
+      <div class="joy-label">strafe</div>
+    </div>
+
     <div id="ws-state" class="bad">disconnected</div>
-    <div id="hint">↑ forward &nbsp;·&nbsp; → turn right</div>
   </div>
 
 <script>
 (() => {
+  // --- WebSocket -----------------------------------------------------------
   const wsState = document.getElementById("ws-state");
-  const knob    = document.getElementById("knob");
-  const stick   = document.getElementById("joystick");
-  const estop   = document.getElementById("estop");
-  const bat     = document.getElementById("bat");
-  const fps     = document.getElementById("fps");
-
   let ws = null;
   let wsReady = false;
-  let drive = { vx: 0, omega: 0 };
 
   function connect() {
     ws = new WebSocket(`ws://${location.host}/ws`);
@@ -151,75 +108,96 @@
   }
   connect();
 
-  // Joystick: pointer position -> normalized (vx, omega)
-  function rect() { return stick.getBoundingClientRect(); }
-  function halfSize() { return rect().width / 2; }
+  // --- Joystick widget -----------------------------------------------------
+  // x in [-1, 1] horizontal (positive = right on screen)
+  // y in [-1, 1] vertical   (positive = down  on screen — screen-coord convention)
+  class Joystick {
+    constructor(elementId, knobId) {
+      this.element  = document.getElementById(elementId);
+      this.knob     = document.getElementById(knobId);
+      this.x        = 0;
+      this.y        = 0;
+      this.activeId = null;
 
-  function setFromPointer(clientX, clientY) {
-    const r = rect();
-    const dx = clientX - (r.left + r.width  / 2);
-    const dy = clientY - (r.top  + r.height / 2);
-    const max = halfSize();
-    const xN = Math.max(-1, Math.min(1, dx / max));
-    const yN = Math.max(-1, Math.min(1, dy / max));
-    // Screen up = forward (vx +). Screen right = clockwise turn (omega - in ROS).
-    drive = { vx: -yN, omega: -xN };
-    moveKnob(xN, yN);
+      this.element.addEventListener("pointerdown", e => this._down(e));
+      this.element.addEventListener("pointermove", e => this._move(e));
+      this.element.addEventListener("pointerup",     e => this._up(e));
+      this.element.addEventListener("pointercancel", e => this._up(e));
+      this.element.addEventListener("pointerleave",  e => this._up(e));
+    }
+
+    _half() { return this.element.getBoundingClientRect().width / 2; }
+
+    _set(clientX, clientY) {
+      const r = this.element.getBoundingClientRect();
+      const dx = clientX - (r.left + r.width  / 2);
+      const dy = clientY - (r.top  + r.height / 2);
+      const m  = this._half();
+      this.x = Math.max(-1, Math.min(1, dx / m));
+      this.y = Math.max(-1, Math.min(1, dy / m));
+      this._drawKnob();
+    }
+
+    _reset() { this.x = 0; this.y = 0; this._drawKnob(); }
+
+    _drawKnob() {
+      const offset = this._half() - (this.knob.offsetWidth / 2);
+      this.knob.style.transform = `translate(calc(-50% + ${this.x * offset}px), calc(-50% + ${this.y * offset}px))`;
+    }
+
+    _down(e) {
+      if (this.activeId !== null) return;
+      this.activeId = e.pointerId;
+      this.element.setPointerCapture(e.pointerId);
+      this._set(e.clientX, e.clientY);
+    }
+    _move(e) { if (e.pointerId === this.activeId) this._set(e.clientX, e.clientY); }
+    _up(e)   { if (e.pointerId === this.activeId) { this.activeId = null; this._reset(); } }
   }
 
-  function moveKnob(xN, yN) {
-    const offset = halfSize() - 35;  // 35 = knob radius
-    knob.style.transform = `translate(calc(-50% + ${xN * offset}px), calc(-50% + ${yN * offset}px))`;
+  const left  = new Joystick("joystickLeft",  "knobLeft");
+  const right = new Joystick("joystickRight", "knobRight");
+
+  // --- Velocity mapping (matches legacy stadia_teleop.py + bench-verified motors)
+  //   LEFT  stick Y axis -> vx     (push up    = forward)
+  //   LEFT  stick X axis -> omega  (push left  = rotate CCW, ROS convention)
+  //   RIGHT stick X axis -> vy     (push left  = strafe left, ROS convention)
+  // Screen y is inverted (positive = down), so we negate.
+  function drive() {
+    return {
+      vx:    -left.y,
+      vy:    -right.x,
+      omega: -left.x,
+    };
   }
 
-  let activeId = null;
-  stick.addEventListener("pointerdown", (e) => {
-    if (activeId !== null) return;
-    activeId = e.pointerId;
-    stick.setPointerCapture(e.pointerId);
-    setFromPointer(e.clientX, e.clientY);
-  });
-  stick.addEventListener("pointermove", (e) => {
-    if (e.pointerId !== activeId) return;
-    setFromPointer(e.clientX, e.clientY);
-  });
-  function release(e) {
-    if (e.pointerId !== activeId) return;
-    activeId = null;
-    drive = { vx: 0, omega: 0 };
-    moveKnob(0, 0);
-  }
-  stick.addEventListener("pointerup",     release);
-  stick.addEventListener("pointercancel", release);
-  stick.addEventListener("pointerleave",  release);
-
-  estop.addEventListener("click", () => {
+  // --- E-stop --------------------------------------------------------------
+  document.getElementById("estop").addEventListener("click", () => {
     if (wsReady) ws.send(JSON.stringify({ type: "estop" }));
   });
 
-  // 20 Hz drive tick — sends current joystick state regardless of motion,
-  // so the server-side watchdog stays happy while the user is connected.
+  // --- 20 Hz drive tick. Keeps the server watchdog fed and the rover responsive.
   setInterval(() => {
-    if (wsReady) {
-      ws.send(JSON.stringify({ type: "drive", vx: drive.vx, vy: 0, omega: drive.omega }));
-    }
+    if (!wsReady) return;
+    const d = drive();
+    ws.send(JSON.stringify({ type: "drive", vx: d.vx, vy: d.vy, omega: d.omega }));
   }, 50);
 
-  // 2 Hz telemetry poll
+  // --- 2 Hz telemetry poll -------------------------------------------------
+  const bat  = document.getElementById("bat");
+  const fps  = document.getElementById("fps");
+  const gain = document.getElementById("gain");
+
   async function pollTelemetry() {
     try {
       const r = await fetch("/telemetry");
       if (r.ok) {
         const j = await r.json();
-        if (j.battery_v != null) {
-          bat.textContent = j.battery_v.toFixed(2) + " V";
-          bat.classList.toggle("low", j.battery_v < 11.0);
-        }
-        if (j.camera_fps != null) {
-          fps.textContent = j.camera_fps.toFixed(1) + " fps";
-        }
+        if (j.battery_v   != null) { bat.textContent  = j.battery_v.toFixed(2) + " V"; bat.classList.toggle("low", j.battery_v < 11.0); }
+        if (j.camera_fps  != null) { fps.textContent  = j.camera_fps.toFixed(1) + " fps"; }
+        if (j.camera_gain != null) { gain.textContent = j.camera_gain.toFixed(1) + "×"; }
       }
-    } catch (e) { /* ignore — retry next tick */ }
+    } catch (_) {}
     setTimeout(pollTelemetry, 500);
   }
   pollTelemetry();

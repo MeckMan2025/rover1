@@ -35,8 +35,9 @@ from app.camera import Camera
 from app.kinematics import cartesian_to_wheels
 from app.motors import HiwonderHardware
 
-MAX_LINEAR = 0.4    # m/s when |joystick| == 1.0
-MAX_ANGULAR = 1.5   # rad/s when |joystick| == 1.0
+MAX_LINEAR = 0.5    # m/s when |joystick| == 1.0  (legacy stadia_teleop default)
+MAX_ANGULAR = 1.0   # rad/s when |joystick| == 1.0 (legacy stadia_teleop default;
+                    # kinematics.ROTATION_SCALE=2.0 further multiplies this internally)
 CMD_TIMEOUT = 0.5   # motor watchdog window
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
