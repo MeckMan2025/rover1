@@ -22,9 +22,10 @@
     #status .v.low { color: #f66; }
     #status .sep { opacity: 0.4; margin: 0 6px; }
 
-    /* Speed slider (top-center) */
+    /* Speed slider — stacks directly under the status row in the top-left
+       so it never overlaps the battery readout. */
     #power-box {
-      position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+      position: absolute; top: 52px; left: 12px;
       background: rgba(0,0,0,0.55); padding: 8px 14px; border-radius: 8px;
       font-size: 13px; font-variant-numeric: tabular-nums;
       display: flex; align-items: center; gap: 10px;
