@@ -69,17 +69,23 @@ class HiwonderHardware:
 
         Polarity supplied at construction time is applied here so callers
         always speak in "logical" forward = positive.
+
+        Uses a single 4-byte I²C block write at the contiguous register
+        range 0x33–0x36. Verified on hardware 2026-05-24 against the
+        4-individual-write baseline — both produce the same wheel motion.
+        Block write cuts kernel scheduling overhead ~4× on the motor
+        thread's hot path.
         """
         p_fl, p_fr, p_rl, p_rr = self._polarity
-        writes = (
-            (_REG_FL, _signed_to_unsigned_byte(_clamp(fl * p_fl))),
-            (_REG_FR, _signed_to_unsigned_byte(_clamp(fr * p_fr))),
-            (_REG_RL, _signed_to_unsigned_byte(_clamp(rl * p_rl))),
-            (_REG_RR, _signed_to_unsigned_byte(_clamp(rr * p_rr))),
-        )
+        # Register order is RL, FL, RR, FR at 0x33, 0x34, 0x35, 0x36.
+        block = [
+            _signed_to_unsigned_byte(_clamp(rl * p_rl)),  # 0x33 RL
+            _signed_to_unsigned_byte(_clamp(fl * p_fl)),  # 0x34 FL
+            _signed_to_unsigned_byte(_clamp(rr * p_rr)),  # 0x35 RR
+            _signed_to_unsigned_byte(_clamp(fr * p_fr)),  # 0x36 FR
+        ]
         with self._lock:
-            for reg, val in writes:
-                self._bus.write_byte_data(self.address, reg, val)
+            self._bus.write_i2c_block_data(self.address, _REG_RL, block)
 
     def read_battery_voltage(self) -> float:
         """Battery voltage in volts (register 0x00, 2 bytes LE mV)."""
