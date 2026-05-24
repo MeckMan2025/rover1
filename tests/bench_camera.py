@@ -33,6 +33,7 @@ def main() -> None:
     print("Opening camera...")
     with Camera() as cam:
         print(f"Camera open. Reported dimensions: {cam.width()} x {cam.height()}")
+        print(f"Effective software gain: {cam.gain:.2f}x (override with ROVER_CAM_GAIN)")
 
         # Wait for the first frame to arrive (callback-driven, so it may be late).
         t0 = time.monotonic()

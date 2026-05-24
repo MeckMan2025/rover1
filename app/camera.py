@@ -62,6 +62,12 @@ class Camera:
         with self._lock:
             return self._current_fps
 
+    def gain(self) -> float:
+        return self._cam.gain
+
+    def set_gain(self, value: float) -> None:
+        self._cam.gain = value
+
     def get_jpeg(
         self,
         target_width: Optional[int] = None,
