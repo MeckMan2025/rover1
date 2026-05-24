@@ -6,6 +6,10 @@ log/
 # Python
 __pycache__/
 *.py[cod]
+.venv/
+
+# Runtime logs (DDS, Hailo, etc.)
+*.log
 
 # System
 .DS_Store
