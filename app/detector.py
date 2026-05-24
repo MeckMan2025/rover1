@@ -88,6 +88,15 @@ VERTICAL_TOLERANCE   = 0.08    # ±8 % vertical deadzone
 VERTICAL_GAIN        = 0.5     # gentle — this is polish, not primary control
 VERTICAL_VX_CAP      = 0.2     # cap the fine-tune at 20 % so it can't surge
 
+# Edge safety. Independent of bbox area: if the bbox's top or bottom edge
+# gets within EDGE_MARGIN_RATIO of the frame edge, the dog is about to
+# escape vertically — most often because it's elevated above the camera
+# (dog on couch, dog up stairs) and the rover has approached enough that
+# the geometry pushes the bbox out of frame before TOO_CLOSE_RATIO triggers.
+# Stop forward and back off gently regardless of area.
+EDGE_MARGIN_RATIO    = 0.08    # bbox edge within 8 % of frame edge → at risk
+EDGE_REVERSE_SPEED   = 0.30    # gentle constant reverse while at risk
+
 DETECTION_TIMEOUT    = 1.0     # seconds; after this, declare "lost"
 INFERENCE_HZ         = 10      # camera caps near this; no benefit going higher
 
@@ -375,10 +384,17 @@ class DogFollower:
         orient the rover toward the dog over time. Same sign convention as
         the joystick: +vy = ROS-strafe-left, +omega = ROS-CCW.
 
-        Distance — area-based, bidirectional:
-          too close  (area > TOO_CLOSE_RATIO) → reverse, capped at REVERSE_CAP
-          too far    (area < target - deadzone) → forward
-          in deadzone → vertical fine-tune from bbox center_y, capped small
+        Distance — area-based, bidirectional, with an edge-safety override:
+          too close  (area > TOO_CLOSE_RATIO)        → reverse (capped)
+          bbox near vertical frame edge              → reverse at EDGE_REVERSE_SPEED
+                                                       (handles 'dog on couch' —
+                                                       elevated target where the
+                                                       bbox walks out of frame
+                                                       before area can reach
+                                                       TOO_CLOSE_RATIO)
+          too far    (area < target - deadzone)      → forward
+          in deadzone                                → vertical fine-tune from
+                                                       bbox center_y, capped small
 
         Vertical fine-tune assumes a slightly down-tilted camera (dog below
         center ≈ too close). VERTICAL_GAIN = 0 disables it if that's wrong.
@@ -395,12 +411,26 @@ class DogFollower:
             vy    = max(-1.0, min(1.0, -center_x_err * STRAFE_GAIN))
             omega = max(-1.0, min(1.0, -center_x_err * YAW_GAIN))
 
-        # Distance control.
+        # Is the bbox about to leave the frame vertically? Checked on bbox
+        # coords (not center) so it triggers as soon as the dog's head or
+        # feet approach the frame edge, regardless of how big the dog is.
+        y1 = dog["bbox"][1]
+        y2 = dog["bbox"][3]
+        edge_margin_px = h * EDGE_MARGIN_RATIO
+        bbox_at_top    = y1 < edge_margin_px
+        bbox_at_bottom = y2 > (h - edge_margin_px)
+        bbox_at_edge   = bbox_at_top or bbox_at_bottom
+
+        # Distance control with edge override.
         vx = 0.0
         if area_ratio > TOO_CLOSE_RATIO:
             # Reverse — magnitude proportional to how far past the target.
             overshoot = area_ratio - TARGET_AREA_RATIO
             vx = -min(REVERSE_CAP, overshoot * REVERSE_GAIN)
+        elif bbox_at_edge:
+            # Don't advance if the dog is about to escape vertically.
+            # Constant gentle reverse to bring the bbox safely back into view.
+            vx = -EDGE_REVERSE_SPEED
         else:
             distance_err = TARGET_AREA_RATIO - area_ratio
             if distance_err > AREA_DEADZONE:
