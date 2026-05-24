@@ -130,7 +130,7 @@
     </div>
 
     <button id="estop"          class="right-btn">E-STOP</button>
-    <button id="screen-toggle"  class="right-btn">SCREEN<br>ON</button>
+    <button id="screen-toggle"  class="right-btn" title="Toggle rover touchscreen">TURN<br>OFF</button>
     <button id="reboot-btn"     class="right-btn">REBOOT</button>
     <button id="poweroff-btn"   class="right-btn">POWER<br>OFF</button>
 
@@ -223,7 +223,8 @@
   const screenBtn = document.getElementById("screen-toggle");
   let screenOn = true;
   function reflectScreen() {
-    screenBtn.innerHTML = screenOn ? "SCREEN<br>ON" : "SCREEN<br>OFF";
+    // Label by action ("what tap will do"), color by state (red = off).
+    screenBtn.innerHTML = screenOn ? "TURN<br>OFF" : "TURN<br>ON";
     screenBtn.classList.toggle("off", !screenOn);
   }
   reflectScreen();
