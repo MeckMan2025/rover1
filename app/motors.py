@@ -46,11 +46,18 @@ def _signed_to_unsigned_byte(v: int) -> int:
 class HiwonderHardware:
     """Thread-safe direct I2C access to the Hiwonder motor/battery board."""
 
+    # Default polarity for the rover1 chassis. Front-Left and Rear-Right motors
+    # are physically wired backward (per motor_mapping.md section 3), so a raw
+    # +100 makes them spin reverse. We flip their signs in software so that
+    # positive = forward at the API boundary. The legacy ROS launch files
+    # passed invert_fl=True, invert_rr=True for the same reason.
+    _DEFAULT_POLARITY = (-1, +1, +1, -1)
+
     def __init__(
         self,
         bus_num: int = _BUS_NUM,
         address: int = _ADDRESS,
-        polarity: tuple[int, int, int, int] = (+1, +1, +1, +1),
+        polarity: tuple[int, int, int, int] = _DEFAULT_POLARITY,
     ) -> None:
         self.address = address
         self._polarity = polarity  # (fl, fr, rl, rr), each +1 or -1
