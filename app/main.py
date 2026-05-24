@@ -211,6 +211,19 @@ def _set_display(on: bool) -> bool:
         return False
 
 
+def _cpu_temp_c() -> Optional[float]:
+    """Read SoC temperature in °C from the kernel's thermal zone.
+
+    Cheap (sysfs read, no subprocess) — fine to call on every /telemetry hit.
+    Returns None on Pis that don't expose this path; UI hides the value then.
+    """
+    try:
+        with open("/sys/class/thermal/thermal_zone0/temp") as f:
+            return float(f.read().strip()) / 1000.0
+    except (FileNotFoundError, ValueError, OSError):
+        return None
+
+
 def _shutdown(action: str) -> bool:
     """Trigger a system poweroff or reboot via systemctl. Returns True on success.
 
@@ -348,6 +361,8 @@ async def telemetry() -> JSONResponse:
         # Visible for verification that the adaptive framerate is doing its
         # thing — 0 means we're running the kiosk-only slow path.
         "mjpeg_viewers": state["mjpeg_viewers"],
+        # SoC temperature — surfaces thermal headroom (or lack of it) in the UI.
+        "cpu_temp_c": _cpu_temp_c(),
     })
 
 

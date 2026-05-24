@@ -8,6 +8,12 @@
     *  { box-sizing: border-box; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
     html, body { margin: 0; padding: 0; height: 100vh; width: 100vw; background: #0a0a0a; color: #eee; font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif; overflow: hidden; }
 
+    /* Safe-area-aware bottom offset. Safari's address-bar / back-gesture
+       strip slides in and out; env(safe-area-inset-bottom) is the height
+       reserved for it. We lift bottom-anchored UI above that on iOS;
+       Chromium on the kiosk returns 0 so nothing moves there. */
+    :root { --safe-bottom: env(safe-area-inset-bottom, 0px); }
+
     #stage { position: relative; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
     #video { max-width: 100%; max-height: 100%; object-fit: contain; }
 
@@ -22,7 +28,7 @@
     #status .v.low { color: #f66; }
     #status .sep { opacity: 0.4; margin: 0 6px; }
 
-    /* Speed slider — stacks directly under the status row in the top-left. */
+    /* Speed slider — stacks directly under the status row. */
     #power-box {
       position: absolute; top: 52px; left: 12px;
       background: rgba(0,0,0,0.55); padding: 8px 14px; border-radius: 8px;
@@ -42,7 +48,31 @@
     #power-value.mid { color: #ffc107; }
     #power-value.low { color: #f66; }
 
-    /* Right-side button column */
+    /* Utility row (REBOOT + POWER OFF) — moved to the top-left under the
+       slider so they don't extend the right column down onto the video. */
+    #util-row {
+      position: absolute; top: 100px; left: 12px;
+      display: flex; gap: 6px;
+    }
+    .util-btn {
+      width: 86px; height: 34px;
+      border-radius: 6px;
+      font-size: 11px; font-weight: bold;
+      cursor: pointer; letter-spacing: 0.03em;
+      transition: background 0.1s, color 0.1s, border-color 0.1s;
+    }
+    #reboot-btn {
+      border: 1.5px solid rgba(120,160,255,0.4);
+      background: rgba(40,55,90,0.6); color: #abf;
+    }
+    #reboot-btn:active { background: rgba(60,90,160,0.7); color: #fff; }
+    #poweroff-btn {
+      border: 1.5px solid rgba(255,255,255,0.2);
+      background: rgba(40,40,40,0.6); color: #aaa;
+    }
+    #poweroff-btn:active { background: rgba(80,80,80,0.7); color: #fff; }
+
+    /* Right-side safety column — only the two big controls now. */
     .right-btn {
       position: absolute; right: 12px;
       border-radius: 12px; font-weight: bold; cursor: pointer;
@@ -59,29 +89,17 @@
       background: rgba(60,60,60,0.5); color: #ddd; font-size: 11px;
     }
     #screen-toggle.off { background: rgba(80,40,40,0.5); color: #f99; border-color: rgba(255,100,100,0.4); }
-    #reboot-btn {
-      top: 190px; width: 76px; height: 52px;
-      border: 2px solid rgba(120,160,255,0.4);
-      background: rgba(40,55,90,0.5); color: #abf; font-size: 11px;
-    }
-    #reboot-btn:active { background: rgba(60,90,160,0.6); color: #fff; }
-    #poweroff-btn {
-      top: 254px; width: 76px; height: 52px;
-      border: 2px solid rgba(255,255,255,0.2);
-      background: rgba(40,40,40,0.5); color: #aaa; font-size: 11px;
-    }
-    #poweroff-btn:active { background: rgba(80,80,80,0.6); color: #fff; }
 
-    /* D-pad (bottom-left) — drive + rotate.
-       ▲ forward, ▼ back, ◄ rotate-left (CCW), ► rotate-right (CW). */
+    /* D-pad and strafe pad — lifted above Safari's bottom chrome via
+       env(safe-area-inset-bottom). Falls back to 0 on browsers without it. */
     #dpad {
-      position: absolute; bottom: 24px; left: 24px;
+      position: absolute; left: 24px;
+      bottom: calc(24px + var(--safe-bottom));
       width: 200px; height: 200px;
     }
-    /* Strafe pad (bottom-right) — lateral motion only.
-       ← strafe-left (vy +, ROS convention), → strafe-right (vy -). */
     #strafe-pad {
-      position: absolute; bottom: 24px; right: 24px;
+      position: absolute; right: 24px;
+      bottom: calc(24px + var(--safe-bottom));
       width: 144px; height: 64px;
     }
     .action-btn {
@@ -107,7 +125,6 @@
     #btn-backward     { top: 136px;left: 68px; }
     #btn-strafe-left  { left: 0; top: 0; }
     #btn-strafe-right { left: 80px; top: 0; }
-
     .pad-label {
       position: absolute; bottom: -20px; left: 0; right: 0;
       text-align: center; font-size: 10px; letter-spacing: 0.08em;
@@ -115,8 +132,10 @@
       pointer-events: none;
     }
 
+    /* Connection indicator — also lifted above Safari chrome. */
     #ws-state {
-      position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+      position: absolute; left: 50%; transform: translateX(-50%);
+      bottom: calc(14px + var(--safe-bottom));
       font-size: 12px; padding: 4px 10px; border-radius: 4px;
       background: rgba(0,0,0,0.55); pointer-events: none;
     }
@@ -124,8 +143,8 @@
     #ws-state.bad { color: #f66; }
 
     @media (max-width: 600px) {
-      #dpad { width: 168px; height: 168px; bottom: 20px; left: 16px; }
-      #strafe-pad { width: 120px; height: 56px; bottom: 20px; right: 16px; }
+      #dpad       { width: 168px; height: 168px; left: 16px; }
+      #strafe-pad { width: 120px; height: 56px;  right: 16px; }
       .action-btn { width: 56px; height: 56px; font-size: 24px; border-radius: 12px; }
       #btn-forward      { top: 0;     left: 56px; }
       #btn-rotate-left  { top: 56px;  left: 0; }
@@ -137,8 +156,8 @@
       #power-slider  { width: 110px; }
       #estop         { width: 70px; height: 70px; }
       #screen-toggle { top: 90px;  width: 70px; height: 70px; }
-      #reboot-btn    { top: 170px; width: 70px; height: 46px; }
-      #poweroff-btn  { top: 224px; width: 70px; height: 46px; }
+      #util-row      { top: 96px; }
+      .util-btn      { width: 76px; }
     }
   </style>
 </head>
@@ -150,6 +169,7 @@
       <span class="v" id="bat">— V</span>
       <span class="sep">·</span><span id="fps">— fps</span>
       <span class="sep">·</span>gain <span id="gain">—</span>
+      <span class="sep">·</span><span class="v" id="temp">— °C</span>
     </div>
 
     <div id="power-box">
@@ -158,10 +178,13 @@
       <span id="power-value">100%</span>
     </div>
 
+    <div id="util-row">
+      <button id="reboot-btn"   class="util-btn">REBOOT</button>
+      <button id="poweroff-btn" class="util-btn">POWER OFF</button>
+    </div>
+
     <button id="estop"          class="right-btn">E-STOP</button>
     <button id="screen-toggle"  class="right-btn" title="Toggle rover touchscreen">TURN<br>OFF</button>
-    <button id="reboot-btn"     class="right-btn">REBOOT</button>
-    <button id="poweroff-btn"   class="right-btn">POWER<br>OFF</button>
 
     <div id="dpad">
       <button id="btn-forward"      class="action-btn" data-action="forward">▲</button>
@@ -199,10 +222,6 @@
   }
 
   // --- Action buttons (D-pad + strafe) -------------------------------------
-  // Each held button contributes ±1 along an axis. Sum across all held
-  // buttons, then clamp to [-1, 1] (in case the user holds opposing buttons
-  // or stacks forward+rotate). Server applies MAX_LINEAR / MAX_ANGULAR /
-  // power scale exactly as before — wire format is unchanged.
   const ACTION_DELTAS = {
     "forward":      { vx: +1, vy:  0, omega:  0 },
     "backward":     { vx: -1, vy:  0, omega:  0 },
@@ -247,8 +266,6 @@
   document.querySelectorAll(".action-btn").forEach(btn => {
     const action = btn.dataset.action;
     btn.addEventListener("pointerdown", e => {
-      // Pointer capture keeps the events flowing to this button even when
-      // the finger drifts off — release anywhere stops the action cleanly.
       try { btn.setPointerCapture(e.pointerId); } catch (_) {}
       startAction(btn, action);
     });
@@ -262,8 +279,6 @@
     document.querySelectorAll(".action-btn.active").forEach(b => b.classList.remove("active"));
     sendDriveNow();
   }
-  // If the tab gets backgrounded or the window loses focus while a button is
-  // held, kill the motion — fingers may not lift cleanly when switching apps.
   document.addEventListener("visibilitychange", () => { if (document.hidden) clearAllActions(); });
   window.addEventListener("blur", clearAllActions);
 
@@ -292,7 +307,6 @@
   const screenBtn = document.getElementById("screen-toggle");
   let screenOn = true;
   function reflectScreen() {
-    // Label by action ("what tap will do"), color by state (red = off).
     screenBtn.innerHTML = screenOn ? "TURN<br>OFF" : "TURN<br>ON";
     screenBtn.classList.toggle("off", !screenOn);
   }
@@ -320,14 +334,12 @@
 
   // --- Ticks ---------------------------------------------------------------
   connect();
-  // Still send at 20 Hz so the server watchdog sees a heartbeat even when no
-  // buttons are held — guarantees the motor target stays zeroed if the user
-  // never touches a button (vs. potentially having an old non-zero target).
   setInterval(sendDriveNow, 50);
 
   const bat  = document.getElementById("bat");
   const fps  = document.getElementById("fps");
   const gain = document.getElementById("gain");
+  const temp = document.getElementById("temp");
   async function pollTelemetry() {
     try {
       const r = await fetch("/telemetry");
@@ -336,15 +348,22 @@
         if (j.battery_v != null) {
           bat.textContent = j.battery_v.toFixed(2) + " V";
           bat.classList.remove("mid", "low");
-          // Tuned for the rover's CYCLENBATT 12V 10Ah LiFePO4 pack.
-          //   green  ≥ 13.0V  (>50% SOC)
-          //   amber  12.5–13.0V (20–50% SOC, charge when convenient)
-          //   red    <  12.5V  (<20% SOC, charge soon)
+          // CYCLENBATT 12V 10Ah LiFePO4 — green ≥13.0, amber 12.5–13.0, red <12.5.
           if      (j.battery_v < 12.5) bat.classList.add("low");
           else if (j.battery_v < 13.0) bat.classList.add("mid");
         }
         if (j.camera_fps  != null) { fps.textContent  = j.camera_fps.toFixed(1) + " fps"; }
         if (j.camera_gain != null) { gain.textContent = j.camera_gain.toFixed(1) + "×"; }
+        if (j.cpu_temp_c != null) {
+          temp.textContent = j.cpu_temp_c.toFixed(0) + " °C";
+          temp.classList.remove("mid", "low");
+          // Passive-cooled Pi 5 idle ~78 °C; throttle 80 °C.
+          //   green  < 70   (comfortable)
+          //   amber  70–78  (warm but within budget)
+          //   red    ≥ 78   (at the ceiling)
+          if      (j.cpu_temp_c >= 78) temp.classList.add("low");
+          else if (j.cpu_temp_c >= 70) temp.classList.add("mid");
+        }
       }
     } catch (_) {}
     setTimeout(pollTelemetry, 500);

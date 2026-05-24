@@ -41,7 +41,8 @@
       background: rgba(0,0,0,0.6); padding: 8px 14px; border-radius: 8px;
       font-size: 14px; font-variant-numeric: tabular-nums;
     }
-    #status .v { color: #6f6; font-weight: 600; }
+    #status .v   { color: #6f6; font-weight: 600; }
+    #status .v.mid { color: #ffc107; }
     #status .v.low { color: #f66; }
     #status .sep { opacity: 0.4; margin: 0 6px; }
   </style>
@@ -64,6 +65,7 @@
     <span class="v" id="bat">— V</span>
     <span class="sep">·</span><span id="fps">— fps</span>
     <span class="sep">·</span>gain <span id="gain">—</span>
+    <span class="sep">·</span><span class="v" id="temp">— °C</span>
   </div>
 
 <script>
@@ -71,6 +73,7 @@
   const bat  = document.getElementById("bat");
   const fps  = document.getElementById("fps");
   const gain = document.getElementById("gain");
+  const temp = document.getElementById("temp");
   const video = document.getElementById("video");
   let lastDisplayCount = null;
   while (true) {
@@ -78,9 +81,20 @@
       const r = await fetch("/telemetry");
       if (r.ok) {
         const j = await r.json();
-        if (j.battery_v   != null) { bat.textContent  = j.battery_v.toFixed(2) + " V"; bat.classList.toggle("low", j.battery_v < 11.0); }
+        if (j.battery_v != null) {
+          bat.textContent = j.battery_v.toFixed(2) + " V";
+          bat.classList.remove("mid", "low");
+          if      (j.battery_v < 12.5) bat.classList.add("low");
+          else if (j.battery_v < 13.0) bat.classList.add("mid");
+        }
         if (j.camera_fps  != null) { fps.textContent  = j.camera_fps.toFixed(1) + " fps"; }
         if (j.camera_gain != null) { gain.textContent = j.camera_gain.toFixed(1) + "×"; }
+        if (j.cpu_temp_c != null) {
+          temp.textContent = j.cpu_temp_c.toFixed(0) + " °C";
+          temp.classList.remove("mid", "low");
+          if      (j.cpu_temp_c >= 78) temp.classList.add("low");
+          else if (j.cpu_temp_c >= 70) temp.classList.add("mid");
+        }
         // When the screen wakes back up, our MJPEG stream is dead — chromium
         // doesn't auto-reconnect. Server bumps display_on_count on every
         // off→on transition; we re-set the img src with a cache-buster to
