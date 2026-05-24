@@ -8,6 +8,11 @@ __pycache__/
 *.py[cod]
 .venv/
 
+# Compiled Python extensions built per-machine via setup.py
+app/_ascam_ext*.so
+app/*.so
+build/
+
 # Runtime logs (DDS, Hailo, etc.)
 *.log
 
