@@ -2,7 +2,10 @@ smbus2
 fastapi
 uvicorn[standard]
 opencv-python-headless
-numpy
+# Hailo runtime requires numpy < 2.0 per models/README.md. opencv-python-headless
+# 4.13 emits a metadata warning about needing numpy >= 2 but works fine on 1.26
+# at runtime — see pre-flight verification.
+numpy<2,>=1.26
 pybind11
 setuptools
 segno

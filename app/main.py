@@ -53,6 +53,7 @@ from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 
 from app.camera import Camera
+from app.detector import DogFollower
 from app.kinematics import cartesian_to_wheels
 from app.motors import HiwonderHardware
 
@@ -258,6 +259,10 @@ state: dict = {
     # When > 0 we encode at ~12 Hz; when 0 we drop to ~6 Hz — encoding for
     # nobody (or only the on-board kiosk) is the biggest CPU waste on the Pi.
     "mjpeg_viewers": 0,
+    # DogFollower instance — created in lifespan, owns the Hailo pipeline and
+    # the detection/control thread. None when follow mode has never been
+    # enabled (Hailo init is lazy on first toggle).
+    "follower": None,
 }
 
 
@@ -296,15 +301,25 @@ async def lifespan(app: FastAPI):
         daemon=True,
     )
     state["motor_thread"].start()
+    # Follower is constructed but NOT started — Hailo init happens on first
+    # set_enabled(True) so the app boots fast.
+    state["follower"] = DogFollower(
+        camera=state["camera"],
+        motor_target=state["target"],
+    )
     try:
         yield
     finally:
-        state["motor_stop"].set()
-        state["motor_thread"].join(timeout=1.0)
         try:
-            state["hardware"].close()
+            if state["follower"] is not None:
+                state["follower"].close()
         finally:
-            state["camera"].close()
+            state["motor_stop"].set()
+            state["motor_thread"].join(timeout=1.0)
+            try:
+                state["hardware"].close()
+            finally:
+                state["camera"].close()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -344,8 +359,15 @@ async def telemetry() -> JSONResponse:
     # Reading battery_v acquires the I²C lock too; quick (~1 ms) so fine inline.
     target: MotorTarget = state["target"]
     smoother: BatterySmoother = state["battery_smoother"]
+    follower: Optional[DogFollower] = state["follower"]
     battery_raw = hw.read_battery_voltage() if hw else None
     battery_smoothed = smoother.update(battery_raw)
+    follow_fields = follower.status() if follower else {
+        "follow_enabled": False, "follow_status": "idle",
+        "dog_seen": False, "dog_bbox": None,
+        "dog_confidence": None, "dog_area_ratio": None,
+        "detector_fps": 0.0,
+    }
     return JSONResponse({
         # Smoothed value is what the UI colors the indicator from.
         "battery_v": battery_smoothed,
@@ -363,6 +385,7 @@ async def telemetry() -> JSONResponse:
         "mjpeg_viewers": state["mjpeg_viewers"],
         # SoC temperature — surfaces thermal headroom (or lack of it) in the UI.
         "cpu_temp_c": _cpu_temp_c(),
+        **follow_fields,
     })
 
 
@@ -418,7 +441,21 @@ async def ws(websocket: WebSocket) -> None:
                 vx = float(msg.get("vx", 0.0))
                 vy = float(msg.get("vy", 0.0))
                 omega = float(msg.get("omega", 0.0))
+                # While follow mode is on, ignore idle joystick heartbeats so
+                # they don't overwrite the follower at 20 Hz. Non-zero input
+                # still wins → instant manual override.
+                follower: Optional[DogFollower] = state["follower"]
+                if (follower is not None and follower.enabled
+                        and vx == 0.0 and vy == 0.0 and omega == 0.0):
+                    continue
                 target.set_drive(vx, vy, omega)
+            elif t == "set_follow_mode":
+                enabled = bool(msg.get("enabled", False))
+                follower = state["follower"]
+                if follower is not None:
+                    # Hailo init can take ~3 s on first toggle — off-thread it
+                    # so the WS loop stays responsive.
+                    await loop.run_in_executor(None, follower.set_enabled, enabled)
             elif t == "set_power":
                 target.set_power(float(msg.get("value", 1.0)))
             elif t == "set_display":

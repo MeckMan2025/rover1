@@ -8,10 +8,6 @@
     *  { box-sizing: border-box; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
     html, body {
       margin: 0; padding: 0;
-      /* 100vh on iOS Safari is the max viewport (chrome hidden), so content
-         positioned bottom:Npx can end up under the URL bar. 100dvh is the
-         dynamic visible viewport — shrinks/grows with the chrome. Browsers
-         without dvh ignore the second declaration and fall back to vh. */
       height: 100vh;
       height: 100dvh;
       width: 100vw;
@@ -19,11 +15,6 @@
       font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
       overflow: hidden;
     }
-
-    /* Bottom-anchored UI lifts itself well above iOS Safari's URL bar +
-       gesture strip. Static 80 px is enough on every iPhone we've tested;
-       env(safe-area-inset-bottom) is added on top for the home-indicator
-       region. On Chromium kiosk, env returns 0 → just the 80 px lift. */
     :root {
       --safe-top:    env(safe-area-inset-top,    0px);
       --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -32,9 +23,27 @@
     #stage { position: relative; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
     #video { max-width: 100%; max-height: 100%; object-fit: contain; }
 
-    /* Status (top-left). top includes safe-area-inset-top so the row
-       clears the iOS notch / Dynamic Island / Safari top bar instead of
-       hiding behind it. */
+    /* Dog bbox overlay — absolutely positioned over the video by JS, updated
+       at telemetry poll rate (2 Hz). Hidden until a dog is detected. */
+    #bbox-overlay {
+      position: absolute; pointer-events: none;
+      border: 3px solid #6f6;
+      box-shadow: 0 0 10px rgba(120, 255, 120, 0.6), inset 0 0 4px rgba(120, 255, 120, 0.3);
+      border-radius: 2px;
+      display: none;
+      transition: left 0.15s linear, top 0.15s linear, width 0.15s linear, height 0.15s linear;
+    }
+    #bbox-overlay.too-close { border-color: #f66; box-shadow: 0 0 10px rgba(255, 100, 100, 0.6); }
+    #bbox-label {
+      position: absolute; top: -22px; left: -2px;
+      background: rgba(0,0,0,0.7); color: #6f6;
+      padding: 2px 6px; border-radius: 3px;
+      font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+      white-space: nowrap;
+    }
+    #bbox-overlay.too-close #bbox-label { color: #f66; }
+
+    /* Status (top-left) */
     #status {
       position: absolute; top: calc(12px + var(--safe-top)); left: 12px;
       background: rgba(0,0,0,0.55); padding: 8px 12px; border-radius: 8px;
@@ -45,7 +54,7 @@
     #status .v.low { color: #f66; }
     #status .sep { opacity: 0.4; margin: 0 6px; }
 
-    /* Speed slider — stacks directly under the status row. */
+    /* Speed slider */
     #power-box {
       position: absolute; top: calc(52px + var(--safe-top)); left: 12px;
       background: rgba(0,0,0,0.55); padding: 8px 14px; border-radius: 8px;
@@ -65,14 +74,13 @@
     #power-value.mid { color: #ffc107; }
     #power-value.low { color: #f66; }
 
-    /* Utility row (REBOOT + POWER OFF) — moved to the top-left under the
-       slider so they don't extend the right column down onto the video. */
+    /* Utility row */
     #util-row {
       position: absolute; top: calc(100px + var(--safe-top)); left: 12px;
       display: flex; gap: 6px;
     }
     .util-btn {
-      width: 86px; height: 34px;
+      width: 70px; height: 34px;
       border-radius: 6px;
       font-size: 11px; font-weight: bold;
       cursor: pointer; letter-spacing: 0.03em;
@@ -88,8 +96,18 @@
       background: rgba(40,40,40,0.6); color: #aaa;
     }
     #poweroff-btn:active { background: rgba(80,80,80,0.7); color: #fff; }
+    /* FOLLOW gets bigger color treatment because it's the magic button. */
+    #follow-btn {
+      border: 1.5px solid rgba(120,200,120,0.45);
+      background: rgba(40,80,40,0.6); color: #cfc;
+    }
+    #follow-btn:active { background: rgba(60,140,60,0.75); color: #fff; }
+    #follow-btn.tracking  { background: rgba(60,150,60,0.75);  color: #fff; border-color: #6f6; }
+    #follow-btn.searching { background: rgba(120,90,30,0.7);   color: #ffd; border-color: #ffc107; }
+    #follow-btn.too-close { background: rgba(150,60,60,0.75);  color: #fff; border-color: #f66; }
+    #follow-btn.initializing { background: rgba(60,80,140,0.7); color: #cdf; border-color: #abf; }
 
-    /* Right-side safety column — only the two big controls now. */
+    /* Right-side safety column */
     .right-btn {
       position: absolute; right: 12px;
       border-radius: 12px; font-weight: bold; cursor: pointer;
@@ -107,7 +125,7 @@
     }
     #screen-toggle.off { background: rgba(80,40,40,0.5); color: #f99; border-color: rgba(255,100,100,0.4); }
 
-    /* D-pad and strafe pad — lifted well clear of Safari's bottom chrome. */
+    /* D-pad and strafe pad */
     #dpad {
       position: absolute; left: 24px;
       bottom: calc(80px + var(--safe-bottom));
@@ -148,8 +166,6 @@
       pointer-events: none;
     }
 
-    /* Connection indicator — same lift as the pads, slightly lower base
-       so it sits just under them rather than alongside. */
     #ws-state {
       position: absolute; left: 50%; transform: translateX(-50%);
       bottom: calc(56px + var(--safe-bottom));
@@ -174,13 +190,17 @@
       #estop         { width: 70px; height: 70px; }
       #screen-toggle { top: calc(90px + var(--safe-top)); width: 70px; height: 70px; }
       #util-row      { top: calc(96px + var(--safe-top)); }
-      .util-btn      { width: 76px; }
+      .util-btn      { width: 64px; }
     }
   </style>
 </head>
 <body>
   <div id="stage">
     <img id="video" src="/video.mjpg" alt="rover camera">
+
+    <div id="bbox-overlay">
+      <div id="bbox-label">dog</div>
+    </div>
 
     <div id="status">
       <span class="v" id="bat">— V</span>
@@ -197,7 +217,8 @@
 
     <div id="util-row">
       <button id="reboot-btn"   class="util-btn">REBOOT</button>
-      <button id="poweroff-btn" class="util-btn">POWER OFF</button>
+      <button id="poweroff-btn" class="util-btn">POWER<br>OFF</button>
+      <button id="follow-btn"   class="util-btn">FOLLOW<br>OFF</button>
     </div>
 
     <button id="estop"          class="right-btn">E-STOP</button>
@@ -222,6 +243,10 @@
 
 <script>
 (() => {
+  // Camera native frame size — used to scale the bbox overlay onto the
+  // <img> element. Camera always streams at this resolution (see ascam config).
+  const CAM_W = 640, CAM_H = 480;
+
   // --- WebSocket -----------------------------------------------------------
   const wsState = document.getElementById("ws-state");
   let ws = null;
@@ -247,7 +272,6 @@
     "strafe-left":  { vx:  0, vy: +1, omega:  0 },
     "strafe-right": { vx:  0, vy: -1, omega:  0 },
   };
-
   const activeActions = new Set();
   const clamp = v => Math.max(-1, Math.min(1, v));
 
@@ -334,7 +358,7 @@
     send({ type: "set_display", on: screenOn });
   });
 
-  // --- Reboot / Power off (confirm before firing) --------------------------
+  // --- Reboot / Power off --------------------------------------------------
   document.getElementById("reboot-btn").addEventListener("click", () => {
     if (confirm("Reboot the rover? It'll come back in about 30 seconds.")) {
       send({ type: "shutdown", action: "reboot" });
@@ -346,6 +370,17 @@
     }
   });
 
+  // --- Follow toggle -------------------------------------------------------
+  const followBtn = document.getElementById("follow-btn");
+  let followEnabled = false;
+  followBtn.addEventListener("click", () => {
+    followEnabled = !followEnabled;
+    // Reflect the requested state immediately; status colors update from
+    // /telemetry (server-side truth — covers init failures).
+    followBtn.innerHTML = followEnabled ? "FOLLOW<br>ON" : "FOLLOW<br>OFF";
+    send({ type: "set_follow_mode", enabled: followEnabled });
+  });
+
   // --- E-stop --------------------------------------------------------------
   document.getElementById("estop").addEventListener("click", () => send({ type: "estop" }));
 
@@ -353,10 +388,60 @@
   connect();
   setInterval(sendDriveNow, 50);
 
+  // --- Telemetry poll + bbox overlay ---------------------------------------
   const bat  = document.getElementById("bat");
   const fps  = document.getElementById("fps");
   const gain = document.getElementById("gain");
   const temp = document.getElementById("temp");
+  const video = document.getElementById("video");
+  const bbox = document.getElementById("bbox-overlay");
+  const bboxLabel = document.getElementById("bbox-label");
+
+  function reflectFollowStatus(j) {
+    // Server-truth state of follow: button label tracks server-truth
+    // "follow_enabled", and the color reflects the live status.
+    followEnabled = !!j.follow_enabled;
+    followBtn.innerHTML = followEnabled ? "FOLLOW<br>ON" : "FOLLOW<br>OFF";
+    followBtn.classList.remove("tracking", "searching", "too-close", "initializing");
+    const status = j.follow_status;
+    if (status === "tracking")        followBtn.classList.add("tracking");
+    else if (status === "searching")  followBtn.classList.add("searching");
+    else if (status === "too_close")  followBtn.classList.add("too-close");
+    else if (status === "initializing") followBtn.classList.add("initializing");
+  }
+
+  function reflectBbox(j) {
+    if (!j.dog_bbox || !j.follow_enabled) {
+      bbox.style.display = "none";
+      return;
+    }
+    // Compute the video's actual rendered rect inside the stage and scale
+    // the bbox from camera-native coords (640×480) to display coords.
+    const stageRect = document.getElementById("stage").getBoundingClientRect();
+    const vRect = video.getBoundingClientRect();
+    const dispW = vRect.width, dispH = vRect.height;
+    if (dispW < 1 || dispH < 1) return;
+
+    // object-fit: contain means the actual image content is centered with
+    // possible letterboxing. Compute the content rect inside vRect.
+    const contentScale = Math.min(dispW / CAM_W, dispH / CAM_H);
+    const contentW = CAM_W * contentScale;
+    const contentH = CAM_H * contentScale;
+    const contentLeft = vRect.left + (dispW - contentW) / 2 - stageRect.left;
+    const contentTop  = vRect.top  + (dispH - contentH) / 2 - stageRect.top;
+
+    const [x1, y1, x2, y2] = j.dog_bbox;
+    bbox.style.display = "block";
+    bbox.style.left   = (contentLeft + x1 * contentScale) + "px";
+    bbox.style.top    = (contentTop  + y1 * contentScale) + "px";
+    bbox.style.width  = ((x2 - x1) * contentScale) + "px";
+    bbox.style.height = ((y2 - y1) * contentScale) + "px";
+    bbox.classList.toggle("too-close", j.follow_status === "too_close");
+
+    const conf = (j.dog_confidence != null) ? ` ${(j.dog_confidence * 100).toFixed(0)}%` : "";
+    bboxLabel.textContent = "dog" + conf;
+  }
+
   async function pollTelemetry() {
     try {
       const r = await fetch("/telemetry");
@@ -365,7 +450,6 @@
         if (j.battery_v != null) {
           bat.textContent = j.battery_v.toFixed(2) + " V";
           bat.classList.remove("mid", "low");
-          // CYCLENBATT 12V 10Ah LiFePO4 — green ≥13.0, amber 12.5–13.0, red <12.5.
           if      (j.battery_v < 12.5) bat.classList.add("low");
           else if (j.battery_v < 13.0) bat.classList.add("mid");
         }
@@ -374,13 +458,11 @@
         if (j.cpu_temp_c != null) {
           temp.textContent = j.cpu_temp_c.toFixed(0) + " °C";
           temp.classList.remove("mid", "low");
-          // Passive-cooled Pi 5 idle ~78 °C; throttle 80 °C.
-          //   green  < 70   (comfortable)
-          //   amber  70–78  (warm but within budget)
-          //   red    ≥ 78   (at the ceiling)
           if      (j.cpu_temp_c >= 78) temp.classList.add("low");
           else if (j.cpu_temp_c >= 70) temp.classList.add("mid");
         }
+        reflectFollowStatus(j);
+        reflectBbox(j);
       }
     } catch (_) {}
     setTimeout(pollTelemetry, 500);
