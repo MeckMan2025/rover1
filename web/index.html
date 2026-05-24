@@ -6,12 +6,24 @@
   <title>Rover</title>
   <style>
     *  { box-sizing: border-box; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
-    html, body { margin: 0; padding: 0; height: 100vh; width: 100vw; background: #0a0a0a; color: #eee; font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif; overflow: hidden; }
+    html, body {
+      margin: 0; padding: 0;
+      /* 100vh on iOS Safari is the max viewport (chrome hidden), so content
+         positioned bottom:Npx can end up under the URL bar. 100dvh is the
+         dynamic visible viewport — shrinks/grows with the chrome. Browsers
+         without dvh ignore the second declaration and fall back to vh. */
+      height: 100vh;
+      height: 100dvh;
+      width: 100vw;
+      background: #0a0a0a; color: #eee;
+      font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      overflow: hidden;
+    }
 
-    /* Safe-area-aware bottom offset. Safari's address-bar / back-gesture
-       strip slides in and out; env(safe-area-inset-bottom) is the height
-       reserved for it. We lift bottom-anchored UI above that on iOS;
-       Chromium on the kiosk returns 0 so nothing moves there. */
+    /* Bottom-anchored UI lifts itself well above iOS Safari's URL bar +
+       gesture strip. Static 80 px is enough on every iPhone we've tested;
+       env(safe-area-inset-bottom) is added on top for the home-indicator
+       region. On Chromium kiosk, env returns 0 → just the 80 px lift. */
     :root { --safe-bottom: env(safe-area-inset-bottom, 0px); }
 
     #stage { position: relative; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
@@ -90,16 +102,15 @@
     }
     #screen-toggle.off { background: rgba(80,40,40,0.5); color: #f99; border-color: rgba(255,100,100,0.4); }
 
-    /* D-pad and strafe pad — lifted above Safari's bottom chrome via
-       env(safe-area-inset-bottom). Falls back to 0 on browsers without it. */
+    /* D-pad and strafe pad — lifted well clear of Safari's bottom chrome. */
     #dpad {
       position: absolute; left: 24px;
-      bottom: calc(24px + var(--safe-bottom));
+      bottom: calc(80px + var(--safe-bottom));
       width: 200px; height: 200px;
     }
     #strafe-pad {
       position: absolute; right: 24px;
-      bottom: calc(24px + var(--safe-bottom));
+      bottom: calc(80px + var(--safe-bottom));
       width: 144px; height: 64px;
     }
     .action-btn {
@@ -132,10 +143,11 @@
       pointer-events: none;
     }
 
-    /* Connection indicator — also lifted above Safari chrome. */
+    /* Connection indicator — same lift as the pads, slightly lower base
+       so it sits just under them rather than alongside. */
     #ws-state {
       position: absolute; left: 50%; transform: translateX(-50%);
-      bottom: calc(14px + var(--safe-bottom));
+      bottom: calc(56px + var(--safe-bottom));
       font-size: 12px; padding: 4px 10px; border-radius: 4px;
       background: rgba(0,0,0,0.55); pointer-events: none;
     }
