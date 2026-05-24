@@ -71,6 +71,8 @@
   const bat  = document.getElementById("bat");
   const fps  = document.getElementById("fps");
   const gain = document.getElementById("gain");
+  const video = document.getElementById("video");
+  let lastDisplayCount = null;
   while (true) {
     try {
       const r = await fetch("/telemetry");
@@ -79,6 +81,16 @@
         if (j.battery_v   != null) { bat.textContent  = j.battery_v.toFixed(2) + " V"; bat.classList.toggle("low", j.battery_v < 11.0); }
         if (j.camera_fps  != null) { fps.textContent  = j.camera_fps.toFixed(1) + " fps"; }
         if (j.camera_gain != null) { gain.textContent = j.camera_gain.toFixed(1) + "×"; }
+        // When the screen wakes back up, our MJPEG stream is dead — chromium
+        // doesn't auto-reconnect. Server bumps display_on_count on every
+        // off→on transition; we re-set the img src with a cache-buster to
+        // open a fresh connection.
+        if (j.display_on_count != null) {
+          if (lastDisplayCount !== null && j.display_on_count !== lastDisplayCount) {
+            video.src = "/video.mjpg?t=" + Date.now();
+          }
+          lastDisplayCount = j.display_on_count;
+        }
       }
     } catch (_) {}
     await new Promise(r => setTimeout(r, 1000));

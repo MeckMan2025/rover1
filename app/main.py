@@ -237,6 +237,10 @@ state: dict = {
     "motor_thread": None,
     "motor_stop": None,
     "battery_smoother": BatterySmoother(),
+    # Bumped each time the rover screen comes back on. The kiosk polls this
+    # in /telemetry and forces an MJPEG reconnect when it changes — chromium
+    # doesn't auto-recover a stream that dropped while HDMI was off.
+    "display_on_count": 0,
 }
 
 
@@ -334,6 +338,9 @@ async def telemetry() -> JSONResponse:
         "camera_gain": cam.gain() if cam else None,
         "camera_target_mean": cam.target_mean() if cam else None,
         "power": target.power,
+        # Increments each time the kiosk screen comes back on. The qr.html
+        # poller watches this and forces an MJPEG reconnect on change.
+        "display_on_count": state["display_on_count"],
     })
 
 
@@ -384,7 +391,10 @@ async def ws(websocket: WebSocket) -> None:
                 # wlr-randr is a quick subprocess — off-thread it so the WS
                 # loop stays responsive for the next drive command.
                 on = bool(msg.get("on", True))
-                await loop.run_in_executor(None, _set_display, on)
+                ok = await loop.run_in_executor(None, _set_display, on)
+                if ok and on:
+                    # Signal the kiosk to reconnect its dead MJPEG stream.
+                    state["display_on_count"] += 1
             elif t == "shutdown":
                 # Acknowledged power actions from the UI. systemctl --no-block
                 # returns immediately so the response goes back before the box dies.
