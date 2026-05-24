@@ -34,7 +34,10 @@ Launch:
 from __future__ import annotations
 
 import asyncio
+import glob
 import io
+import logging
+import os
 import socket
 import subprocess
 import threading
@@ -42,6 +45,8 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 import segno
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -150,22 +155,55 @@ class BatterySmoother:
         return self._value
 
 
+def _wayland_socket() -> Optional[str]:
+    """Find cage's active Wayland socket name (e.g. 'wayland-0').
+
+    Hardcoding wayland-1 was wrong — cage opens at wayland-0 unless something
+    else opens a Wayland session first, in which case cage gets bumped to
+    wayland-1, wayland-2, etc. Looking up the socket at runtime is robust to
+    whatever order things come up in.
+    """
+    uid = os.getuid()
+    socks = sorted(glob.glob(f"/run/user/{uid}/wayland-[0-9]*"))
+    if not socks:
+        return None
+    # Lowest-numbered first; cage typically gets it at boot.
+    return os.path.basename(socks[0])
+
+
 def _set_display(on: bool) -> bool:
     """Toggle the HDMI output via wlr-randr. Returns True on success.
 
-    Requires WAYLAND_DISPLAY and XDG_RUNTIME_DIR to be set in the systemd
-    unit so this process can talk to cage's Wayland socket. Output name
-    HDMI-A-1 matches the rover's 7" touchscreen.
+    Requires XDG_RUNTIME_DIR to be set in the systemd unit so we can find
+    /run/user/$UID; WAYLAND_DISPLAY is auto-detected at call time from the
+    sockets in that directory. Output name HDMI-A-1 matches the rover's
+    7" touchscreen.
     """
     arg = "--on" if on else "--off"
+    socket_name = _wayland_socket()
+    if socket_name is None:
+        logger.warning("wlr-randr: no Wayland socket found in /run/user/%d", os.getuid())
+        return False
+    env = os.environ.copy()
+    env["WAYLAND_DISPLAY"] = socket_name
     try:
         result = subprocess.run(
             ["wlr-randr", "--output", "HDMI-A-1", arg],
+            env=env,
             capture_output=True,
             timeout=3.0,
         )
-        return result.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+        if result.returncode != 0:
+            logger.warning(
+                "wlr-randr (%s) exit=%d stderr=%s",
+                socket_name,
+                result.returncode,
+                result.stderr.decode("utf-8", errors="replace").strip(),
+            )
+            return False
+        return True
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        logger.warning("wlr-randr failed: %s", e)
         return False
 
 

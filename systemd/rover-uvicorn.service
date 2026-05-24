@@ -6,9 +6,10 @@ After=default.target
 Type=simple
 WorkingDirectory=%h/ros2_ws/src/rover1
 Environment=ROVER_CAM_TARGET_MEAN=100
-# Required for wlr-randr to talk to cage's Wayland session (screen on/off toggle).
+# Required for wlr-randr to find cage's Wayland socket. The socket name
+# itself (wayland-0, wayland-1, …) is auto-detected at runtime by main.py
+# since cage's number isn't deterministic.
 Environment=XDG_RUNTIME_DIR=/run/user/%U
-Environment=WAYLAND_DISPLAY=wayland-1
 ExecStart=%h/code/rover1-venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8080
 Restart=on-failure
 RestartSec=3
