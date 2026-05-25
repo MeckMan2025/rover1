@@ -34,7 +34,10 @@
       border-left: 1px solid rgba(255,255,255,0.08);
       background: #050505;
     }
-    #video { max-width: 100%; max-height: 100%; object-fit: contain; }
+    #video,
+    #video-mjpeg { max-width: 100%; max-height: 100%; object-fit: contain; }
+    #video[hidden],
+    #video-mjpeg[hidden] { display: none; }
 
     #status {
       position: fixed; bottom: 14px; left: 14px;
@@ -57,7 +60,8 @@
       <div class="url">__URL__</div>
     </div>
     <div id="right">
-      <img id="video" src="/video.mjpg" alt="rover camera">
+      <video id="video" autoplay muted playsinline></video>
+      <img id="video-mjpeg" alt="rover camera" hidden>
     </div>
   </div>
 
@@ -69,46 +73,131 @@
   </div>
 
 <script>
-(async function pollTelemetry() {
-  const bat  = document.getElementById("bat");
-  const fps  = document.getElementById("fps");
-  const gain = document.getElementById("gain");
-  const temp = document.getElementById("temp");
+(() => {
+  // --- Video stream (H.264/fMP4 over WS, MJPEG fallback) ------------------
+  // Same logic as index.html, trimmed for the kiosk's read-only view.
   const video = document.getElementById("video");
-  let lastDisplayCount = null;
-  while (true) {
-    try {
-      const r = await fetch("/telemetry");
-      if (r.ok) {
-        const j = await r.json();
-        if (j.battery_v != null) {
-          bat.textContent = j.battery_v.toFixed(2) + " V";
-          bat.classList.remove("mid", "low");
-          if      (j.battery_v < 12.5) bat.classList.add("low");
-          else if (j.battery_v < 13.0) bat.classList.add("mid");
-        }
-        if (j.camera_fps  != null) { fps.textContent  = j.camera_fps.toFixed(1) + " fps"; }
-        if (j.camera_gain != null) { gain.textContent = j.camera_gain.toFixed(1) + "×"; }
-        if (j.cpu_temp_c != null) {
-          temp.textContent = j.cpu_temp_c.toFixed(0) + " °C";
-          temp.classList.remove("mid", "low");
-          if      (j.cpu_temp_c >= 78) temp.classList.add("low");
-          else if (j.cpu_temp_c >= 70) temp.classList.add("mid");
-        }
-        // When the screen wakes back up, our MJPEG stream is dead — chromium
-        // doesn't auto-reconnect. Server bumps display_on_count on every
-        // off→on transition; we re-set the img src with a cache-buster to
-        // open a fresh connection.
-        if (j.display_on_count != null) {
-          if (lastDisplayCount !== null && j.display_on_count !== lastDisplayCount) {
-            video.src = "/video.mjpg?t=" + Date.now();
-          }
-          lastDisplayCount = j.display_on_count;
-        }
-      }
-    } catch (_) {}
-    await new Promise(r => setTimeout(r, 1000));
+  const videoMjpeg = document.getElementById("video-mjpeg");
+  const H264_MIME = 'video/mp4; codecs="avc1.42E01F"';
+  const forced = new URLSearchParams(location.search).get("stream");
+  let videoMode = null;
+  let videoSocket = null;
+  let mediaSource = null;
+  let sourceBuffer = null;
+  let pending = [];
+  let appending = false;
+  let reconnectTimer = null;
+
+  function mseSupportsH264() {
+    return !!window.MediaSource && MediaSource.isTypeSupported(H264_MIME);
   }
+  function pickMode() {
+    if (forced === "mjpeg" || forced === "h264") return forced;
+    return mseSupportsH264() ? "h264" : "mjpeg";
+  }
+  function showH264()  { video.hidden = false; videoMjpeg.hidden = true;  videoMjpeg.removeAttribute("src"); }
+  function showMjpeg() { video.hidden = true;  videoMjpeg.hidden = false; videoMjpeg.src = "/video.mjpg?t=" + Date.now(); }
+  function tearDown() {
+    try { if (videoSocket) videoSocket.close(); } catch (_) {}
+    videoSocket = null;
+    try { if (mediaSource && mediaSource.readyState === "open") mediaSource.endOfStream(); } catch (_) {}
+    mediaSource = null; sourceBuffer = null;
+    pending = []; appending = false;
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  }
+  function pump() {
+    if (appending || !sourceBuffer || sourceBuffer.updating || pending.length === 0) return;
+    const chunk = pending.shift();
+    appending = true;
+    try { sourceBuffer.appendBuffer(chunk); }
+    catch (e) {
+      appending = false;
+      if (e.name === "QuotaExceededError") {
+        try {
+          const buf = sourceBuffer.buffered;
+          if (buf.length > 0) sourceBuffer.remove(0, Math.max(0, buf.end(buf.length-1) - 2));
+        } catch (_) {}
+        pending.unshift(chunk);
+      } else { console.warn("MSE:", e); scheduleReconnect(); }
+    }
+  }
+  function openSocket() {
+    const scheme = location.protocol === "https:" ? "wss" : "ws";
+    videoSocket = new WebSocket(`${scheme}://${location.host}/ws/video`);
+    videoSocket.binaryType = "arraybuffer";
+    videoSocket.onmessage = (ev) => { pending.push(new Uint8Array(ev.data)); pump(); };
+    videoSocket.onclose = (ev) => {
+      if (ev.code === 1011 && /ffmpeg/i.test(ev.reason || "")) {
+        console.warn("ffmpeg missing on rover; falling back to MJPEG");
+        videoMode = "mjpeg"; tearDown(); showMjpeg(); return;
+      }
+      scheduleReconnect();
+    };
+    videoSocket.onerror = (e) => console.warn("video WS:", e);
+  }
+  function scheduleReconnect() {
+    if (reconnectTimer || videoMode !== "h264") return;
+    reconnectTimer = setTimeout(() => { reconnectTimer = null; if (videoMode === "h264") startH264(); }, 1500);
+  }
+  function startH264() {
+    videoMode = "h264"; showH264(); tearDown();
+    mediaSource = new MediaSource();
+    video.src = URL.createObjectURL(mediaSource);
+    mediaSource.addEventListener("sourceopen", () => {
+      try { URL.revokeObjectURL(video.src); } catch (_) {}
+      try { sourceBuffer = mediaSource.addSourceBuffer(H264_MIME); }
+      catch (e) { console.warn("addSourceBuffer:", e); videoMode = "mjpeg"; tearDown(); showMjpeg(); return; }
+      sourceBuffer.mode = "sequence";
+      sourceBuffer.addEventListener("updateend", () => { appending = false; pump(); });
+      openSocket();
+    }, { once: true });
+  }
+
+  if (pickMode() === "h264") startH264();
+  else { videoMode = "mjpeg"; showMjpeg(); }
+
+  // --- Telemetry poll -----------------------------------------------------
+  (async function pollTelemetry() {
+    const bat  = document.getElementById("bat");
+    const fps  = document.getElementById("fps");
+    const gain = document.getElementById("gain");
+    const temp = document.getElementById("temp");
+    let lastDisplayCount = null;
+    while (true) {
+      try {
+        const r = await fetch("/telemetry");
+        if (r.ok) {
+          const j = await r.json();
+          if (j.battery_v != null) {
+            bat.textContent = j.battery_v.toFixed(2) + " V";
+            bat.classList.remove("mid", "low");
+            if      (j.battery_v < 12.5) bat.classList.add("low");
+            else if (j.battery_v < 13.0) bat.classList.add("mid");
+          }
+          if (j.camera_fps  != null) fps.textContent  = j.camera_fps.toFixed(1) + " fps";
+          if (j.camera_gain != null) gain.textContent = j.camera_gain.toFixed(1) + "×";
+          if (j.cpu_temp_c != null) {
+            temp.textContent = j.cpu_temp_c.toFixed(0) + " °C";
+            temp.classList.remove("mid", "low");
+            if      (j.cpu_temp_c >= 78) temp.classList.add("low");
+            else if (j.cpu_temp_c >= 70) temp.classList.add("mid");
+          }
+          // When the kiosk's HDMI comes back on, any in-flight stream is
+          // toast — chromium doesn't auto-reconnect. Server bumps
+          // display_on_count on every off→on transition; we restart the
+          // currently-active stream path.
+          if (j.display_on_count != null) {
+            if (lastDisplayCount !== null && j.display_on_count !== lastDisplayCount) {
+              if (videoMode === "h264") startH264();
+              else                       showMjpeg();
+            }
+            lastDisplayCount = j.display_on_count;
+          }
+        }
+      } catch (_) {}
+      await new Promise(r => setTimeout(r, 1000));
+    }
+  })();
 })();
 </script>
 </body>
