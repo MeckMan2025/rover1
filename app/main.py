@@ -12,6 +12,7 @@ Endpoints
 ---------
 GET  /              static HTML UI
 GET  /video.mjpg    multipart MJPEG live feed
+GET  /api/snapshot  single low-res JPEG (Cellular-mode escape hatch)
 GET  /telemetry     JSON: battery_v, camera_fps, camera_gain
 WS   /ws            client → server:
                       {"type": "drive", "vx": -1..1, "vy": -1..1, "omega": -1..1}
@@ -424,6 +425,23 @@ async def video_mjpg(request: Request) -> StreamingResponse:
     return StreamingResponse(
         gen(), media_type=f"multipart/x-mixed-replace; boundary={boundary}"
     )
+
+
+@app.get("/api/snapshot")
+async def api_snapshot() -> Response:
+    """One-shot low-res JPEG for Cellular mode — never streams.
+
+    480x360 (4:3 downscale of the 640x480 native) at q=60 lands around
+    40-80 KB per call, which is the whole point: a phone on LTE can pull
+    a fresh frame on demand without burning the SIM's data plan.
+    """
+    cam: Optional[Camera] = state["camera"]
+    loop = asyncio.get_event_loop()
+    jpeg = await loop.run_in_executor(None, cam.get_jpeg, 480, 360, 60) if cam else None
+    if not jpeg:
+        return Response(status_code=503)
+    return Response(content=jpeg, media_type="image/jpeg",
+                    headers={"Cache-Control": "no-store"})
 
 
 @app.websocket("/ws")
