@@ -295,7 +295,7 @@
     </div>
 
     <button id="estop"          class="right-btn">E-STOP</button>
-    <button id="screen-toggle"  class="right-btn" title="Toggle rover touchscreen">TURN<br>OFF</button>
+    <button id="screen-toggle"  class="right-btn" title="Toggle rover touchscreen">ROVER<br>SCREEN<br>OFF</button>
 
     <div id="dpad">
       <button id="btn-forward"      class="action-btn" data-action="forward">▲</button>
@@ -421,7 +421,7 @@
   const screenBtn = document.getElementById("screen-toggle");
   let screenOn = true;
   function reflectScreen() {
-    screenBtn.innerHTML = screenOn ? "TURN<br>OFF" : "TURN<br>ON";
+    screenBtn.innerHTML = screenOn ? "ROVER<br>SCREEN<br>OFF" : "ROVER<br>SCREEN<br>ON";
     screenBtn.classList.toggle("off", !screenOn);
   }
   reflectScreen();
