@@ -21,7 +21,11 @@
     }
 
     #stage { position: relative; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
-    #video { max-width: 100%; max-height: 100%; object-fit: contain; }
+    #video,
+    #video-mjpeg { max-width: 100%; max-height: 100%; object-fit: contain; }
+    /* Hide whichever element is inactive. The other one fills the stage. */
+    #video[hidden],
+    #video-mjpeg[hidden] { display: none; }
 
     /* Dog bbox overlay — absolutely positioned over the video by JS, updated
        at telemetry poll rate (2 Hz). Hidden until a dog is detected. */
@@ -196,7 +200,10 @@
 </head>
 <body>
   <div id="stage">
-    <img id="video" src="/video.mjpg" alt="rover camera">
+    <!-- H.264 / fMP4 via MSE is the default; the <img> fallback is shown
+         only when MSE isn't supported (older Safari) or the WS path fails. -->
+    <video id="video" autoplay muted playsinline></video>
+    <img id="video-mjpeg" alt="rover camera" hidden>
 
     <div id="bbox-overlay">
       <div id="bbox-label">dog</div>
@@ -384,6 +391,145 @@
   // --- E-stop --------------------------------------------------------------
   document.getElementById("estop").addEventListener("click", () => send({ type: "estop" }));
 
+  // --- Video stream (H.264/fMP4 over WS, MJPEG fallback) ------------------
+  // Decide once at load: H.264 if the browser supports MSE + AVC1 baseline,
+  // otherwise fall back to the legacy multipart MJPEG <img>. URL param
+  // ?stream=mjpeg or ?stream=h264 forces a mode for A/B testing.
+  const video = document.getElementById("video");
+  const videoMjpeg = document.getElementById("video-mjpeg");
+  // AVC1 baseline level 3.1 covers up to 720p30; widely supported including
+  // mobile Safari. Match the encoder's profile/level if you ever change it.
+  const H264_MIME = 'video/mp4; codecs="avc1.42E01F"';
+  const forcedStreamMode = new URLSearchParams(location.search).get("stream");
+  let videoMode = null;          // "h264" | "mjpeg"
+  let videoSocket = null;
+  let mediaSource = null;
+  let sourceBuffer = null;
+  let h264Pending = [];
+  let h264Appending = false;
+  let h264ReconnectTimer = null;
+
+  function activeVideoEl() { return videoMode === "h264" ? video : videoMjpeg; }
+
+  function mseSupportsH264() {
+    return !!window.MediaSource && MediaSource.isTypeSupported(H264_MIME);
+  }
+  function pickInitialMode() {
+    if (forcedStreamMode === "mjpeg" || forcedStreamMode === "h264") return forcedStreamMode;
+    return mseSupportsH264() ? "h264" : "mjpeg";
+  }
+
+  function showH264() {
+    video.hidden = false;
+    videoMjpeg.hidden = true;
+    videoMjpeg.removeAttribute("src");
+  }
+  function showMjpeg() {
+    video.hidden = true;
+    videoMjpeg.hidden = false;
+    // Cache-bust so a stale connection isn't reused.
+    videoMjpeg.src = "/video.mjpg?t=" + Date.now();
+  }
+  function teardownH264() {
+    try { if (videoSocket) videoSocket.close(); } catch (_) {}
+    videoSocket = null;
+    try {
+      if (mediaSource && mediaSource.readyState === "open") mediaSource.endOfStream();
+    } catch (_) {}
+    mediaSource = null;
+    sourceBuffer = null;
+    h264Pending = [];
+    h264Appending = false;
+    if (h264ReconnectTimer) { clearTimeout(h264ReconnectTimer); h264ReconnectTimer = null; }
+  }
+
+  function pumpH264() {
+    if (h264Appending || !sourceBuffer || sourceBuffer.updating) return;
+    if (h264Pending.length === 0) return;
+    const chunk = h264Pending.shift();
+    h264Appending = true;
+    try {
+      sourceBuffer.appendBuffer(chunk);
+    } catch (e) {
+      h264Appending = false;
+      if (e.name === "QuotaExceededError") {
+        // Drop everything but the last ~2 s, then retry on next updateend.
+        try {
+          const buf = sourceBuffer.buffered;
+          if (buf.length > 0) {
+            const trimTo = Math.max(0, buf.end(buf.length - 1) - 2);
+            sourceBuffer.remove(0, trimTo);
+          }
+        } catch (_) {}
+        h264Pending.unshift(chunk);
+      } else {
+        console.warn("MSE appendBuffer:", e);
+        scheduleH264Reconnect();
+      }
+    }
+  }
+
+  function openH264Socket() {
+    const scheme = location.protocol === "https:" ? "wss" : "ws";
+    videoSocket = new WebSocket(`${scheme}://${location.host}/ws/video`);
+    videoSocket.binaryType = "arraybuffer";
+    videoSocket.onmessage = (ev) => {
+      h264Pending.push(new Uint8Array(ev.data));
+      pumpH264();
+    };
+    videoSocket.onclose = (ev) => {
+      // 1011 + "ffmpeg" reason = rover is missing the dep. Don't retry.
+      if (ev.code === 1011 && /ffmpeg/i.test(ev.reason || "")) {
+        console.warn("rover ffmpeg missing; falling back to MJPEG");
+        fallbackToMjpeg();
+        return;
+      }
+      scheduleH264Reconnect();
+    };
+    videoSocket.onerror = (e) => { console.warn("video WS error:", e); };
+  }
+
+  function scheduleH264Reconnect() {
+    if (h264ReconnectTimer || videoMode !== "h264") return;
+    h264ReconnectTimer = setTimeout(() => {
+      h264ReconnectTimer = null;
+      if (videoMode === "h264") startH264();
+    }, 1500);
+  }
+
+  function startH264() {
+    videoMode = "h264";
+    showH264();
+    teardownH264();
+    mediaSource = new MediaSource();
+    video.src = URL.createObjectURL(mediaSource);
+    mediaSource.addEventListener("sourceopen", () => {
+      try { URL.revokeObjectURL(video.src); } catch (_) {}
+      try {
+        sourceBuffer = mediaSource.addSourceBuffer(H264_MIME);
+      } catch (e) {
+        console.warn("addSourceBuffer failed; falling back to MJPEG:", e);
+        fallbackToMjpeg();
+        return;
+      }
+      sourceBuffer.mode = "sequence";
+      sourceBuffer.addEventListener("updateend", () => {
+        h264Appending = false;
+        pumpH264();
+      });
+      openH264Socket();
+    }, { once: true });
+  }
+
+  function fallbackToMjpeg() {
+    videoMode = "mjpeg";
+    teardownH264();
+    showMjpeg();
+  }
+
+  if (pickInitialMode() === "h264") startH264();
+  else { videoMode = "mjpeg"; showMjpeg(); }
+
   // --- Ticks ---------------------------------------------------------------
   connect();
   setInterval(sendDriveNow, 50);
@@ -393,7 +539,6 @@
   const fps  = document.getElementById("fps");
   const gain = document.getElementById("gain");
   const temp = document.getElementById("temp");
-  const video = document.getElementById("video");
   const bbox = document.getElementById("bbox-overlay");
   const bboxLabel = document.getElementById("bbox-label");
 
@@ -416,9 +561,11 @@
       return;
     }
     // Compute the video's actual rendered rect inside the stage and scale
-    // the bbox from camera-native coords (640×480) to display coords.
+    // the bbox from camera-native coords (640×480) to display coords. Use
+    // whichever element is currently visible — <video> for H.264, <img>
+    // for the MJPEG fallback.
     const stageRect = document.getElementById("stage").getBoundingClientRect();
-    const vRect = video.getBoundingClientRect();
+    const vRect = activeVideoEl().getBoundingClientRect();
     const dispW = vRect.width, dispH = vRect.height;
     if (dispW < 1 || dispH < 1) return;
 

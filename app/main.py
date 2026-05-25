@@ -5,17 +5,22 @@ Architecture
 The asyncio loop only handles network I/O. Motor writes live on a dedicated
 background thread that ticks at 50 Hz regardless of what the loop is doing.
 MJPEG encoding runs in a thread executor so cv2.imencode can never starve
-the WebSocket handler. Result: drive commands and motor updates are
-independent of camera load, network jitter, or any one slow call.
+the WebSocket handler. The H.264 path delegates to app.streamer.H264Streamer,
+which owns the ffmpeg subprocess and fans out fragments to all WS viewers.
+Result: drive commands and motor updates are independent of camera load,
+network jitter, or any one slow call.
 
 Endpoints
 ---------
-GET  /              static HTML UI
-GET  /video.mjpg    multipart MJPEG live feed
-GET  /telemetry     JSON: battery_v, camera_fps, camera_gain
-WS   /ws            client → server:
-                      {"type": "drive", "vx": -1..1, "vy": -1..1, "omega": -1..1}
-                      {"type": "estop"}
+GET  /                    static HTML UI
+GET  /video.mjpg          multipart MJPEG live feed (legacy / fallback)
+WS   /ws/video            fragmented MP4 H.264 stream for MediaSource
+GET  /api/video/config    current encoder config
+POST /api/video/config    {"width","height","fps","bitrate_kbps"} → reconfigure
+GET  /telemetry           JSON: battery_v, camera_fps, camera_gain, ...
+WS   /ws                  client → server:
+                            {"type": "drive", "vx": -1..1, "vy": -1..1, "omega": -1..1}
+                            {"type": "estop"}
 
 Safety
 ------
@@ -56,6 +61,7 @@ from app.camera import Camera
 from app.detector import DogFollower
 from app.kinematics import cartesian_to_wheels
 from app.motors import HiwonderHardware
+from app.streamer import H264Streamer
 
 
 def _primary_ip() -> str:
@@ -263,7 +269,15 @@ state: dict = {
     # the detection/control thread. None when follow mode has never been
     # enabled (Hailo init is lazy on first toggle).
     "follower": None,
+    # H264Streamer — created in lifespan, encoder starts lazily on the first
+    # /ws/video connection and stops after a grace period when the last
+    # viewer leaves. None means the stream has never been requested.
+    "streamer": None,
 }
+
+# Seconds to wait after the last /ws/video viewer disconnects before stopping
+# the encoder. Avoids spin-up cost when a viewer briefly drops and reconnects.
+H264_IDLE_GRACE = 10.0
 
 
 def _motor_loop(hw: HiwonderHardware, target: MotorTarget, stop_event: threading.Event) -> None:
@@ -307,19 +321,26 @@ async def lifespan(app: FastAPI):
         camera=state["camera"],
         motor_target=state["target"],
     )
+    # Streamer is constructed but its ffmpeg subprocess is NOT started — the
+    # encoder spins up on the first /ws/video connect.
+    state["streamer"] = H264Streamer(camera=state["camera"])
     try:
         yield
     finally:
         try:
-            if state["follower"] is not None:
-                state["follower"].close()
+            if state["streamer"] is not None:
+                await state["streamer"].stop()
         finally:
-            state["motor_stop"].set()
-            state["motor_thread"].join(timeout=1.0)
             try:
-                state["hardware"].close()
+                if state["follower"] is not None:
+                    state["follower"].close()
             finally:
-                state["camera"].close()
+                state["motor_stop"].set()
+                state["motor_thread"].join(timeout=1.0)
+                try:
+                    state["hardware"].close()
+                finally:
+                    state["camera"].close()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -424,6 +445,109 @@ async def video_mjpg(request: Request) -> StreamingResponse:
     return StreamingResponse(
         gen(), media_type=f"multipart/x-mixed-replace; boundary={boundary}"
     )
+
+
+async def _h264_idle_shutdown(streamer: H264Streamer) -> None:
+    """Stop the encoder if no viewers remain after a grace period.
+
+    Multiple disconnects schedule multiple checks; the second one is a no-op
+    because streamer.stop() returns early when the subprocess is already gone.
+    """
+    await asyncio.sleep(H264_IDLE_GRACE)
+    if streamer.viewer_count == 0:
+        try:
+            await streamer.stop()
+        except Exception as e:
+            logger.warning("h264 idle stop failed: %s", e)
+
+
+@app.websocket("/ws/video")
+async def ws_video(websocket: WebSocket) -> None:
+    """Push fragmented MP4 chunks to a MediaSource consumer.
+
+    Wire protocol: binary WS frames. First message is the init segment
+    (ftyp+moov); every subsequent message is one or more moof+mdat
+    fragments concatenated. The browser appends them to a SourceBuffer
+    of type 'video/mp4; codecs="avc1.42E01E"'.
+    """
+    await websocket.accept()
+    streamer: Optional[H264Streamer] = state["streamer"]
+    if streamer is None:
+        await websocket.close(code=1011)
+        return
+    # Lazy start — first connection brings ffmpeg up.
+    if not streamer.running:
+        try:
+            await streamer.start()
+        except FileNotFoundError:
+            # ffmpeg not installed — tell the client cleanly so it can fall
+            # back to MJPEG instead of retrying forever.
+            await websocket.close(code=1011, reason="ffmpeg not installed")
+            return
+        except Exception as e:
+            logger.error("h264 start failed: %s", e)
+            await websocket.close(code=1011)
+            return
+
+    queue: "asyncio.Queue[Optional[bytes]]" = asyncio.Queue(maxsize=60)
+    init = streamer.register_client(queue)
+    try:
+        # Wait briefly for the init segment if we beat the encoder to it.
+        wait_deadline = time.monotonic() + 3.0
+        while not init and time.monotonic() < wait_deadline:
+            await asyncio.sleep(0.05)
+            init = streamer.current_init_segment()
+        if not init:
+            logger.warning("h264: no init segment after 3s; closing client")
+            await websocket.close(code=1011)
+            return
+        await websocket.send_bytes(init)
+
+        while True:
+            chunk = await queue.get()
+            if chunk is None:
+                # Sentinel: encoder stopped or we got detached as a slow client.
+                break
+            await websocket.send_bytes(chunk)
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.warning("ws_video send error: %s", e)
+    finally:
+        streamer.unregister_client(queue)
+        if streamer.viewer_count == 0:
+            asyncio.create_task(_h264_idle_shutdown(streamer))
+
+
+@app.get("/api/video/config")
+async def get_video_config() -> JSONResponse:
+    streamer: Optional[H264Streamer] = state["streamer"]
+    if streamer is None:
+        return JSONResponse({"error": "streamer not initialized"}, status_code=503)
+    return JSONResponse(streamer.config())
+
+
+@app.post("/api/video/config")
+async def set_video_config(payload: dict) -> JSONResponse:
+    """Change encoder bitrate/resolution/fps at runtime.
+
+    Reconfigure restarts the ffmpeg subprocess, which forces every connected
+    viewer to re-init MSE on its next chunk (sentinel triggers reconnect on
+    the client). Tradeoff is brief (~500 ms) interruption per knob turn.
+    """
+    streamer: Optional[H264Streamer] = state["streamer"]
+    if streamer is None:
+        return JSONResponse({"error": "streamer not initialized"}, status_code=503)
+    try:
+        await streamer.reconfigure(
+            width=payload.get("width"),
+            height=payload.get("height"),
+            fps=payload.get("fps"),
+            bitrate_kbps=payload.get("bitrate_kbps"),
+        )
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+    return JSONResponse(streamer.config())
 
 
 @app.websocket("/ws")
