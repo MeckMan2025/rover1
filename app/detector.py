@@ -4,8 +4,11 @@ Hailo-8 YOLOv8s inference (COCO 80-class), filtered to a single chosen class
 (dog or person), feeding a forward-only P-control loop that writes to the same
 MotorTarget the joystick uses. The control law is class-agnostic: pick the
 largest box of the target class, yaw to center it, and walk forward when it's
-beyond the framing goal. No strafe, no reverse — the bidirectional / strafe-
-aware version overshot in field test; this is the simpler tune that worked.
+beyond the framing goal. No strafe. The one reverse case is edge-safety: if
+the bbox top or bottom is clipped against the frame edge, the subject is too
+tall to fit at the current distance and we back off gently until the full
+body is in view. Bidirectional + strafe-aware (added briefly in May) overshot
+in field test and was reverted to this simpler tune.
 
 Architecture
 ------------
@@ -73,6 +76,16 @@ AREA_DEADZONE        = 0.03    # don't twitch on small area changes
 CENTER_TOLERANCE     = 0.05    # don't yaw inside ±5 % of center
 YAW_GAIN             = 4.0     # multiplies normalized horizontal error
 LINEAR_GAIN          = 10.0    # multiplies normalized distance error
+
+# Edge-safety reverse — the one exception to "forward only". If the bbox
+# top or bottom is at the frame edge, the subject is too tall to fit at
+# this distance (head or feet would be clipped) so back off gently until
+# the full body is in view again. Left/right edge clipping is a centering
+# problem, not a distance problem — yaw handles that — so we don't react
+# to it here.
+EDGE_MARGIN_RATIO    = 0.05    # bbox edge within 5 % of frame top/bottom → clipped
+EDGE_REVERSE_SPEED   = 0.20    # gentle constant reverse while clipped
+
 DETECTION_TIMEOUT    = 1.0     # seconds; after this, declare "lost"
 INFERENCE_HZ         = 10      # camera caps near this; no benefit going higher
 
@@ -364,12 +377,17 @@ class BoxFollower:
     def _best_target(self, detections: list, frame_shape: tuple) -> Optional[dict]:
         h, w = frame_shape[:2]
         target_id = self._target_class_id
+        edge_margin_px = h * EDGE_MARGIN_RATIO
         candidates = []
         for d in detections:
             x1, y1, x2, y2, conf, class_id = d
             if class_id != target_id:
                 continue
             area = (x2 - x1) * (y2 - y1)
+            # Top or bottom of the bbox flush with the frame edge means the
+            # subject is being clipped — head or feet not visible. Computed
+            # once here so _compute_drive and _update_state agree on it.
+            edge_clipped = (y1 < edge_margin_px) or (y2 > h - edge_margin_px)
             candidates.append({
                 "bbox": (int(x1), int(y1), int(x2), int(y2)),
                 "confidence": conf,
@@ -377,6 +395,7 @@ class BoxFollower:
                 "center_x": (x1 + x2) / 2,
                 "center_y": (y1 + y2) / 2,
                 "area_ratio": area / (w * h),
+                "edge_clipped": edge_clipped,
             })
         if not candidates:
             return None
@@ -385,15 +404,17 @@ class BoxFollower:
 
     @staticmethod
     def _compute_drive(target: dict, frame_shape: tuple) -> tuple[float, float]:
-        """Returns normalized (vx, omega) in [-1, 1]. No strafe, no reverse.
+        """Returns normalized (vx, omega) in [-1, 1]. No strafe.
 
         Yaw is P-control on horizontal centering with a deadzone. Negative
         because +center_err means the target is on the right and we need to
         yaw right (negative omega in ROS convention).
 
-        Forward is forward-only and gated by bbox area: target too close →
-        stop forward (rover keeps tracking via yaw but won't approach further);
-        target far → advance proportionally to area shortfall.
+        Forward / stop / reverse:
+          - bbox top or bottom clipped at frame edge → gentle reverse so the
+            full body comes back into view (the one exception to forward-only)
+          - target too close by area (≥ TOO_CLOSE_RATIO) → stop forward
+          - target far → forward proportional to area shortfall
         """
         h, w = frame_shape[:2]
         center_err = (target["center_x"] - w / 2) / w   # -0.5 .. +0.5
@@ -404,7 +425,11 @@ class BoxFollower:
             omega = max(-1.0, min(1.0, -center_err * YAW_GAIN))
 
         vx = 0.0
-        if area_ratio <= TOO_CLOSE_RATIO:
+        if target["edge_clipped"]:
+            # Subject is taller than the frame at this distance — head or
+            # feet are off-screen. Back up gently until they're not.
+            vx = -EDGE_REVERSE_SPEED
+        elif area_ratio <= TOO_CLOSE_RATIO:
             distance_err = TARGET_AREA_RATIO - area_ratio
             if distance_err > AREA_DEADZONE:
                 vx = min(1.0, distance_err * LINEAR_GAIN)
@@ -427,7 +452,13 @@ class BoxFollower:
                 self._target_confidence = target["confidence"]
                 self._target_area_ratio = target["area_ratio"]
                 self._last_detection_time = now
-                self._status = "too_close" if target["area_ratio"] > TOO_CLOSE_RATIO else "tracking"
+                # "too_close" fires for both area overshoot AND edge clipping,
+                # so the UI bbox turns red whenever the rover is backing off
+                # or refusing to advance.
+                if target["area_ratio"] > TOO_CLOSE_RATIO or target["edge_clipped"]:
+                    self._status = "too_close"
+                else:
+                    self._status = "tracking"
             else:
                 self._target_seen = False
                 if self._last_detection_time is None or (now - self._last_detection_time) > DETECTION_TIMEOUT:
