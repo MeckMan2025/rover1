@@ -1,11 +1,11 @@
 """COCO box follower for the simplify rover.
 
 Hailo-8 YOLOv8s inference (COCO 80-class), filtered to a single chosen class
-(dog or person), feeding a P-control loop that writes to the same MotorTarget
-the joystick uses. The control law is class-agnostic: pick the largest box of
-the target class and chase it via strafe + yaw (lateral) and forward/reverse
-(distance, from bbox area). Originally lifted from rover1_vision/dog_follower.py
-and now parameterized so the same code drives dog-follow and person-follow.
+(dog or person), feeding a forward-only P-control loop that writes to the same
+MotorTarget the joystick uses. The control law is class-agnostic: pick the
+largest box of the target class, yaw to center it, and walk forward when it's
+beyond the framing goal. No strafe, no reverse — the bidirectional / strafe-
+aware version overshot in field test; this is the simpler tune that worked.
 
 Architecture
 ------------
@@ -14,9 +14,10 @@ returns a list of (x1, y1, x2, y2, conf, class_id) in pixel coordinates.
 
 BoxFollower owns a background thread that ticks at INFERENCE_HZ. Each tick:
   read latest frame → infer → pick largest box of target class → compute
-  (vx, vy, omega) → write to MotorTarget. When no target and DETECTION_TIMEOUT
-  elapses, writes zeros. The target class is swappable at runtime via
-  set_target_class() — used by the UI's DOG / PERSON follow buttons.
+  (vx, omega) → write (vx, 0, omega) to MotorTarget. When no target and
+  DETECTION_TIMEOUT elapses, writes zeros. The target class is swappable
+  at runtime via set_target_class() — used by the UI's DOG / PERSON follow
+  buttons.
 
 Power-scale + MAX_LINEAR/MAX_ANGULAR happen downstream (MotorTarget.get and the
 motor thread), so the follower outputs normalized values in [-1, 1] just like
@@ -57,57 +58,21 @@ TARGET_CLASSES: dict[str, int] = {
     "person": PERSON_CLASS_ID,
 }
 
-# Control law constants. Detection thresholds + target framing carried over
-# from rover1_vision/config/dog_follower.yaml. The motion-control side has
-# been reworked from the legacy "forward-only" version:
-#   - Horizontal: strafe (primary, fast) + yaw (secondary, orientation).
-#   - Distance: area-based, bidirectional — reverses when too close.
-#   - Vertical: fine-tunes distance inside the area deadzone so the bbox
-#     sits centered top-to-bottom too, not just left-to-right.
+# Control law constants. Forward-only P-control — no strafe, no reverse,
+# no edge-safety. Yaw centers the target horizontally; forward speed scales
+# with how far the target is from the framing goal (area). At or past
+# TOO_CLOSE_RATIO, forward stops; the rover keeps tracking via yaw but
+# doesn't approach. The more aggressive strafe + reverse + edge-safety
+# extensions overshot and felt twitchy in field test, so we reverted to
+# this responsiveness profile from rover1_vision/config/dog_follower.yaml —
+# the first dog-follower tune that worked well.
 CONFIDENCE_THRESHOLD = 0.5
-TARGET_AREA_RATIO    = 0.15    # dog fills ~15 % of frame at follow distance
-TOO_CLOSE_RATIO      = 0.40    # dog filling 40 %+ → back up
-AREA_DEADZONE        = 0.03    # area is within deadzone → vertical fine-tune
-CENTER_TOLERANCE     = 0.08    # ±8 % horizontal deadzone — wider stops the rover
-                               # fighting tiny detection-jitter errors at center
-
-# Horizontal correction — strafe is the primary "follow the dog sideways"
-# mechanism because mecanum strafe is direct (no rotation latency). Yaw is
-# a secondary orientation fix so the rover ends up facing the dog rather
-# than crab-walking forever.
-#
-# Gains tuned down from the initial (5.0 / 2.0) tuning that overshot and
-# oscillated. With the 10 Hz inference cycle there's ~100 ms of loop delay,
-# which compounds high gain into ringing — these values respond firmly at
-# moderate errors but stop short of overshoot.
-STRAFE_GAIN          = 3.0
-YAW_GAIN             = 1.5
-
-# Distance / forward-back control. REVERSE_GAIN reduced from 8.0 for the
-# same overshoot reason — too snappy a backup tends to overshoot past the
-# target distance and then have to creep forward again.
-LINEAR_GAIN          = 10.0    # forward gain when dog is too far
-REVERSE_GAIN         = 5.0     # reverse gain when dog is too close
-REVERSE_CAP          = 0.7     # normalized reverse cap — slightly safer than fwd
-                               # (no rear obstacle sensor, so cap a bit)
-
-# Vertical fine-tune (only active inside the area deadzone). For a camera
-# tilted slightly down (typical rover mount), dog below frame center → too
-# close, dog above → too far. Wrong way around for an up-tilted camera; in
-# that case set VERTICAL_GAIN to zero.
-VERTICAL_TOLERANCE   = 0.08    # ±8 % vertical deadzone
-VERTICAL_GAIN        = 0.5     # gentle — this is polish, not primary control
-VERTICAL_VX_CAP      = 0.2     # cap the fine-tune at 20 % so it can't surge
-
-# Edge safety. Independent of bbox area: if the bbox's top or bottom edge
-# gets within EDGE_MARGIN_RATIO of the frame edge, the dog is about to
-# escape vertically — most often because it's elevated above the camera
-# (dog on couch, dog up stairs) and the rover has approached enough that
-# the geometry pushes the bbox out of frame before TOO_CLOSE_RATIO triggers.
-# Stop forward and back off gently regardless of area.
-EDGE_MARGIN_RATIO    = 0.08    # bbox edge within 8 % of frame edge → at risk
-EDGE_REVERSE_SPEED   = 0.30    # gentle constant reverse while at risk
-
+TARGET_AREA_RATIO    = 0.15    # target fills ~15 % of frame at follow distance
+TOO_CLOSE_RATIO      = 0.40    # target filling 40 %+ → stop forward, just track
+AREA_DEADZONE        = 0.03    # don't twitch on small area changes
+CENTER_TOLERANCE     = 0.05    # don't yaw inside ±5 % of center
+YAW_GAIN             = 4.0     # multiplies normalized horizontal error
+LINEAR_GAIN          = 10.0    # multiplies normalized distance error
 DETECTION_TIMEOUT    = 1.0     # seconds; after this, declare "lost"
 INFERENCE_HZ         = 10      # camera caps near this; no benefit going higher
 
@@ -375,11 +340,11 @@ class BoxFollower:
             self._update_state(target, frame.shape)
 
             if target is not None:
-                vx, vy, omega = self._compute_drive(target, frame.shape)
-                # Normalized output — MotorTarget.get applies power scale,
-                # motor thread applies MAX_LINEAR/MAX_ANGULAR. Same path the
-                # joystick takes. We now write all three axes; vy = strafe.
-                self.motor_target.set_drive(vx, vy, omega)
+                vx, omega = self._compute_drive(target, frame.shape)
+                # Forward-only: vy (strafe) is always zero. Normalized output —
+                # MotorTarget.get applies power scale, motor thread applies
+                # MAX_LINEAR/MAX_ANGULAR. Same path the joystick takes.
+                self.motor_target.set_drive(vx, 0.0, omega)
             else:
                 # No target this frame. Keep writing zero so the motor watchdog
                 # stays fed (vs. going silent and triggering its 150 ms
@@ -419,74 +384,32 @@ class BoxFollower:
         return max(candidates, key=lambda d: d["area"])
 
     @staticmethod
-    def _compute_drive(target: dict, frame_shape: tuple) -> tuple[float, float, float]:
-        """Returns normalized (vx, vy, omega) in [-1, 1].
+    def _compute_drive(target: dict, frame_shape: tuple) -> tuple[float, float]:
+        """Returns normalized (vx, omega) in [-1, 1]. No strafe, no reverse.
 
-        Horizontal centering — strafe is the fast lateral tracker (mecanum
-        strafe has no rotational delay) and yaw runs at a smaller gain to
-        orient the rover toward the target over time. Same sign convention as
-        the joystick: +vy = ROS-strafe-left, +omega = ROS-CCW.
+        Yaw is P-control on horizontal centering with a deadzone. Negative
+        because +center_err means the target is on the right and we need to
+        yaw right (negative omega in ROS convention).
 
-        Distance — area-based, bidirectional, with an edge-safety override:
-          too close  (area > TOO_CLOSE_RATIO)        → reverse (capped)
-          bbox near vertical frame edge              → reverse at EDGE_REVERSE_SPEED
-                                                       (handles elevated targets —
-                                                       dog on couch, person up
-                                                       steps — where bbox walks
-                                                       out of frame before area
-                                                       can reach TOO_CLOSE_RATIO)
-          too far    (area < target - deadzone)      → forward
-          in deadzone                                → vertical fine-tune from
-                                                       bbox center_y, capped small
-
-        Vertical fine-tune assumes a slightly down-tilted camera (target below
-        center ≈ too close). VERTICAL_GAIN = 0 disables it if that's wrong.
+        Forward is forward-only and gated by bbox area: target too close →
+        stop forward (rover keeps tracking via yaw but won't approach further);
+        target far → advance proportionally to area shortfall.
         """
         h, w = frame_shape[:2]
-        center_x_err = (target["center_x"] - w / 2) / w   # -0.5 .. +0.5, +ve = right
-        center_y_err = (target["center_y"] - h / 2) / h   # -0.5 .. +0.5, +ve = below
+        center_err = (target["center_x"] - w / 2) / w   # -0.5 .. +0.5
         area_ratio = target["area_ratio"]
 
-        # Horizontal: strafe primary, yaw secondary. Both go the same way.
-        vy = 0.0
         omega = 0.0
-        if abs(center_x_err) > CENTER_TOLERANCE:
-            vy    = max(-1.0, min(1.0, -center_x_err * STRAFE_GAIN))
-            omega = max(-1.0, min(1.0, -center_x_err * YAW_GAIN))
+        if abs(center_err) > CENTER_TOLERANCE:
+            omega = max(-1.0, min(1.0, -center_err * YAW_GAIN))
 
-        # Is the bbox about to leave the frame vertically? Checked on bbox
-        # coords (not center) so it triggers as soon as the target's head or
-        # feet approach the frame edge, regardless of how big the target is.
-        y1 = target["bbox"][1]
-        y2 = target["bbox"][3]
-        edge_margin_px = h * EDGE_MARGIN_RATIO
-        bbox_at_top    = y1 < edge_margin_px
-        bbox_at_bottom = y2 > (h - edge_margin_px)
-        bbox_at_edge   = bbox_at_top or bbox_at_bottom
-
-        # Distance control with edge override.
         vx = 0.0
-        if area_ratio > TOO_CLOSE_RATIO:
-            # Reverse — magnitude proportional to how far past the target.
-            overshoot = area_ratio - TARGET_AREA_RATIO
-            vx = -min(REVERSE_CAP, overshoot * REVERSE_GAIN)
-        elif bbox_at_edge:
-            # Don't advance if the target is about to escape vertically.
-            # Constant gentle reverse to bring the bbox safely back into view.
-            vx = -EDGE_REVERSE_SPEED
-        else:
+        if area_ratio <= TOO_CLOSE_RATIO:
             distance_err = TARGET_AREA_RATIO - area_ratio
             if distance_err > AREA_DEADZONE:
                 vx = min(1.0, distance_err * LINEAR_GAIN)
-            else:
-                # Inside the distance deadzone — use vertical centering as a
-                # fine adjustment. Target below frame center → too close → back
-                # up slightly; target above → too far → creep forward.
-                if abs(center_y_err) > VERTICAL_TOLERANCE:
-                    vx = max(-VERTICAL_VX_CAP,
-                             min(VERTICAL_VX_CAP, -center_y_err * VERTICAL_GAIN))
 
-        return vx, vy, omega
+        return vx, omega
 
     def _update_state(self, target: Optional[dict], frame_shape: tuple) -> None:
         now = time.monotonic()
