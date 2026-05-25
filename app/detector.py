@@ -1,19 +1,22 @@
-"""Dog detection + follower for the simplify rover.
+"""COCO box follower for the simplify rover.
 
-Hailo-8 YOLOv8s inference (COCO 80-class, filtered to class 16 = dog), feeding a
-forward-only P-control loop that writes to the same MotorTarget the joystick
-uses. Lifted from rover1_vision/dog_follower.py (lines 738–937 are the core);
-stripped of all ROS scaffolding — no Node, services, QoS, cv_bridge, or recovery
-scan. Same Hailo init dance, same on-chip-NMS postprocess, same tuned constants.
+Hailo-8 YOLOv8s inference (COCO 80-class), filtered to a single chosen class
+(dog or person), feeding a P-control loop that writes to the same MotorTarget
+the joystick uses. The control law is class-agnostic: pick the largest box of
+the target class and chase it via strafe + yaw (lateral) and forward/reverse
+(distance, from bbox area). Originally lifted from rover1_vision/dog_follower.py
+and now parameterized so the same code drives dog-follow and person-follow.
 
 Architecture
 ------------
 HailoYolo loads the .hef and holds persistent VStreams. detect(bgr_frame)
 returns a list of (x1, y1, x2, y2, conf, class_id) in pixel coordinates.
 
-DogFollower owns a background thread that ticks at INFERENCE_HZ. Each tick:
-  read latest frame → infer → pick largest dog → compute (vx, omega) → write
-  to MotorTarget. When no dog and DETECTION_TIMEOUT elapses, writes zeros.
+BoxFollower owns a background thread that ticks at INFERENCE_HZ. Each tick:
+  read latest frame → infer → pick largest box of target class → compute
+  (vx, vy, omega) → write to MotorTarget. When no target and DETECTION_TIMEOUT
+  elapses, writes zeros. The target class is swappable at runtime via
+  set_target_class() — used by the UI's DOG / PERSON follow buttons.
 
 Power-scale + MAX_LINEAR/MAX_ANGULAR happen downstream (MotorTarget.get and the
 motor thread), so the follower outputs normalized values in [-1, 1] just like
@@ -43,8 +46,16 @@ DEFAULT_HEF_PATH = os.environ.get(
     os.path.expanduser("~/ros2_ws/src/rover1/models/yolov8s.hef"),
 )
 
-DOG_CLASS_ID = 16        # COCO class index for "dog"
-YOLO_INPUT = 640         # YOLOv8 input side length
+DOG_CLASS_ID    = 16     # COCO class index for "dog"
+PERSON_CLASS_ID = 0      # COCO class index for "person"
+YOLO_INPUT      = 640    # YOLOv8 input side length
+
+# Map of supported follow-mode labels → COCO class id. Anything else from
+# the UI is rejected. Add new entries here to expose more classes.
+TARGET_CLASSES: dict[str, int] = {
+    "dog":    DOG_CLASS_ID,
+    "person": PERSON_CLASS_ID,
+}
 
 # Control law constants. Detection thresholds + target framing carried over
 # from rover1_vision/config/dog_follower.yaml. The motion-control side has
@@ -220,15 +231,24 @@ class HailoYolo:
             pass
 
 
-class DogFollower:
-    """Closed-loop dog tracker. Background thread reads frames from a Camera
-    and writes drive commands to a MotorTarget. Forward-only — no reverse,
-    no strafe in v1 (legacy didn't strafe either).
+class BoxFollower:
+    """Closed-loop largest-box tracker for one COCO class at a time.
+
+    Background thread reads frames from a Camera, filters detections to the
+    active target class (dog or person), picks the biggest bbox, and writes
+    drive commands to a MotorTarget. Mode is mutually exclusive — flipping
+    from dog→person doesn't stop the loop, it just changes which class is
+    matched on the next tick.
     """
 
-    def __init__(self, camera, motor_target) -> None:
+    def __init__(self, camera, motor_target, *,
+                 target_class_id: int = DOG_CLASS_ID,
+                 target_label: str = "dog") -> None:
         self.camera = camera
         self.motor_target = motor_target
+
+        self._target_class_id = target_class_id
+        self._target_label = target_label
 
         self._enabled = False
         self._yolo: Optional[HailoYolo] = None
@@ -238,10 +258,10 @@ class DogFollower:
         # State exposed via status() — main.py merges this into /telemetry.
         self._lock = threading.Lock()
         self._status = "idle"
-        self._dog_seen = False
-        self._dog_bbox: Optional[tuple[int, int, int, int]] = None
-        self._dog_confidence: Optional[float] = None
-        self._dog_area_ratio: Optional[float] = None
+        self._target_seen = False
+        self._target_bbox: Optional[tuple[int, int, int, int]] = None
+        self._target_confidence: Optional[float] = None
+        self._target_area_ratio: Optional[float] = None
         self._detector_fps = 0.0
         self._last_detection_time: Optional[float] = None
 
@@ -255,17 +275,40 @@ class DogFollower:
     def enabled(self) -> bool:
         return self._enabled
 
+    @property
+    def target_label(self) -> str:
+        return self._target_label
+
     def status(self) -> dict:
+        """Class-neutral status payload. UI keys off `follow_target` to know
+        which button to light up."""
         with self._lock:
             return {
                 "follow_enabled": self._enabled,
                 "follow_status": self._status,
-                "dog_seen": self._dog_seen,
-                "dog_bbox": list(self._dog_bbox) if self._dog_bbox else None,
-                "dog_confidence": self._dog_confidence,
-                "dog_area_ratio": self._dog_area_ratio,
+                "follow_target": self._target_label if self._enabled else None,
+                "target_label": self._target_label,
+                "target_seen": self._target_seen,
+                "target_bbox": list(self._target_bbox) if self._target_bbox else None,
+                "target_confidence": self._target_confidence,
+                "target_area_ratio": self._target_area_ratio,
                 "detector_fps": round(self._detector_fps, 1),
             }
+
+    def set_target_class(self, class_id: int, label: str) -> None:
+        """Swap which COCO class the loop chases. Safe to call while running —
+        the next inference tick reads the new id. Resets the visual state so
+        the old class's bbox doesn't linger in the UI for a moment."""
+        with self._lock:
+            self._target_class_id = class_id
+            self._target_label = label
+            self._target_seen = False
+            self._target_bbox = None
+            self._target_confidence = None
+            self._target_area_ratio = None
+            self._last_detection_time = None
+            if self._enabled:
+                self._status = "searching"
 
     def set_enabled(self, enabled: bool) -> None:
         if enabled == self._enabled:
@@ -277,8 +320,8 @@ class DogFollower:
             self._stop_drive()
             with self._lock:
                 self._status = "idle"
-                self._dog_seen = False
-                self._dog_bbox = None
+                self._target_seen = False
+                self._target_bbox = None
 
     def close(self) -> None:
         self._enabled = False
@@ -328,17 +371,17 @@ class DogFollower:
                 # Transient inference errors must not kill the loop.
                 detections = []
 
-            dog = self._best_dog(detections, frame.shape)
-            self._update_state(dog, frame.shape)
+            target = self._best_target(detections, frame.shape)
+            self._update_state(target, frame.shape)
 
-            if dog is not None:
-                vx, vy, omega = self._compute_drive(dog, frame.shape)
+            if target is not None:
+                vx, vy, omega = self._compute_drive(target, frame.shape)
                 # Normalized output — MotorTarget.get applies power scale,
                 # motor thread applies MAX_LINEAR/MAX_ANGULAR. Same path the
                 # joystick takes. We now write all three axes; vy = strafe.
                 self.motor_target.set_drive(vx, vy, omega)
             else:
-                # No dog this frame. Keep writing zero so the motor watchdog
+                # No target this frame. Keep writing zero so the motor watchdog
                 # stays fed (vs. going silent and triggering its 150 ms
                 # zero-on-stale path mid-tick).
                 self.motor_target.set_drive(0.0, 0.0, 0.0)
@@ -353,16 +396,16 @@ class DogFollower:
         # Loop exited — make sure we leave motors stopped.
         self._stop_drive()
 
-    @staticmethod
-    def _best_dog(detections: list, frame_shape: tuple) -> Optional[dict]:
+    def _best_target(self, detections: list, frame_shape: tuple) -> Optional[dict]:
         h, w = frame_shape[:2]
-        dogs = []
+        target_id = self._target_class_id
+        candidates = []
         for d in detections:
             x1, y1, x2, y2, conf, class_id = d
-            if class_id != DOG_CLASS_ID:
+            if class_id != target_id:
                 continue
             area = (x2 - x1) * (y2 - y1)
-            dogs.append({
+            candidates.append({
                 "bbox": (int(x1), int(y1), int(x2), int(y2)),
                 "confidence": conf,
                 "area": area,
@@ -370,39 +413,39 @@ class DogFollower:
                 "center_y": (y1 + y2) / 2,
                 "area_ratio": area / (w * h),
             })
-        if not dogs:
+        if not candidates:
             return None
-        # Largest box = closest dog
-        return max(dogs, key=lambda d: d["area"])
+        # Largest box = closest subject.
+        return max(candidates, key=lambda d: d["area"])
 
     @staticmethod
-    def _compute_drive(dog: dict, frame_shape: tuple) -> tuple[float, float, float]:
+    def _compute_drive(target: dict, frame_shape: tuple) -> tuple[float, float, float]:
         """Returns normalized (vx, vy, omega) in [-1, 1].
 
         Horizontal centering — strafe is the fast lateral tracker (mecanum
         strafe has no rotational delay) and yaw runs at a smaller gain to
-        orient the rover toward the dog over time. Same sign convention as
+        orient the rover toward the target over time. Same sign convention as
         the joystick: +vy = ROS-strafe-left, +omega = ROS-CCW.
 
         Distance — area-based, bidirectional, with an edge-safety override:
           too close  (area > TOO_CLOSE_RATIO)        → reverse (capped)
           bbox near vertical frame edge              → reverse at EDGE_REVERSE_SPEED
-                                                       (handles 'dog on couch' —
-                                                       elevated target where the
-                                                       bbox walks out of frame
-                                                       before area can reach
-                                                       TOO_CLOSE_RATIO)
+                                                       (handles elevated targets —
+                                                       dog on couch, person up
+                                                       steps — where bbox walks
+                                                       out of frame before area
+                                                       can reach TOO_CLOSE_RATIO)
           too far    (area < target - deadzone)      → forward
           in deadzone                                → vertical fine-tune from
                                                        bbox center_y, capped small
 
-        Vertical fine-tune assumes a slightly down-tilted camera (dog below
+        Vertical fine-tune assumes a slightly down-tilted camera (target below
         center ≈ too close). VERTICAL_GAIN = 0 disables it if that's wrong.
         """
         h, w = frame_shape[:2]
-        center_x_err = (dog["center_x"] - w / 2) / w   # -0.5 .. +0.5, +ve = right
-        center_y_err = (dog["center_y"] - h / 2) / h   # -0.5 .. +0.5, +ve = below
-        area_ratio = dog["area_ratio"]
+        center_x_err = (target["center_x"] - w / 2) / w   # -0.5 .. +0.5, +ve = right
+        center_y_err = (target["center_y"] - h / 2) / h   # -0.5 .. +0.5, +ve = below
+        area_ratio = target["area_ratio"]
 
         # Horizontal: strafe primary, yaw secondary. Both go the same way.
         vy = 0.0
@@ -412,10 +455,10 @@ class DogFollower:
             omega = max(-1.0, min(1.0, -center_x_err * YAW_GAIN))
 
         # Is the bbox about to leave the frame vertically? Checked on bbox
-        # coords (not center) so it triggers as soon as the dog's head or
-        # feet approach the frame edge, regardless of how big the dog is.
-        y1 = dog["bbox"][1]
-        y2 = dog["bbox"][3]
+        # coords (not center) so it triggers as soon as the target's head or
+        # feet approach the frame edge, regardless of how big the target is.
+        y1 = target["bbox"][1]
+        y2 = target["bbox"][3]
         edge_margin_px = h * EDGE_MARGIN_RATIO
         bbox_at_top    = y1 < edge_margin_px
         bbox_at_bottom = y2 > (h - edge_margin_px)
@@ -428,7 +471,7 @@ class DogFollower:
             overshoot = area_ratio - TARGET_AREA_RATIO
             vx = -min(REVERSE_CAP, overshoot * REVERSE_GAIN)
         elif bbox_at_edge:
-            # Don't advance if the dog is about to escape vertically.
+            # Don't advance if the target is about to escape vertically.
             # Constant gentle reverse to bring the bbox safely back into view.
             vx = -EDGE_REVERSE_SPEED
         else:
@@ -437,15 +480,15 @@ class DogFollower:
                 vx = min(1.0, distance_err * LINEAR_GAIN)
             else:
                 # Inside the distance deadzone — use vertical centering as a
-                # fine adjustment. Dog below frame center → too close → back
-                # up slightly; dog above → too far → creep forward.
+                # fine adjustment. Target below frame center → too close → back
+                # up slightly; target above → too far → creep forward.
                 if abs(center_y_err) > VERTICAL_TOLERANCE:
                     vx = max(-VERTICAL_VX_CAP,
                              min(VERTICAL_VX_CAP, -center_y_err * VERTICAL_GAIN))
 
         return vx, vy, omega
 
-    def _update_state(self, dog: Optional[dict], frame_shape: tuple) -> None:
+    def _update_state(self, target: Optional[dict], frame_shape: tuple) -> None:
         now = time.monotonic()
         self._fps_window_count += 1
         elapsed = now - self._fps_window_start
@@ -455,20 +498,20 @@ class DogFollower:
             self._fps_window_start = now
 
         with self._lock:
-            if dog is not None:
-                self._dog_seen = True
-                self._dog_bbox = dog["bbox"]
-                self._dog_confidence = dog["confidence"]
-                self._dog_area_ratio = dog["area_ratio"]
+            if target is not None:
+                self._target_seen = True
+                self._target_bbox = target["bbox"]
+                self._target_confidence = target["confidence"]
+                self._target_area_ratio = target["area_ratio"]
                 self._last_detection_time = now
-                self._status = "too_close" if dog["area_ratio"] > TOO_CLOSE_RATIO else "tracking"
+                self._status = "too_close" if target["area_ratio"] > TOO_CLOSE_RATIO else "tracking"
             else:
-                self._dog_seen = False
+                self._target_seen = False
                 if self._last_detection_time is None or (now - self._last_detection_time) > DETECTION_TIMEOUT:
                     self._status = "searching"
-                    self._dog_bbox = None
-                    self._dog_confidence = None
-                    self._dog_area_ratio = None
+                    self._target_bbox = None
+                    self._target_confidence = None
+                    self._target_area_ratio = None
 
     def _stop_drive(self) -> None:
         try:

@@ -59,7 +59,7 @@ from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 
 from app.camera import Camera
-from app.detector import DogFollower
+from app.detector import BoxFollower, TARGET_CLASSES
 from app.kinematics import cartesian_to_wheels
 from app.motors import HiwonderHardware
 from app.streamer import H264Streamer
@@ -266,9 +266,10 @@ state: dict = {
     # When > 0 we encode at ~12 Hz; when 0 we drop to ~6 Hz — encoding for
     # nobody (or only the on-board kiosk) is the biggest CPU waste on the Pi.
     "mjpeg_viewers": 0,
-    # DogFollower instance — created in lifespan, owns the Hailo pipeline and
+    # BoxFollower instance — created in lifespan, owns the Hailo pipeline and
     # the detection/control thread. None when follow mode has never been
-    # enabled (Hailo init is lazy on first toggle).
+    # enabled (Hailo init is lazy on first toggle). Target class (dog vs
+    # person) is set per-toggle from the UI via /ws.
     "follower": None,
     # H264Streamer — created in lifespan, encoder starts lazily on the first
     # /ws/video connection and stops after a grace period when the last
@@ -317,8 +318,9 @@ async def lifespan(app: FastAPI):
     )
     state["motor_thread"].start()
     # Follower is constructed but NOT started — Hailo init happens on first
-    # set_enabled(True) so the app boots fast.
-    state["follower"] = DogFollower(
+    # set_enabled(True) so the app boots fast. Default target is dog; UI
+    # may flip it to person via set_follow_mode.
+    state["follower"] = BoxFollower(
         camera=state["camera"],
         motor_target=state["target"],
     )
@@ -381,13 +383,14 @@ async def telemetry() -> JSONResponse:
     # Reading battery_v acquires the I²C lock too; quick (~1 ms) so fine inline.
     target: MotorTarget = state["target"]
     smoother: BatterySmoother = state["battery_smoother"]
-    follower: Optional[DogFollower] = state["follower"]
+    follower: Optional[BoxFollower] = state["follower"]
     battery_raw = hw.read_battery_voltage() if hw else None
     battery_smoothed = smoother.update(battery_raw)
     follow_fields = follower.status() if follower else {
         "follow_enabled": False, "follow_status": "idle",
-        "dog_seen": False, "dog_bbox": None,
-        "dog_confidence": None, "dog_area_ratio": None,
+        "follow_target": None, "target_label": "dog",
+        "target_seen": False, "target_bbox": None,
+        "target_confidence": None, "target_area_ratio": None,
         "detector_fps": 0.0,
     }
     return JSONResponse({
@@ -586,18 +589,29 @@ async def ws(websocket: WebSocket) -> None:
                 # While follow mode is on, ignore idle joystick heartbeats so
                 # they don't overwrite the follower at 20 Hz. Non-zero input
                 # still wins → instant manual override.
-                follower: Optional[DogFollower] = state["follower"]
+                follower: Optional[BoxFollower] = state["follower"]
                 if (follower is not None and follower.enabled
                         and vx == 0.0 and vy == 0.0 and omega == 0.0):
                     continue
                 target.set_drive(vx, vy, omega)
             elif t == "set_follow_mode":
-                enabled = bool(msg.get("enabled", False))
+                # Wire format: {"type":"set_follow_mode", "mode": "dog"|"person"|null}
+                # null (or missing) disables. dog/person sets the target class
+                # and enables — they're mutually exclusive by construction.
+                mode = msg.get("mode")
                 follower = state["follower"]
-                if follower is not None:
-                    # Hailo init can take ~3 s on first toggle — off-thread it
+                if follower is None:
+                    continue
+                if mode in TARGET_CLASSES:
+                    follower.set_target_class(TARGET_CLASSES[mode], mode)
+                    # Hailo init can take ~3 s on first enable — off-thread it
                     # so the WS loop stays responsive.
-                    await loop.run_in_executor(None, follower.set_enabled, enabled)
+                    if not follower.enabled:
+                        await loop.run_in_executor(None, follower.set_enabled, True)
+                else:
+                    # Any other value (None, "off", garbage) = stop following.
+                    if follower.enabled:
+                        await loop.run_in_executor(None, follower.set_enabled, False)
             elif t == "set_power":
                 target.set_power(float(msg.get("value", 1.0)))
             elif t == "set_display":

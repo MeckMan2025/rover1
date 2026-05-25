@@ -100,16 +100,18 @@
       background: rgba(40,40,40,0.6); color: #aaa;
     }
     #poweroff-btn:active { background: rgba(80,80,80,0.7); color: #fff; }
-    /* FOLLOW gets bigger color treatment because it's the magic button. */
-    #follow-btn {
+    /* DOG / PERSON FOLLOW buttons get bigger color treatment — they're the
+       magic buttons. Only one runs at a time; the active class is applied
+       to whichever button matches the server's follow_target. */
+    .follow-btn {
       border: 1.5px solid rgba(120,200,120,0.45);
       background: rgba(40,80,40,0.6); color: #cfc;
     }
-    #follow-btn:active { background: rgba(60,140,60,0.75); color: #fff; }
-    #follow-btn.tracking  { background: rgba(60,150,60,0.75);  color: #fff; border-color: #6f6; }
-    #follow-btn.searching { background: rgba(120,90,30,0.7);   color: #ffd; border-color: #ffc107; }
-    #follow-btn.too-close { background: rgba(150,60,60,0.75);  color: #fff; border-color: #f66; }
-    #follow-btn.initializing { background: rgba(60,80,140,0.7); color: #cdf; border-color: #abf; }
+    .follow-btn:active { background: rgba(60,140,60,0.75); color: #fff; }
+    .follow-btn.tracking     { background: rgba(60,150,60,0.75);  color: #fff; border-color: #6f6; }
+    .follow-btn.searching    { background: rgba(120,90,30,0.7);   color: #ffd; border-color: #ffc107; }
+    .follow-btn.too-close    { background: rgba(150,60,60,0.75);  color: #fff; border-color: #f66; }
+    .follow-btn.initializing { background: rgba(60,80,140,0.7);   color: #cdf; border-color: #abf; }
 
     /* Right-side safety column */
     .right-btn {
@@ -223,9 +225,10 @@
     </div>
 
     <div id="util-row">
-      <button id="reboot-btn"   class="util-btn">REBOOT</button>
-      <button id="poweroff-btn" class="util-btn">POWER<br>OFF</button>
-      <button id="follow-btn"   class="util-btn">FOLLOW<br>OFF</button>
+      <button id="reboot-btn"        class="util-btn">REBOOT</button>
+      <button id="poweroff-btn"      class="util-btn">POWER<br>OFF</button>
+      <button id="dog-follow-btn"    class="util-btn follow-btn">DOG<br>FOLLOW</button>
+      <button id="person-follow-btn" class="util-btn follow-btn">PERSON<br>FOLLOW</button>
     </div>
 
     <button id="estop"          class="right-btn">E-STOP</button>
@@ -377,16 +380,25 @@
     }
   });
 
-  // --- Follow toggle -------------------------------------------------------
-  const followBtn = document.getElementById("follow-btn");
-  let followEnabled = false;
-  followBtn.addEventListener("click", () => {
-    followEnabled = !followEnabled;
-    // Reflect the requested state immediately; status colors update from
-    // /telemetry (server-side truth — covers init failures).
-    followBtn.innerHTML = followEnabled ? "FOLLOW<br>ON" : "FOLLOW<br>OFF";
-    send({ type: "set_follow_mode", enabled: followEnabled });
-  });
+  // --- Follow toggles (dog / person — mutually exclusive) -----------------
+  // Backend has a single follower with a swappable target class. Clicking
+  // either button sends {mode: "dog"|"person"|null}; switching modes is
+  // implicit (server flips target, the other button auto-deactivates on
+  // the next telemetry tick).
+  const dogFollowBtn    = document.getElementById("dog-follow-btn");
+  const personFollowBtn = document.getElementById("person-follow-btn");
+  const followButtons   = [
+    { btn: dogFollowBtn,    mode: "dog" },
+    { btn: personFollowBtn, mode: "person" },
+  ];
+  let followMode = null;  // server-truth: "dog" | "person" | null
+
+  for (const { btn, mode } of followButtons) {
+    btn.addEventListener("click", () => {
+      const next = (followMode === mode) ? null : mode;
+      send({ type: "set_follow_mode", mode: next });
+    });
+  }
 
   // --- E-stop --------------------------------------------------------------
   document.getElementById("estop").addEventListener("click", () => send({ type: "estop" }));
@@ -539,20 +551,22 @@
   const bboxLabel = document.getElementById("bbox-label");
 
   function reflectFollowStatus(j) {
-    // Server-truth state of follow: button label tracks server-truth
-    // "follow_enabled", and the color reflects the live status.
-    followEnabled = !!j.follow_enabled;
-    followBtn.innerHTML = followEnabled ? "FOLLOW<br>ON" : "FOLLOW<br>OFF";
-    followBtn.classList.remove("tracking", "searching", "too-close", "initializing");
+    // Color the button matching the server-truth follow_target; clear
+    // any state classes on the inactive button so it returns to neutral.
+    followMode = j.follow_target || null;
     const status = j.follow_status;
-    if (status === "tracking")        followBtn.classList.add("tracking");
-    else if (status === "searching")  followBtn.classList.add("searching");
-    else if (status === "too_close")  followBtn.classList.add("too-close");
-    else if (status === "initializing") followBtn.classList.add("initializing");
+    for (const { btn, mode } of followButtons) {
+      btn.classList.remove("tracking", "searching", "too-close", "initializing");
+      if (followMode !== mode) continue;
+      if      (status === "tracking")     btn.classList.add("tracking");
+      else if (status === "searching")    btn.classList.add("searching");
+      else if (status === "too_close")    btn.classList.add("too-close");
+      else if (status === "initializing") btn.classList.add("initializing");
+    }
   }
 
   function reflectBbox(j) {
-    if (!j.dog_bbox || !j.follow_enabled) {
+    if (!j.target_bbox || !j.follow_enabled) {
       bbox.style.display = "none";
       return;
     }
@@ -573,7 +587,7 @@
     const contentLeft = vRect.left + (dispW - contentW) / 2 - stageRect.left;
     const contentTop  = vRect.top  + (dispH - contentH) / 2 - stageRect.top;
 
-    const [x1, y1, x2, y2] = j.dog_bbox;
+    const [x1, y1, x2, y2] = j.target_bbox;
     bbox.style.display = "block";
     bbox.style.left   = (contentLeft + x1 * contentScale) + "px";
     bbox.style.top    = (contentTop  + y1 * contentScale) + "px";
@@ -581,8 +595,8 @@
     bbox.style.height = ((y2 - y1) * contentScale) + "px";
     bbox.classList.toggle("too-close", j.follow_status === "too_close");
 
-    const conf = (j.dog_confidence != null) ? ` ${(j.dog_confidence * 100).toFixed(0)}%` : "";
-    bboxLabel.textContent = "dog" + conf;
+    const conf = (j.target_confidence != null) ? ` ${(j.target_confidence * 100).toFixed(0)}%` : "";
+    bboxLabel.textContent = (j.target_label || "target") + conf;
   }
 
   async function pollTelemetry() {
