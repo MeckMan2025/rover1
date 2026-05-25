@@ -1,16 +1,15 @@
 [Unit]
-Description=WiFi Roaming Check for Rover1
+Description=Rover1 WiFi failover (STA priority + AP fallback)
 Documentation=https://github.com/MeckMan2025/rover1
 After=network-online.target NetworkManager.service
 Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/wifi-roam.sh
-# Don't restart on failure - timer will trigger next run
+ExecStart=/usr/local/bin/wifi-failover.sh
 Restart=no
-# Timeout for scan + connection attempt
-TimeoutStartSec=30
+# Brief AP-drop + scan + nmcli up can take ~10 s in the worst case.
+TimeoutStartSec=45
 
 [Install]
 WantedBy=multi-user.target

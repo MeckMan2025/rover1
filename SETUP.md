@@ -34,15 +34,20 @@
 
 ## Network Configuration
 
-The rover supports automatic WiFi failover:
-1. Home network (highest priority)
-2. Phone hotspot (fallback)  
-3. Ethernet tether (static fallback)
+4-tier failover chain (see [docs/network.md](docs/network.md) for the full story):
 
-Configure network credentials in `.env` and run:
+1. Home WiFi (`Lake Wifi`)
+2. Phone hotspot (`AJM17ProMax`)
+3. SIM7600G-H LTE (always-on backup on wwan0, see [LTE_FAILOVER.md](LTE_FAILOVER.md))
+4. Rover-as-AP (`rover1-direct`) — broadcast when nothing else is in range
+
+Set the WiFi credentials (including `WIFI_AP_SSID` / `WIFI_AP_PASS`) in `.env`, then on the rover:
+
 ```bash
-./scripts/setup_network_failover.sh
+sudo ./scripts/setup_wifi_failover.sh
 ```
+
+The installer creates / refreshes all NetworkManager profiles and enables the `wifi-failover.timer`. It also retires the legacy `wifi-roam.*` units it supersedes.
 
 ## Remote Access
 
