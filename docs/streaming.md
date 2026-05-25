@@ -18,7 +18,7 @@ The H.264 path uses an `ffmpeg` subprocess running `libx264 -preset ultrafast -t
 | Encoder CPU | low | similar (libx264 ultrafast) |
 | Latency floor | ~80 ms | ~150–300 ms |
 
-The bitrate drop is the headline. Driving over LTE was the forcing function — MJPEG saturates the SIM7600's ~3 Mbps uplink and starves control commands. H.264 at 1.5 Mbps leaves headroom for telemetry, WS control, and Tailscale overhead.
+The bitrate drop is still the headline. The measured LTE uplink is ~20 Mbps (see `docs/network.md`), which is roomier than the initial ~3 Mbps estimate this work was scoped against — MJPEG at ~6 Mbps would actually fit, but it leaves much less headroom for telemetry, control, and Tailscale overhead, and on metered data plans it burns through the cap fast. H.264 at 1.5 Mbps is ~13× less data per minute.
 
 CPU is roughly a wash on Pi 5 (no hardware H.264 encoder; libx264 is software). The win is bandwidth, not raw CPU. Lower bytes across the wireless stack means less radio time, which on a passively-cooled Pi 5 does reduce thermals — measured by Claude-Rover during QA, not assumed.
 

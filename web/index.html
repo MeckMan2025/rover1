@@ -179,60 +179,6 @@
     #ws-state.ok  { color: #6f6; }
     #ws-state.bad { color: #f66; }
 
-    /* Mode toggle (LAN / Cellular) — top center */
-    #mode-toggle {
-      position: absolute; top: calc(12px + var(--safe-top)); left: 50%;
-      transform: translateX(-50%);
-      background: rgba(0,0,0,0.55); border-radius: 8px;
-      padding: 3px; display: flex; gap: 0;
-      font-size: 11px;
-    }
-    .mode-btn {
-      background: transparent; border: none;
-      color: #aaa; padding: 6px 12px; border-radius: 6px;
-      font-weight: 700; letter-spacing: 0.06em;
-      cursor: pointer; transition: background 0.1s, color 0.1s;
-    }
-    .mode-btn.active { background: rgba(255,255,255,0.18); color: #fff; }
-    #mode-hint {
-      position: absolute; top: calc(46px + var(--safe-top)); left: 50%;
-      transform: translateX(-50%);
-      white-space: nowrap; font-size: 10px; letter-spacing: 0.04em;
-      opacity: 0.55; pointer-events: none;
-    }
-
-    /* Snapshot panel covers the camera area when in Cellular mode.
-       pointer-events: none so the underlying D-pad / strafe / status keep
-       working; only the snapshot button itself opts back in. */
-    #snapshot-panel {
-      position: absolute; inset: 0;
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center; gap: 14px;
-      background: #0a0a0a;
-      pointer-events: none;
-    }
-    #snapshot-panel[hidden] { display: none; }
-    #snapshot { max-width: 92%; max-height: 56%; object-fit: contain; display: none; }
-    #snapshot.has-image { display: block; }
-    #snapshot-empty { color: #666; font-size: 13px; letter-spacing: 0.04em; }
-    #snapshot-empty.hidden { display: none; }
-    #snapshot-controls {
-      display: flex; flex-direction: column; align-items: center; gap: 6px;
-      pointer-events: auto;
-    }
-    #snapshot-btn {
-      padding: 12px 28px; border-radius: 12px;
-      background: rgba(60,80,140,0.75); border: 2px solid rgba(120,160,255,0.55);
-      color: #fff; font-size: 15px; font-weight: 700; letter-spacing: 0.05em;
-      cursor: pointer;
-    }
-    #snapshot-btn:active   { background: rgba(80,110,180,0.9); }
-    #snapshot-btn:disabled { opacity: 0.5; cursor: default; }
-    #snapshot-meta {
-      font-size: 12px; color: #aaa; font-variant-numeric: tabular-nums;
-    }
-    #snapshot-meta .sep { opacity: 0.4; margin: 0 6px; }
-
     @media (max-width: 600px) {
       #dpad       { width: 168px; height: 168px; left: 16px; }
       #strafe-pad { width: 120px; height: 56px;  right: 16px; }
@@ -244,20 +190,10 @@
       #btn-strafe-left  { left: 0; }
       #btn-strafe-right { left: 64px; }
 
-      /* On narrow screens the center-top mode toggle collided with the
-         status pill on the left, so we drop it into the left column under
-         status and slide the speed slider + util row down to match. */
-      #mode-toggle {
-        top: calc(54px + var(--safe-top));
-        left: 12px;
-        transform: none;
-      }
-      #mode-hint { display: none; }   /* labels are clear; reclaim space */
-      #power-box   { top: calc(94px + var(--safe-top)); }
-      #util-row    { top: calc(140px + var(--safe-top)); }
       #power-slider  { width: 110px; }
       #estop         { width: 70px; height: 70px; }
-      #screen-toggle { top: calc(92px + var(--safe-top)); width: 70px; height: 70px; }
+      #screen-toggle { top: calc(90px + var(--safe-top)); width: 70px; height: 70px; }
+      #util-row      { top: calc(96px + var(--safe-top)); }
       .util-btn      { width: 64px; }
     }
   </style>
@@ -268,25 +204,6 @@
          only when MSE isn't supported (older Safari) or the WS path fails. -->
     <video id="video" autoplay muted playsinline></video>
     <img id="video-mjpeg" alt="rover camera" hidden>
-
-    <div id="snapshot-panel" hidden>
-      <img id="snapshot" alt="latest snapshot">
-      <div id="snapshot-empty">No snapshot yet — tap below to pull a frame.</div>
-      <div id="snapshot-controls">
-        <button id="snapshot-btn">📸 SNAPSHOT</button>
-        <div id="snapshot-meta">
-          <span id="snapshot-ts">—</span>
-          <span class="sep">·</span>
-          <span id="data-counter">0 KB this session</span>
-        </div>
-      </div>
-    </div>
-
-    <div id="mode-toggle" role="group" aria-label="Connection mode">
-      <button id="mode-lan"  class="mode-btn active" data-mode="lan">LAN</button>
-      <button id="mode-cell" class="mode-btn"        data-mode="cell">CELLULAR</button>
-    </div>
-    <div id="mode-hint"></div>
 
     <div id="bbox-overlay">
       <div id="bbox-label">dog</div>
@@ -478,15 +395,13 @@
   // Decide once at load: H.264 if the browser supports MSE + AVC1 baseline,
   // otherwise fall back to the legacy multipart MJPEG <img>. URL param
   // ?stream=mjpeg or ?stream=h264 forces a mode for A/B testing.
-  // In Cellular mode the stream is torn down entirely — the snapshot panel
-  // takes the visual stage and pulls a single JPEG on demand.
   const video = document.getElementById("video");
   const videoMjpeg = document.getElementById("video-mjpeg");
   // AVC1 baseline level 3.1 covers up to 720p30; widely supported including
   // mobile Safari. Match the encoder's profile/level if you ever change it.
   const H264_MIME = 'video/mp4; codecs="avc1.42E01F"';
   const forcedStreamMode = new URLSearchParams(location.search).get("stream");
-  let videoMode = null;          // "h264" | "mjpeg" | null (Cellular = idle)
+  let videoMode = null;          // "h264" | "mjpeg"
   let videoSocket = null;
   let mediaSource = null;
   let sourceBuffer = null;
@@ -506,7 +421,6 @@
 
   function showH264()  { video.hidden = false; videoMjpeg.hidden = true;  videoMjpeg.removeAttribute("src"); }
   function showMjpeg() { video.hidden = true;  videoMjpeg.hidden = false; videoMjpeg.src = "/video.mjpg?t=" + Date.now(); }
-  function hideAllVideo() { video.hidden = true; videoMjpeg.hidden = true; videoMjpeg.removeAttribute("src"); }
 
   function teardownH264() {
     try { if (videoSocket) videoSocket.close(); } catch (_) {}
@@ -562,18 +476,16 @@
         fallbackToMjpeg();
         return;
       }
-      // Don't auto-reconnect if the user has switched to Cellular mode —
-      // the close was probably us tearing down the socket on purpose.
-      if (mode !== "cell") scheduleH264Reconnect();
+      scheduleH264Reconnect();
     };
     videoSocket.onerror = (e) => { console.warn("video WS error:", e); };
   }
 
   function scheduleH264Reconnect() {
-    if (h264ReconnectTimer || videoMode !== "h264" || mode === "cell") return;
+    if (h264ReconnectTimer || videoMode !== "h264") return;
     h264ReconnectTimer = setTimeout(() => {
       h264ReconnectTimer = null;
-      if (videoMode === "h264" && mode !== "cell") startH264();
+      if (videoMode === "h264") startH264();
     }, 1500);
   }
 
@@ -612,97 +524,7 @@
     else { videoMode = "mjpeg"; showMjpeg(); }
   }
 
-  function stopVideoStream() {
-    // Snapshot mode: stop whatever stream is running and hide both elements.
-    // The snapshot panel takes over the visual stage; the live feed would
-    // just keep burning bandwidth otherwise.
-    teardownH264();
-    videoMode = null;
-    hideAllVideo();
-  }
-
-  // --- Mode toggle (LAN / Cellular) ---------------------------------------
-  // LAN: live video (H.264 via MSE preferred, MJPEG fallback).
-  // Cellular: stream torn down, snapshot button instead. Telemetry stays
-  // live in both modes (text is cheap). KB counter resets on each entry
-  // into Cellular and sums snapshot + telemetry bytes from that point.
-  const modeLanBtn    = document.getElementById("mode-lan");
-  const modeCellBtn   = document.getElementById("mode-cell");
-  const modeHint      = document.getElementById("mode-hint");
-  const snapshotPanel = document.getElementById("snapshot-panel");
-  const snapshotImg   = document.getElementById("snapshot");
-  const snapshotEmpty = document.getElementById("snapshot-empty");
-  const snapshotBtn   = document.getElementById("snapshot-btn");
-  const snapshotTs    = document.getElementById("snapshot-ts");
-  const dataCounter   = document.getElementById("data-counter");
-
-  let mode = localStorage.getItem("rover_mode") === "cell" ? "cell" : "lan";
-  let cellBytes = 0;
-  let lastSnapshotUrl = null;
-
-  function fmtBytes(bytes) {
-    const kb = bytes / 1024;
-    return kb < 1024 ? kb.toFixed(1) + " KB" : (kb / 1024).toFixed(2) + " MB";
-  }
-  function updateDataCounter() {
-    dataCounter.textContent = (mode === "cell")
-      ? `${fmtBytes(cellBytes)} this session`
-      : "";
-  }
-  function reflectMode() {
-    const isCell = mode === "cell";
-    modeLanBtn.classList.toggle("active", !isCell);
-    modeCellBtn.classList.toggle("active", isCell);
-    modeHint.textContent = isCell
-      ? "snapshots only — saves data"
-      : "live stream — use on Wi-Fi";
-    if (isCell) {
-      stopVideoStream();
-      snapshotPanel.hidden = false;
-    } else {
-      snapshotPanel.hidden = true;
-      startVideoStream();
-    }
-  }
-  function setMode(newMode) {
-    if (newMode !== "lan" && newMode !== "cell") return;
-    if (newMode === mode) return;
-    mode = newMode;
-    if (mode === "cell") cellBytes = 0;  // reset on entering cellular
-    localStorage.setItem("rover_mode", mode);
-    reflectMode();
-    updateDataCounter();
-  }
-  modeLanBtn.addEventListener("click",  () => setMode("lan"));
-  modeCellBtn.addEventListener("click", () => setMode("cell"));
-
-  snapshotBtn.addEventListener("click", async () => {
-    snapshotBtn.disabled = true;
-    try {
-      const r = await fetch("/api/snapshot", { cache: "no-store" });
-      if (!r.ok) throw new Error("snapshot " + r.status);
-      const blob = await r.blob();
-      cellBytes += blob.size;
-      if (lastSnapshotUrl) URL.revokeObjectURL(lastSnapshotUrl);
-      lastSnapshotUrl = URL.createObjectURL(blob);
-      snapshotImg.src = lastSnapshotUrl;
-      snapshotImg.classList.add("has-image");
-      snapshotEmpty.classList.add("hidden");
-      const now = new Date();
-      const pad = n => String(n).padStart(2, "0");
-      snapshotTs.textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-      updateDataCounter();
-    } catch (_) {
-      snapshotTs.textContent = "failed";
-    } finally {
-      snapshotBtn.disabled = false;
-    }
-  });
-
-  // Kick everything off — reflectMode handles LAN (start stream) and
-  // Cellular (skip stream, show snapshot panel).
-  reflectMode();
-  updateDataCounter();
+  startVideoStream();
 
   // --- Ticks ---------------------------------------------------------------
   connect();
@@ -730,8 +552,7 @@
   }
 
   function reflectBbox(j) {
-    // No video to overlay onto in Cellular mode — keep the panel clean.
-    if (mode === "cell" || !j.dog_bbox || !j.follow_enabled) {
+    if (!j.dog_bbox || !j.follow_enabled) {
       bbox.style.display = "none";
       return;
     }
@@ -768,15 +589,7 @@
     try {
       const r = await fetch("/telemetry");
       if (r.ok) {
-        const text = await r.text();
-        // Telemetry is ASCII JSON in practice, so .length ≈ byte size. We
-        // bill it against the session counter only while we're spending
-        // cellular data — LAN mode hides the counter anyway.
-        if (mode === "cell") {
-          cellBytes += text.length;
-          updateDataCounter();
-        }
-        const j = JSON.parse(text);
+        const j = await r.json();
         if (j.battery_v != null) {
           bat.textContent = j.battery_v.toFixed(2) + " V";
           bat.classList.remove("mid", "low");
