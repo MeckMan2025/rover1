@@ -62,6 +62,23 @@ When you see `rover1-direct` (or whatever you set `WIFI_AP_SSID` to) in the WiFi
 
 The rover will leave AP mode automatically once a known STA SSID is in range again (max 5 min, or the next scan tick after you bring up your hotspot).
 
+## Measured bandwidth (Tier 3 — LTE)
+
+Test run 2026-05-25 from the rover via `wwan0`, curl against `speed.cloudflare.com`, EIOTCLUB SIM on AT&T LTE, signal 100%.
+
+| Direction | Throughput | Notes |
+|-----------|-----------|-------|
+| Download  | ~21.9 Mbps (2.74 MB/s) | 25 MB payload, 9.6 s |
+| Upload    | ~20.5 Mbps (2.56 MB/s) | 10 MB payload, 4.1 s |
+| Latency   | 146 ms avg (127–238, 0% loss over 10 pings to 1.1.1.1) | |
+
+Pipe is roughly symmetric — unusual for LTE but workable for both telemetry and command paths. H.264 stream at ~2 Mbps leaves ~10× uplink headroom. Re-run with:
+
+```bash
+curl --interface wwan0 -o /dev/null -w "%{speed_download} B/s\n" \
+  "https://speed.cloudflare.com/__down?bytes=26214400"
+```
+
 ## Caveats
 
 - **Single-mode radio.** AP and STA share `wlan0`. The rover can't be both an AP and a client at the same time — picking AP means no upstream WiFi (LTE still works via wwan0). Concurrent AP+STA via a virtual `ap0` interface is possible on Pi 5 but deferred.
