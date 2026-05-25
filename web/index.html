@@ -240,10 +240,20 @@
       #btn-strafe-left  { left: 0; }
       #btn-strafe-right { left: 64px; }
 
+      /* On narrow screens the center-top mode toggle collided with the
+         status pill on the left, so we drop it into the left column under
+         status and slide the speed slider + util row down to match. */
+      #mode-toggle {
+        top: calc(54px + var(--safe-top));
+        left: 12px;
+        transform: none;
+      }
+      #mode-hint { display: none; }   /* labels are clear; reclaim space */
+      #power-box   { top: calc(94px + var(--safe-top)); }
+      #util-row    { top: calc(140px + var(--safe-top)); }
       #power-slider  { width: 110px; }
       #estop         { width: 70px; height: 70px; }
-      #screen-toggle { top: calc(90px + var(--safe-top)); width: 70px; height: 70px; }
-      #util-row      { top: calc(96px + var(--safe-top)); }
+      #screen-toggle { top: calc(92px + var(--safe-top)); width: 70px; height: 70px; }
       .util-btn      { width: 64px; }
     }
   </style>
