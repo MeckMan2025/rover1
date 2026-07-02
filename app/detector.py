@@ -243,6 +243,10 @@ class BoxFollower:
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
         self._reverse_since: Optional[float] = None  # start of current edge-reverse (R4 cap)
+        # Serializes enable/disable/close so rapid follow-button toggles (each
+        # dispatched to a thread-pool worker by main.py) can't race on
+        # _enabled/_thread/_yolo and start a second loop or tear down mid-init (R6).
+        self._lifecycle_lock = threading.Lock()
 
         # State exposed via status() — main.py merges this into /telemetry.
         self._lock = threading.Lock()
@@ -300,27 +304,32 @@ class BoxFollower:
                 self._status = "searching"
 
     def set_enabled(self, enabled: bool) -> None:
-        if enabled == self._enabled:
-            return
-        self._enabled = enabled
-        if enabled:
-            self._start()
-        else:
-            self._stop_drive()
-            with self._lock:
-                self._status = "idle"
-                self._target_seen = False
-                self._target_bbox = None
+        # Serialize with close() and any other in-flight toggle. Blocking (not
+        # try-acquire) so a rapid on→off pair is honored in order rather than
+        # dropped — the final state matches the last click (R6).
+        with self._lifecycle_lock:
+            if enabled == self._enabled:
+                return
+            self._enabled = enabled
+            if enabled:
+                self._start()
+            else:
+                self._stop_drive()
+                with self._lock:
+                    self._status = "idle"
+                    self._target_seen = False
+                    self._target_bbox = None
 
     def close(self) -> None:
-        self._enabled = False
-        self._stop_event.set()
-        if self._thread is not None:
-            self._thread.join(timeout=2.0)
-            self._thread = None
-        if self._yolo is not None:
-            self._yolo.close()
-            self._yolo = None
+        with self._lifecycle_lock:
+            self._enabled = False
+            self._stop_event.set()
+            if self._thread is not None:
+                self._thread.join(timeout=2.0)
+                self._thread = None
+            if self._yolo is not None:
+                self._yolo.close()
+                self._yolo = None
 
     # --- Internal -----------------------------------------------------------
 

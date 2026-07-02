@@ -599,12 +599,16 @@ async def set_video_config(payload: dict) -> JSONResponse:
     if streamer is None:
         return JSONResponse({"error": "streamer not initialized"}, status_code=503)
     try:
+        # Values are clamped to safe bounds inside the streamer (R5); non-numeric
+        # input raises here and is a client error, not a server fault.
         await streamer.reconfigure(
             width=payload.get("width"),
             height=payload.get("height"),
             fps=payload.get("fps"),
             bitrate_kbps=payload.get("bitrate_kbps"),
         )
+    except (ValueError, TypeError) as e:
+        return JSONResponse({"error": f"invalid config: {e}"}, status_code=400)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
     return JSONResponse(streamer.config())

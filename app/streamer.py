@@ -60,6 +60,22 @@ DEFAULT_WIDTH = 640
 DEFAULT_HEIGHT = 480
 DEFAULT_FPS = 15
 DEFAULT_BITRATE_KBPS = 1500
+
+# Bounds for the runtime-reconfigurable encoder params (R5). The /api/video/config
+# endpoint is unauthenticated, so any device on the LAN/Tailscale/LTE path can POST
+# these; without bounds a zero/negative/huge width makes cv2.resize raise every
+# feeder tick and ffmpeg fail to launch (-video_size 0x480), DoS-ing the stream.
+MIN_DIM = 160
+MAX_WIDTH = 1920
+MAX_HEIGHT = 1080
+MAX_FPS = 60
+MAX_BITRATE_KBPS = 20000
+
+
+def _clamp_even(value: int, lo: int, hi: int) -> int:
+    """Clamp to [lo, hi] and force even — H.264 yuv420p requires even dimensions."""
+    v = max(lo, min(hi, int(value)))
+    return v - (v & 1)
 DEFAULT_KEYINT_SECONDS = 2.0
 
 
@@ -77,10 +93,10 @@ class H264Streamer:
         keyint_seconds: float = DEFAULT_KEYINT_SECONDS,
     ) -> None:
         self.camera = camera
-        self.width = int(width)
-        self.height = int(height)
-        self.fps = max(1, int(fps))
-        self.bitrate_kbps = max(64, int(bitrate_kbps))
+        self.width = _clamp_even(width, MIN_DIM, MAX_WIDTH)
+        self.height = _clamp_even(height, MIN_DIM, MAX_HEIGHT)
+        self.fps = max(1, min(MAX_FPS, int(fps)))
+        self.bitrate_kbps = max(64, min(MAX_BITRATE_KBPS, int(bitrate_kbps)))
         self.keyint_seconds = float(keyint_seconds)
 
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -192,10 +208,12 @@ class H264Streamer:
         bitrate_kbps: Optional[int] = None,
     ) -> None:
         """Restart the encoder with new params. Viewers must re-init MSE."""
-        if width is not None:        self.width = int(width)
-        if height is not None:       self.height = int(height)
-        if fps is not None:          self.fps = max(1, int(fps))
-        if bitrate_kbps is not None: self.bitrate_kbps = max(64, int(bitrate_kbps))
+        # Clamp every runtime knob to safe bounds (R5) — this endpoint is
+        # unauthenticated, so treat the input as hostile.
+        if width is not None:        self.width = _clamp_even(width, MIN_DIM, MAX_WIDTH)
+        if height is not None:       self.height = _clamp_even(height, MIN_DIM, MAX_HEIGHT)
+        if fps is not None:          self.fps = max(1, min(MAX_FPS, int(fps)))
+        if bitrate_kbps is not None: self.bitrate_kbps = max(64, min(MAX_BITRATE_KBPS, int(bitrate_kbps)))
         was_running = self.running
         await self.stop()
         if was_running:
