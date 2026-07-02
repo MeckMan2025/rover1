@@ -286,3 +286,24 @@ default (stop-and-track) needs no field toggle. Remaining before closing out:
 the wheels-off-ground bench test for R1/R2 behavior on hardware. All six original
 FastAPI findings (R1-R6) now: R1 fixed, R2 fixed, R4 fixed; R3 subsumed by R1;
 R5 (unbounded video-config input) and R6 (follow-toggle race) still open.
+
+=====================================================================
+=== DEPLOY 2026-07-02: R5+R6 ===
+=====================================================================
+Deployed commit d106668 "fix: clamp unauthenticated video-config input (R5);
+serialize follower toggles (R6)" onto the live rover by pulling simplify and
+restarting the drive stack (systemctl --user restart rover-uvicorn). No reboot.
+Changed files: app/detector.py, app/main.py, app/streamer.py.
+
+SUPERVISOR: unchanged — user-level systemd unit rover-uvicorn.service,
+  enabled, Restart=on-failure.
+
+RESTART:
+  Old PID: 7223  (the R4-deploy process)  -> stopped
+  New PID: 7418  (started 16:38:25 CDT)    -> active (running), MainPID=7418
+  :8080 responds: YES — HTTP 200 on http://127.0.0.1:8080/ after restart.
+
+STATUS: R5 and R6 fixes are LOADED and running (PID 7418). This closes out all
+six original FastAPI findings in code (R1/R2/R4/R5/R6 fixed, R3 subsumed by R1).
+The only item left is the wheels-off-ground bench test to confirm R1/R2 behavior
+on hardware.
