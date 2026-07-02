@@ -229,3 +229,26 @@ STATUS: R1 fix is LOADED and running (PID 6596). Still PENDING a wheels-off-grou
 bench test to confirm the behavior on hardware (enable follow, press E-STOP,
 confirm wheels stay stopped and do not re-arm; then RESUME and confirm control
 returns). R2 (manual override) and R4 (blind reverse) remain open.
+
+=====================================================================
+=== DEPLOY 2026-07-02: R2 manual-override ===
+=====================================================================
+Deployed commit 1ea89b0 "fix(safety): give manual input precedence over the
+follow loop (R2)" onto the live rover by pulling simplify and restarting the
+drive stack (systemctl --user restart rover-uvicorn). No reboot.
+Changed files in this commit: app/detector.py, app/main.py.
+
+SUPERVISOR: unchanged — user-level systemd unit rover-uvicorn.service
+  (systemd --user, cgroup app.slice/rover-uvicorn.service), enabled,
+  Restart=on-failure.
+
+RESTART:
+  Old PID: 6596  (the R1-deploy process)  -> stopped
+  New PID: 6875  (started 16:14:33 CDT)    -> active (running), MainPID=6875
+  :8080 responds: YES — HTTP 200 on http://127.0.0.1:8080/ after restart.
+
+STATUS: R2 fix is LOADED and running (PID 6875), stacked on top of the R1 fix.
+Both R1 and R2 now PENDING the same wheels-off-ground bench test (enable follow,
+push the stick and confirm manual input wins / the follower yields; press E-STOP
+and confirm the latch holds; RESUME and confirm control returns). R4 (blind
+reverse) remains open.
