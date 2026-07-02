@@ -92,6 +92,10 @@ MOTOR_TIMEOUT = 0.15 # seconds before stale drive command -> zero target.
                      # ~3 packets in a row before the motor stops on its own.
                      # Belt-and-suspenders backup for the JS-side explicit-zero
                      # send on joystick release.
+MANUAL_HOLD = 0.5    # seconds a non-zero manual command holds priority over the
+                     # follow loop. The client streams at 20 Hz, so continuous
+                     # steering keeps refreshing the window; on release the
+                     # follower resumes ~0.5 s later. (R2 manual override.)
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
@@ -112,8 +116,14 @@ class MotorTarget:
         self._last_update = 0.0
         self._estop = False
         self._power = 1.0  # slider scale, 0.05..1.0
+        self._manual_hold_until = 0.0  # monotonic time until which manual wins
 
-    def set_drive(self, vx: float, vy: float, omega: float) -> None:
+    def set_drive(self, vx: float, vy: float, omega: float,
+                  source: str = "manual") -> None:
+        """Store the target velocity. `source` is "manual" (joystick/UI) or
+        "follow" (the BoxFollower control loop). Manual has precedence: a non-zero
+        manual command opens a MANUAL_HOLD window during which follow writes are
+        dropped, so the operator can steer without first toggling follow off."""
         with self._lock:
             # E-STOP is a sticky latch: while set, ignore every drive command —
             # the manual joystick stream *and* the follow loop — so nothing can
@@ -122,8 +132,17 @@ class MotorTarget:
             # follower resume pursuit ~100 ms after E-STOP.
             if self._estop:
                 return
+            now = time.monotonic()
+            if source == "follow":
+                # Yield to a recent manual command (R2). The follower runs at
+                # 10 Hz; without this it would stomp manual input every ~100 ms.
+                if now < self._manual_hold_until:
+                    return
+            elif vx or vy or omega:
+                # Any non-zero manual command (re)opens the priority window.
+                self._manual_hold_until = now + MANUAL_HOLD
             self._vx, self._vy, self._omega = vx, vy, omega
-            self._last_update = time.monotonic()
+            self._last_update = now
 
     def set_power(self, value: float) -> None:
         with self._lock:
@@ -607,13 +626,14 @@ async def ws(websocket: WebSocket) -> None:
                 vy = float(msg.get("vy", 0.0))
                 omega = float(msg.get("omega", 0.0))
                 # While follow mode is on, ignore idle joystick heartbeats so
-                # they don't overwrite the follower at 20 Hz. Non-zero input
-                # still wins → instant manual override.
+                # they don't count as manual input. A non-zero command instead
+                # opens the MANUAL_HOLD window (see MotorTarget.set_drive), which
+                # makes the follow loop yield — instant manual override (R2).
                 follower: Optional[BoxFollower] = state["follower"]
                 if (follower is not None and follower.enabled
                         and vx == 0.0 and vy == 0.0 and omega == 0.0):
                     continue
-                target.set_drive(vx, vy, omega)
+                target.set_drive(vx, vy, omega, source="manual")
             elif t == "set_follow_mode":
                 # Wire format: {"type":"set_follow_mode", "mode": "dog"|"person"|null}
                 # null (or missing) disables. dog/person sets the target class

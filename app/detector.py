@@ -356,13 +356,14 @@ class BoxFollower:
                 vx, omega = self._compute_drive(target, frame.shape)
                 # Forward-only: vy (strafe) is always zero. Normalized output —
                 # MotorTarget.get applies power scale, motor thread applies
-                # MAX_LINEAR/MAX_ANGULAR. Same path the joystick takes.
-                self.motor_target.set_drive(vx, 0.0, omega)
+                # MAX_LINEAR/MAX_ANGULAR. Same path the joystick takes. source=
+                # "follow" so MotorTarget yields to a recent manual command (R2).
+                self.motor_target.set_drive(vx, 0.0, omega, source="follow")
             else:
                 # No target this frame. Keep writing zero so the motor watchdog
                 # stays fed (vs. going silent and triggering its 150 ms
                 # zero-on-stale path mid-tick).
-                self.motor_target.set_drive(0.0, 0.0, 0.0)
+                self.motor_target.set_drive(0.0, 0.0, 0.0, source="follow")
 
             next_tick += period
             sleep_for = next_tick - time.monotonic()
