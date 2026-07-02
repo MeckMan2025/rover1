@@ -124,6 +124,8 @@
       border: 3px solid #f33; background: #511; color: #f99; font-size: 13px;
     }
     #estop:active { background: #f33; color: #fff; }
+    #estop.latched { background: #f33; color: #fff; border-color: #fff; animation: estop-pulse 1s ease-in-out infinite; }
+    @keyframes estop-pulse { 50% { opacity: 0.5; } }
     #screen-toggle {
       top: calc(100px + var(--safe-top)); width: 76px; height: 76px;
       border: 2px solid rgba(255,255,255,0.3);
@@ -283,6 +285,7 @@
     "strafe-right": { vx:  0, vy: -1, omega:  0 },
   };
   const activeActions = new Set();
+  let estopped = false;   // latched E-STOP: while true, no drive is sent
   const clamp = v => Math.max(-1, Math.min(1, v));
 
   function drive() {
@@ -297,6 +300,7 @@
 
   function sendDriveNow() {
     if (!wsReady) return;
+    if (estopped) return;   // latched E-STOP — send nothing until RESUME
     const d = drive();
     ws.send(JSON.stringify({ type: "drive", vx: d.vx, vy: d.vy, omega: d.omega }));
   }
@@ -401,7 +405,31 @@
   }
 
   // --- E-stop --------------------------------------------------------------
-  document.getElementById("estop").addEventListener("click", () => send({ type: "estop" }));
+  // E-STOP is a latch, not a momentary tap. First press: stop the follower,
+  // drop any held direction, and latch (the server then ignores all drive until
+  // cleared). The button reads RESUME; a deliberate second press — after a short
+  // guard that defeats an accidental double-tap — releases the latch.
+  const estopBtn = document.getElementById("estop");
+  let estopAt = 0;
+  function setEstopUI(on) {
+    estopBtn.classList.toggle("latched", on);
+    estopBtn.textContent = on ? "RESUME" : "E-STOP";
+  }
+  estopBtn.addEventListener("click", () => {
+    const now = Date.now();
+    if (!estopped) {
+      estopped = true;
+      estopAt = now;
+      clearAllActions();                          // drop any held direction
+      send({ type: "set_follow_mode", mode: null }); // stop following
+      send({ type: "estop" });
+      setEstopUI(true);
+    } else if (now - estopAt >= 750) {            // guard: no instant resume
+      estopped = false;
+      send({ type: "estop_clear" });
+      setEstopUI(false);
+    }
+  });
 
   // --- Video stream (H.264/fMP4 over WS, MJPEG fallback) ------------------
   // Decide once at load: H.264 if the browser supports MSE + AVC1 baseline,

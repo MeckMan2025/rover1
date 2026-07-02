@@ -115,9 +115,15 @@ class MotorTarget:
 
     def set_drive(self, vx: float, vy: float, omega: float) -> None:
         with self._lock:
+            # E-STOP is a sticky latch: while set, ignore every drive command —
+            # the manual joystick stream *and* the follow loop — so nothing can
+            # re-arm motion until an explicit clear_estop(). This is the fix for
+            # the safety bug where set_drive cleared the latch, letting the 10 Hz
+            # follower resume pursuit ~100 ms after E-STOP.
+            if self._estop:
+                return
             self._vx, self._vy, self._omega = vx, vy, omega
             self._last_update = time.monotonic()
-            self._estop = False
 
     def set_power(self, value: float) -> None:
         with self._lock:
@@ -127,6 +133,20 @@ class MotorTarget:
         with self._lock:
             self._estop = True
             self._vx = self._vy = self._omega = 0.0
+
+    def clear_estop(self) -> None:
+        """Release the E-STOP latch. The pre-estop target is discarded and marked
+        stale, so a fresh drive command is required before the rover moves again —
+        releasing the stop cannot lurch the rover on a held/queued command."""
+        with self._lock:
+            self._estop = False
+            self._vx = self._vy = self._omega = 0.0
+            self._last_update = 0.0
+
+    @property
+    def estopped(self) -> bool:
+        with self._lock:
+            return self._estop
 
     def get(self) -> tuple[float, float, float]:
         """Return (vx, vy, omega) — already power-scaled, zero if stale or e-stopped."""
@@ -630,5 +650,14 @@ async def ws(websocket: WebSocket) -> None:
                     await loop.run_in_executor(None, _shutdown, action)
             elif t == "estop":
                 target.trigger_estop()
+                # Disable the follower too. The sticky latch already blocks its
+                # set_drive writes, but leaving it enabled means it would resume
+                # the instant the operator clears the stop. Off-thread because
+                # set_enabled(False) joins the control-loop thread.
+                follower = state["follower"]
+                if follower is not None and follower.enabled:
+                    await loop.run_in_executor(None, follower.set_enabled, False)
+            elif t == "estop_clear":
+                target.clear_estop()
     except WebSocketDisconnect:
         target.set_drive(0.0, 0.0, 0.0)
