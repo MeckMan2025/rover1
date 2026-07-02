@@ -79,12 +79,22 @@ LINEAR_GAIN          = 10.0    # multiplies normalized distance error
 
 # Edge-safety reverse — the one exception to "forward only". If the bbox
 # top or bottom is at the frame edge, the subject is too tall to fit at
-# this distance (head or feet would be clipped) so back off gently until
-# the full body is in view again. Left/right edge clipping is a centering
-# problem, not a distance problem — yaw handles that — so we don't react
-# to it here.
-EDGE_MARGIN_RATIO    = 0.05    # bbox edge within 5 % of frame top/bottom → clipped
-EDGE_REVERSE_SPEED   = 0.20    # gentle constant reverse while clipped
+# this distance (head or feet would be clipped). Left/right edge clipping is
+# a centering problem, not a distance problem — yaw handles that — so we don't
+# react to it here.
+#
+# SAFETY (R4): the rover has NO rear camera or proximity sensor, so backing up
+# is blind. Reverse is therefore OPT-IN (EDGE_REVERSE_ENABLED) — the default is
+# stop-and-track. When enabled it is triply bounded: only while the subject is
+# roughly centered (never while yawing toward someone off to the side), only up
+# to EDGE_REVERSE_MAX_TIME of continuous motion per clip event, and only at a
+# gentle fixed speed. Backing into a wall/curb/person behind is the failure it
+# guards against.
+EDGE_MARGIN_RATIO       = 0.05    # bbox edge within 5 % of frame top/bottom → clipped
+EDGE_REVERSE_SPEED      = 0.20    # gentle constant reverse while clipped
+EDGE_REVERSE_ENABLED    = False   # opt-in; default is stop-and-track (no rear sensing)
+EDGE_REVERSE_CENTER_TOL = 0.10    # only reverse within ±10 % of center
+EDGE_REVERSE_MAX_TIME   = 1.5     # max seconds of continuous reverse per clip event
 
 DETECTION_TIMEOUT    = 1.0     # seconds; after this, declare "lost"
 INFERENCE_HZ         = 10      # camera caps near this; no benefit going higher
@@ -232,6 +242,7 @@ class BoxFollower:
         self._yolo: Optional[HailoYolo] = None
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
+        self._reverse_since: Optional[float] = None  # start of current edge-reverse (R4 cap)
 
         # State exposed via status() — main.py merges this into /telemetry.
         self._lock = threading.Lock()
@@ -354,6 +365,7 @@ class BoxFollower:
 
             if target is not None:
                 vx, omega = self._compute_drive(target, frame.shape)
+                vx = self._bounded_reverse(vx)
                 # Forward-only: vy (strafe) is always zero. Normalized output —
                 # MotorTarget.get applies power scale, motor thread applies
                 # MAX_LINEAR/MAX_ANGULAR. Same path the joystick takes. source=
@@ -363,6 +375,7 @@ class BoxFollower:
                 # No target this frame. Keep writing zero so the motor watchdog
                 # stays fed (vs. going silent and triggering its 150 ms
                 # zero-on-stale path mid-tick).
+                self._reverse_since = None
                 self.motor_target.set_drive(0.0, 0.0, 0.0, source="follow")
 
             next_tick += period
@@ -412,8 +425,9 @@ class BoxFollower:
         yaw right (negative omega in ROS convention).
 
         Forward / stop / reverse:
-          - bbox top or bottom clipped at frame edge → gentle reverse so the
-            full body comes back into view (the one exception to forward-only)
+          - bbox top or bottom clipped at frame edge → reverse ONLY if opt-in
+            and the subject is centered (see R4 safety note); otherwise stop
+            and keep tracking. The time budget is applied by the caller.
           - target too close by area (≥ TOO_CLOSE_RATIO) → stop forward
           - target far → forward proportional to area shortfall
         """
@@ -427,15 +441,35 @@ class BoxFollower:
 
         vx = 0.0
         if target["edge_clipped"]:
-            # Subject is taller than the frame at this distance — head or
-            # feet are off-screen. Back up gently until they're not.
-            vx = -EDGE_REVERSE_SPEED
+            # Subject is taller than the frame at this distance — head or feet
+            # are off-screen. Reverse is blind (no rear sensor), so only back up
+            # when explicitly enabled AND the subject is centered; never while
+            # yawing toward someone off to the side. Otherwise stop and track —
+            # do NOT drive forward into an already-clipping subject.
+            if EDGE_REVERSE_ENABLED and abs(center_err) <= EDGE_REVERSE_CENTER_TOL:
+                vx = -EDGE_REVERSE_SPEED
         elif area_ratio <= TOO_CLOSE_RATIO:
             distance_err = TARGET_AREA_RATIO - area_ratio
             if distance_err > AREA_DEADZONE:
                 vx = min(1.0, distance_err * LINEAR_GAIN)
 
         return vx, omega
+
+    def _bounded_reverse(self, vx: float) -> float:
+        """Cap continuous edge-reverse to EDGE_REVERSE_MAX_TIME per clip event.
+        The rover backs up blind (no rear sensing), so it must not reverse
+        indefinitely: if the subject stays clipped past the budget, stop and wait
+        for them to step back — which clears edge_clipped, zeros vx, and resets
+        the timer for the next event."""
+        if vx >= 0.0:
+            self._reverse_since = None
+            return vx
+        now = time.monotonic()
+        if self._reverse_since is None:
+            self._reverse_since = now
+        if now - self._reverse_since > EDGE_REVERSE_MAX_TIME:
+            return 0.0   # budget exhausted — hold position, keep tracking
+        return vx
 
     def _update_state(self, target: Optional[dict], frame_shape: tuple) -> None:
         now = time.monotonic()
