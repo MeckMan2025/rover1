@@ -1,102 +1,189 @@
-CODE REVIEW REPORT — rover2 (read-only audit performed on rover1 Pi by Claude Rover)
-Date: 2026-07-02
+CODE REVIEW REPORT (RE-RUN) — rover2 read-only audit
+Performed on rover1 Pi by Claude Rover. Date: 2026-07-02
 
-BRANCH/COMMIT: simplify @ a613a77 (2026-05-24, "feat(ui): cpu-temp telemetry + layout polish"; working tree has untracked brain.yaml, launch_pack_robot.sh, rover2/)
+This supersedes the earlier report in this file. The branch advanced ~10 commits
+since the first pass (a613a77 -> now), most importantly a rewrite of the FastAPI
+"app/" stack: app/main.py heavily changed and two NEW modules added —
+app/detector.py (BoxFollower / Hailo dog+person follow) and app/streamer.py
+(H.264/fMP4 streaming). The re-review focuses there. The ROS-stack files
+(rover2_vision/person_follower.py, rover2_dashboard/web_dashboard.py, the
+rover2_hardware drivers, brain_launcher.py, ekf.yaml) are UNCHANGED since the
+first pass — verified via `git diff a613a77..HEAD` showing no changes to those
+paths — so those findings still stand exactly and are summarized at the bottom.
 
-FILES REVIEWED: 14 — brain_launcher.py, rover2_hardware/{hiwonder_driver,mecanum_kinematics,berry_imu_driver,battery_monitor}.py, rover2_bringup/launch/rover2.launch.py, rover2_bringup/config/ekf.yaml, rover2_vision/rover2_vision/person_follower.py (full), rover2_dashboard/rover2_dashboard/web_dashboard.py (full), app/{main,motors,kinematics}.py, web/index.html (drive/e-stop logic), launch_pack_robot.sh; cross-checked bug_log.md, rover2_audit_findings.md, refactor1.md.
+BRANCH/COMMIT: simplify @ ff395eb (HEAD; the report commit sits on top of e76ef4b "feat(follow): edge-safety reverse")
 
-FINDINGS (most severe first):
+FILES REVIEWED THIS PASS: 4 changed/new — app/main.py (full re-read), app/detector.py (new, full), app/streamer.py (new, full), web/index.html (control/estop/follow logic). Re-confirmed unchanged: the 8 ROS-stack files from pass 1.
 
-[#1] SEVERITY: critical | NEW
-  FILE: app/main.py:108-112 (+ web/index.html:333,337)
-  ISSUE: E-stop in the FastAPI stack (the one systemd actually runs via rover-uvicorn.service) is cleared by the very next drive message, and the web client streams drive messages unconditionally at 20 Hz — so E-STOP stops the rover for at most ~50 ms.
-  EVIDENCE: `def set_drive(...): ... self._estop = False` (main.py:112); client: `setInterval(sendDriveNow, 50)` (index.html:337) sends {type:"drive",...} every 50 ms regardless of input, and the estop button handler (`send({ type: "estop" })`, index.html:333) does NOT clear activeActions.
-  FAILURE MODE: A drive button is held or stuck (touchscreen glitch, multi-touch pointer capture); user slams E-STOP; robot halts for one motor tick, then the next 50 ms drive frame re-arms motion at the held velocity. The docstring's "latches until the next drive command" design is nullified by the unconditional 20 Hz stream.
-  FIX: On e-stop, either (a) require an explicit {"type":"estop_clear"} before set_drive un-latches (ignore drive while _estop is set), and/or (b) in the client, clear activeActions and stop the send interval until the user re-touches a control.
+=====================================================================
+NEW / UPDATED FINDINGS (most severe first)
+=====================================================================
 
-[#2] SEVERITY: high | NEW
-  FILE: rover2_dashboard/rover2_dashboard/web_dashboard.py:733-751 (+ rover2_vision/rover2_vision/person_follower.py:684-691)
-  ISSUE: The ROS dashboard's "emergency_stop" only publishes zero Twists, which the person follower explicitly ignores as an override — so an actively-following robot resumes motion on the next camera frame.
-  EVIDENCE: dashboard: `for _ in range(5): self.cmd_vel_pub.publish(twist)` (all zeros); follower: `is_nonzero = (abs(msg.linear.x) > 0.01 or ...)` then `if is_nonzero: self.last_external_cmd_time = now` — zero commands never set the override timestamp.
-  FAILURE MODE: Person-following is enabled, robot is driving toward someone; operator hits the dashboard E-STOP; five zero Twists go out, follower's next image_callback/safety_check publishes a fresh nonzero cmd_vel <=100 ms later and the robot keeps moving.
-  FIX: emergency_stop() should first call the /person_follower/disable (or reset) service, then publish zeros; alternatively treat any external cmd_vel (including zeros) as an override in the follower.
+[R1] SEVERITY: critical | NEW (this is the running FastAPI stack)
+  FILE: app/detector.py:360 + app/main.py:116-129,631-632 + web/index.html:404
+  ISSUE: E-STOP does not stop the rover while follow mode is active. The follow
+    control loop re-arms motion within ~100 ms of every e-stop.
+  EVIDENCE:
+    - main.py trigger_estop(): sets self._estop = True and zeros the target.
+    - main.py set_drive() (line 120): unconditionally does `self._estop = False`.
+    - detector.py BoxFollower._loop writes `self.motor_target.set_drive(vx, 0.0, omega)`
+      every INFERENCE_HZ tick (=10 Hz, line 360) whenever a target is seen.
+    - main.py ws handler `elif t == "estop": target.trigger_estop()` does NOT
+      disable the follower.
+    - web/index.html estop click (line 404) sends only {type:"estop"} — it does
+      not send set_follow_mode:null and does not clearAllActions().
+  FAILURE MODE: Operator is dog/person-following, rover is driving toward the
+    subject, operator slams E-STOP. trigger_estop zeros the target for one motor
+    tick; the follower thread's next tick (<=100 ms) calls set_drive() with a
+    fresh non-zero command, which clears the _estop latch, and the rover resumes
+    pursuit. E-STOP is effectively a ~100 ms tap, not a stop.
+  FIX: E-stop must latch independently of set_drive. Options: (a) trigger_estop
+    also disables the follower (follower.set_enabled(False)); (b) make _estop a
+    sticky latch that set_drive cannot clear — require an explicit estop_clear
+    message; (c) have BoxFollower check an estop flag before every set_drive.
+    Recommend (a)+(b) together, and have the client estop handler also send
+    set_follow_mode:null and clearAllActions().
 
-[#3] SEVERITY: high | NEW
-  FILE: rover2_vision/rover2_vision/person_follower.py:769-770 (vs. 841 and 1292-1302)
-  ISSUE: image_callback returns before updating the stall-watchdog timestamp whenever following is disabled, so in detection-only mode the watchdog either endlessly tears down/reinits Hailo (if following was ever enabled) or is completely inert (if it never was).
-  EVIDENCE: `if not self.following_enabled: return` (line 769) sits above `self.last_image_processed_time = time.time()` (line 841); watchdog: `if elapsed > self.watchdog_timeout: ... self._cleanup_hailo(); self._init_hailo()` (1298-1302).
-  FAILURE MODE: User enables following, then disables it but leaves detection on to watch bounding boxes. Frames process fine, but last_image_processed_time goes stale; 5 s later the watchdog "recovers" by reloading the Hailo engine (2-3 s stall), and repeats forever — CPU/thermal churn on a passively-cooled Pi already running 75-80 C, plus periodic detection blackouts.
-  FIX: Move the last_image_processed_time update to immediately after inference succeeds (right after line 707), before any following-related early returns.
+[R2] SEVERITY: high | NEW
+  FILE: app/detector.py:355-365 + app/main.py:583-596
+  ISSUE: No reliable manual override while following — the joystick and the
+    follower race on the shared MotorTarget with last-writer-wins, and the
+    follower overwrites manual input every ~100 ms.
+  EVIDENCE: main.py comments claim "Non-zero input still wins -> instant manual
+    override" (line 590-591) and ignores only *idle* (all-zero) joystick
+    heartbeats while follow is enabled. But BoxFollower._loop unconditionally
+    calls set_drive at 10 Hz (detector.py:360/365); there is no teleop-priority
+    window and nothing disables the follower on manual input. A manual command
+    written at T is stomped by the follower's command at T+<=100 ms.
+  FAILURE MODE: Subject or rover drifts toward a hazard; operator pushes the
+    stick to steer away; the rover obeys for ~100 ms then the follower resumes
+    its own heading. To actually take control the operator must first toggle
+    follow off. This is a regression vs the ROS person_follower, which had an
+    explicit teleop-override that disabled following on external cmd_vel.
+  FIX: Give manual input precedence: on any non-zero joystick command while
+    following, either disable the follower (mirror the ROS teleop-override) or
+    set a short "manual hold" window during which the follower yields (skips its
+    set_drive). Document which wins.
 
-[#4] SEVERITY: medium | NEW
-  FILE: rover2_vision/rover2_vision/person_follower.py:1300-1301 (with 261-265, 466-471, 1326)
-  ISSUE: The watchdog can destroy the Hailo pipeline while image_callback is concurrently inside infer() — they're in different callback groups on a MultiThreadedExecutor with no lock guarding the Hailo handles.
-  EVIDENCE: watchdog (timer_cb_group) calls `self._cleanup_hailo(); self._init_hailo()`; image path (subscription_cb_group) uses `self.infer_pipeline.infer(input_dict)` (line 953). MutuallyExclusive groups only serialize within a group, not across groups.
-  FAILURE MODE: Inference genuinely stalls or runs long; watchdog fires and __exit__s the vstreams under an in-flight native infer() call — best case an exception, worst case a segfault in the Hailo SDK taking the whole node down (respawn=True masks it but the robot coasts/stops mid-follow).
-  FIX: Guard run_inference, _init_hailo, and _cleanup_hailo with a shared threading.Lock, or move the watchdog into subscription_cb_group so teardown serializes with the image callback.
+[R3] SEVERITY: medium | NEW (persists from pass-1 #1, manual-drive vector)
+  FILE: app/main.py:116-120 + web/index.html:404,543
+  ISSUE: In manual mode the e-stop latch is also cleared by a held/stuck control,
+    because the client streams drive at 20 Hz and e-stop does not clearAllActions.
+  EVIDENCE: setInterval(sendDriveNow, 50) (index.html:543) sends drive every
+    50 ms; a physically held direction button keeps a non-zero command in
+    activeActions; the estop handler (line 404) does not clear activeActions, so
+    the next 50 ms frame calls set_drive (non-zero) and clears _estop.
+  FAILURE MODE: A touch/pointer sticks or a button is held when E-STOP is
+    pressed; rover halts for one tick then re-arms at the held velocity.
+  FIX: Same latch fix as R1 (sticky e-stop), plus clearAllActions() in the
+    client estop handler so no held action survives the stop.
 
-[#5] SEVERITY: medium | NEW
-  FILE: rover2_dashboard/rover2_dashboard/web_dashboard.py:761-768
-  ISSUE: The custom translate_path override drops SimpleHTTPRequestHandler's ".."-sanitization, giving directory traversal on the HTTP server bound to 0.0.0.0:8080.
-  EVIDENCE: `relative_path = path.lstrip('/'); return str(self.static_dir / relative_path)` — no normpath/containment check (the stock implementation it replaces filters ".." components).
-  FAILURE MODE: Any device on the LAN/Tailscale (and via the LTE failover path) requests GET /../../../../home/andrewmeckley/.ssh/id_ed25519 with a raw (non-normalizing) client and reads arbitrary files as the rover user. Same server also exposes unauthenticated shutdown/reboot/teleop over the :8081 WebSocket — worth noting even if accepted for a hobby network.
-  FIX: Resolve the joined path and verify Path(...).resolve().is_relative_to(self.static_dir.resolve()) before serving; return 403/404 otherwise.
+[R4] SEVERITY: medium | NEW (safety behavior of edge-reverse)
+  FILE: app/detector.py:80-88,427-437
+  ISSUE: The new edge-safety reverse drives the rover BACKWARD with no rear
+    sensing. When the subject's bbox is clipped at the top/bottom frame edge
+    (subject too close/tall), the loop commands vx = -EDGE_REVERSE_SPEED.
+  EVIDENCE: `if target["edge_clipped"]: vx = -EDGE_REVERSE_SPEED` (line 431);
+    edge_clipped = y1<margin OR y2>h-margin (line 390). Reverse is gentle
+    (0.20 * MAX_LINEAR = 0.1 m/s) but continuous while clipped.
+  FAILURE MODE: Subject walks up to the rover; rover backs away to keep the whole
+    body framed, with zero awareness of what is behind it — backs into a wall,
+    a ledge/curb, or a person standing behind. The rover has no rear camera or
+    proximity sensor to gate this motion.
+  FIX: Bound the reverse (time-limit or total-distance-limit per clip event),
+    and/or require the subject to be centered before reversing, and document that
+    the rover has no rear obstacle detection. Consider stop-instead-of-reverse as
+    the default and make reverse opt-in.
 
-[#6] SEVERITY: medium | NEW
-  FILE: rover2_bringup/launch/rover2.launch.py:203-210
-  ISSUE: The launch starts joy_node but nothing in the rover2 stack converts /joy to /cmd_vel — physical gamepad teleop (and thus the controller as a manual override/stop channel) is nonfunctional.
-  EVIDENCE: Only `Node(package='joy', executable='joy_node', ...)`; rover2_hardware/setup.py entry points are berry_imu_driver, hiwonder_driver, mecanum_kinematics, battery_monitor, fix_to_nmea — no stadia_teleop, and no teleop_twist_joy anywhere in rover2 packages (grep confirmed).
-  FAILURE MODE: Person following misbehaves outdoors; operator reaches for the Stadia controller expecting the documented "teleop override" — nothing happens; only the web dashboard (WiFi/LTE-dependent) can intervene.
-  FIX: Add teleop_twist_joy (or port stadia_teleop.py from rover1) to the launch, or delete joy_node and document that the web UI is the sole teleop path. Marked verified for "not in this repo's launch"; unverified whether a teleop node is run out-of-band.
+[R5] SEVERITY: low-medium | NEW (unauthenticated control surface, now larger)
+  FILE: app/main.py:551-571 (POST /api/video/config), 485-540 (/ws/video), 574 (/ws)
+  ISSUE: The new HTTP/WS endpoints are unauthenticated (like the rest of the app)
+    and POST /api/video/config accepts width/height with no sane bounds.
+  EVIDENCE: set_video_config passes payload width/height straight into
+    streamer.reconfigure; streamer only clamps fps>=1 and bitrate>=64
+    (streamer.py:195-198) — width/height get int() with no lower/upper bound.
+    A width<=0 makes cv2.resize raise every feeder tick and ffmpeg fail to start
+    (-video_size 0x480), killing the video feed and spinning warnings.
+  FAILURE MODE: Any device on the LAN / Tailscale / LTE-failover path can POST a
+    zero/negative/huge resolution and DoS the camera stream, or open many /ws and
+    /ws/video sockets (no client cap). Combined with pass-1 #5 (path traversal on
+    the ROS dashboard's :8080) the overall unauthenticated surface is broad.
+  FIX: Validate width/height to a small allow-list or clamp to e.g. [160,1920] x
+    [120,1080] and require even dimensions; consider a shared secret / same-LAN
+    check for state-changing endpoints (config, shutdown, drive).
 
-[#7] SEVERITY: medium | NEW
-  FILE: rover2_dashboard/rover2_dashboard/web_dashboard.py:319-327 (+ 260-268, 839)
-  ISSUE: Blocking subprocess.run calls (nmcli up to 2 s, vcgencmd) execute on the node's single-threaded executor, starving the 20 Hz publish_pending_teleop timer that forwards web teleop cmd_vel.
-  EVIDENCE: `subprocess.run(['nmcli', ..., 'dev', 'wifi', 'list'], ..., timeout=2.0)` in a 3 s timer; `rclpy.spin(dashboard)` (line 839) is a single-threaded executor, so all callbacks serialize.
-  FAILURE MODE: nmcli dev wifi list triggers a scan taking 0.5-2 s; during it no queued cmd_vel is published, and the hiwonder 0.5 s watchdog stops the motors — periodic hitching every 3 s while driving from the web dashboard (compounds the known WS-backlog jerkiness).
-  FIX: Run power/WiFi checks in a background thread that posts results, or use a MultiThreadedExecutor with the blocking timers in their own callback group.
+[R6] SEVERITY: low | NEW (concurrency)
+  FILE: app/detector.py:291-302,316-331 (set_enabled/_start) via main.py:610,614 run_in_executor
+  ISSUE: set_enabled is dispatched to the default thread-pool executor from the
+    WS loop; two rapid follow toggles can run set_enabled(True) and (False) on
+    different pool threads concurrently, racing on _enabled/_thread/_yolo with no
+    lock around start/stop (only the status fields are lock-guarded).
+  FAILURE MODE: Fast double-tap of the DOG/PERSON buttons during the ~3 s Hailo
+    init could start a second loop thread or tear down _yolo while _start reads
+    it. Low likelihood on a single-user dashboard; worst case a follower thread
+    left running or an init exception.
+  FIX: Guard _start/_stop/close and the _enabled transition with a dedicated
+    lifecycle lock; ignore toggles while a transition is in flight.
 
-[#8] SEVERITY: low | NEW
-  FILE: rover2_dashboard/rover2_dashboard/web_dashboard.py:546-548, 573-575
-  ISSUE: call_list_paths and call_save_path set client = None then immediately call client.wait_for_service(...) (and reference un-imported ListPaths/SavePath types) — guaranteed AttributeError/NameError.
-  EVIDENCE: `client = None` ... `if not client.wait_for_service(timeout_sec=1.0):` (contrast call_trigger_service, which correctly guards `if not client: return`).
-  FAILURE MODE: Dashboard sends list_paths/save_path (path recording UI in trace mode) -> per-message exception handler returns {'error': "'NoneType' object has no attribute..."} — feature silently dead with a confusing error.
-  FIX: Since patrol was removed, delete these handlers and the corresponding actions (or return the clean "not available" message like call_trigger_service).
+=====================================================================
+PASS-1 FINDINGS STILL VALID (files unchanged since a613a77)
+=====================================================================
+These were reported in the first review and remain as-is; re-verified the code
+is unchanged. Full detail is in git history of this file (commit ff395eb parent).
 
-[#9] SEVERITY: low | NEW
-  FILE: rover2_bringup/launch/rover2.launch.py:19 vs 42-46
-  ISSUE: enable_person_follower has contradictory defaults — LaunchConfiguration(..., default='false') but DeclareLaunchArgument(..., default_value='true'); the declared 'true' wins, so the follower node auto-starts despite line 19 suggesting otherwise.
-  EVIDENCE: `enable_person_follower = LaunchConfiguration('enable_person_follower', default='false')` then `DeclareLaunchArgument('enable_person_follower', default_value='true', ...)`.
-  FAILURE MODE: A future editor reads line 19, believes the follower is opt-in, and is surprised it launches (and respawns) by default. Not directly unsafe — following itself defaults off inside the node.
-  FIX: Make both defaults the same value (pick one intentionally).
+  [#2] HIGH  — rover2_dashboard/web_dashboard.py:733-751: ROS dashboard
+        emergency_stop() only publishes zero Twists, which person_follower
+        ignores as an override; an actively-following robot resumes. (Same class
+        of bug as R1 but in the ROS stack.)
+  [#3] HIGH  — person_follower.py:769-841: image_callback returns before updating
+        the stall-watchdog timestamp when following disabled -> Hailo reinit loop
+        in detection-only mode (CPU/thermal churn).
+  [#4] MED   — person_follower.py: watchdog can tear down the Hailo pipeline
+        while image_callback is inside infer() (cross-callback-group, no lock).
+  [#5] MED   — web_dashboard.py:761-768: translate_path drops "..".sanitization
+        -> directory traversal on :8080.
+  [#6] MED   — rover2.launch.py:203-210: joy_node started but nothing converts
+        /joy -> /cmd_vel; no gamepad teleop/override in the rover2 stack.
+  [#7] MED   — web_dashboard.py:319-327: blocking nmcli/vcgencmd on the single-
+        threaded executor starves the 20 Hz teleop publisher.
+  [#8] LOW   — web_dashboard.py:546-575: call_list_paths/call_save_path do
+        `client = None` then `client.wait_for_service()` -> guaranteed exception.
+  [#9] LOW   — rover2.launch.py:19 vs 42-46: contradictory enable_person_follower
+        defaults (false vs true); declared 'true' wins.
+  [#10] LOW  — berry_imu_driver.py:31,55: last_time captured before the ~15 s
+        blocking gyro calibration -> first callback integrates a huge dt.
+  [#11] LOW  — brain_launcher.py:202-206: subprocess.run(shell=True) blocks the
+        Tk mainloop for the brain's lifetime; UI dead, no stop handle.
+  [#12] LOW  — ekf.yaml: imu0_config duplicated; a future edit to the wrong copy
+        is silently ignored.
 
-[#10] SEVERITY: low | NEW
-  FILE: rover2_hardware/rover2_hardware/berry_imu_driver.py:31, 55, 78-93, 110-112
-  ISSUE: last_time is captured before the ~10-15 s blocking gyro calibration (1000 x 10 ms + I2C reads), so the first timer_callback integrates gyro rates over a giant dt.
-  EVIDENCE: `self.last_time = self.get_clock().now()` (line 31) precedes `self.calibrate_gyro(...)` (line 55); first callback: `dt = (current_time - self.last_time).nanoseconds / 1e9` then `self.yaw += gz * dt` (148).
-  FAILURE MODE: Residual bias/noise x ~15 s produces an initial yaw/roll/pitch jump the EKF ingests at startup; roll/pitch recover via the complementary filter, yaw offset persists (yaw is integration-only).
-  FIX: Reset self.last_time = self.get_clock().now() right before creating the timer (after calibration), or clamp dt in the callback.
+  RESOLVED/OK: pass-1 #1 (FastAPI e-stop latch) is now subsumed by R1/R3 above
+  and is MORE severe than first assessed because the follower actively re-arms.
 
-[#11] SEVERITY: low | NEW
-  FILE: brain_launcher.py:202-206
-  ISSUE: subprocess.run(brain['start_command'], shell=True) blocks the Tk mainloop for the brain's entire lifetime — the launcher UI (Escape/Exit) is dead while a brain runs, and there's no handle to stop the child.
-  EVIDENCE: `result = subprocess.run(brain['start_command'], shell=True, cwd=brain['path'])` called directly from the button handler.
-  FAILURE MODE: Brain hangs; touchscreen shows nothing interactive (window withdrawn, loop blocked); only recourse is killing the service — mitigated by systemd cgroup kill and launch_pack_robot.sh's pgrep duplicate guard, but there is no in-UI stop/return path.
-  FIX: Use subprocess.Popen with a stored handle, poll via root.after(), and add a "Stop brain" control that terminates the process group.
-
-[#12] SEVERITY: low | NEW
-  FILE: rover2_bringup/config/ekf.yaml (imu0_config duplicated)
-  ISSUE: imu0_config appears twice in the file; YAML silently keeps one (values are identical today, but a future edit to the wrong copy will be silently ignored).
-  EVIDENCE: Two identical `imu0_config: [false, false, false, / true, true, true, ...]` blocks a few lines apart.
-  FAILURE MODE: Someone tunes the first block, launch loads the second, hours lost wondering why fusion didn't change.
-  FIX: Delete one copy.
-
-KNOWN-ISSUE CROSS-CHECK: bug_log.md's critical "watchdog missing / motor latching" item is resolved in the current hiwonder_driver.py (watchdog at lines 97-104 verified present, polarity params present); rover2_audit_findings.md and refactor1.md are planning docs and list none of the findings above — all 12 findings are NEW.
-
-SUMMARY: The drive chain fundamentals are in good shape — kinematics math checks out (IK/FK are the standard mecanum forms, polarity handling matches the verified wiring notes), the motor driver has a real 0.5 s watchdog, and the new FastAPI stack (app/) is cleanly architected. The biggest risk is that both stacks' emergency-stop paths fail exactly when needed: the FastAPI e-stop is un-latched within 50 ms by the client's unconditional drive stream (#1), and the ROS dashboard e-stop can't stop an actively-following robot (#2). Fix #1 and #2 first (both are small, targeted changes), then the follower watchdog timestamp bug (#3), which quietly burns CPU and thermal headroom on a Pi that's already soft-throttled.
+=====================================================================
+SUMMARY
+=====================================================================
+The single most important issue is R1: with the new dog/person follower, E-STOP
+does not stop a following rover — the follow loop clears the e-stop latch within
+~100 ms via the shared set_drive path. R2 is the companion problem: there is no
+reliable manual override while following, so the operator cannot quickly steer
+out of trouble without first toggling follow off. Both are new with the follower
+rewrite and both are the running FastAPI stack (app/), not the legacy ROS nodes.
+Fix R1 first (make e-stop a sticky latch AND have it disable the follower), then
+R2 (manual-input precedence), then R4 (bounded/gated reverse, since the rover
+backs up blind). The streamer (app/streamer.py) is otherwise solid — good process
+isolation, slow-client detach, and init-segment handling; its only issues are the
+unbounded config input (R5). All 11 pass-1 ROS-stack findings remain open.
 
 UNVERIFIED / NEEDS FOLLOW-UP:
-(a) Whether a joy->cmd_vel teleop node runs outside this repo — nothing in rover2 packages consumes /joy (#6), but an out-of-tree unit can't be ruled out.
-(b) Which stack is actually enabled at boot — rover1.service/rover-brain-launcher.service show disabled and rover-uvicorn.service in systemd/ isn't in the installed unit list seen during review; findings cover both stacks regardless.
-(c) The Hailo teardown race (#4) is confirmed at the code level but a native crash was not reproduced.
-(d) Path traversal (#5) is confirmed by code reading only — the running server was not exercised (review was read-only; a `curl --path-as-is http://<rover>:8080/../../etc/hostname` would confirm).
+(a) Which stack actually runs at boot. rover-uvicorn.service (app/) exists in
+    systemd/ but was not in the installed-unit list; brain_launcher launches
+    brains by brain.yaml start_command. R1-R6 assume the app/ stack is live (it
+    is what rover-uvicorn + the docstrings target). Confirm with:
+    `systemctl is-enabled rover-uvicorn` and `pgrep -af uvicorn`.
+(b) R1/R2/R3 verified by code reading; not exercised on hardware (review is
+    read-only). A bench test — enable follow, press E-STOP, confirm the rover
+    keeps moving — would confirm R1 directly. Do it with wheels off the ground.
+(c) R4 framing math: edge-clip reverse mainly engages when the subject is close
+    (area near/over TOO_CLOSE_RATIO); confirm on hardware it doesn't chatter at
+    the normal follow distance for a tall person in a 640x480 frame.
