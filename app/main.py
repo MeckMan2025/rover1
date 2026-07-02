@@ -27,11 +27,15 @@ Safety
 ------
 - Motor target is zeroed if no drive command arrives within MOTOR_TIMEOUT
   (handled inside the motor thread, no separate watchdog needed).
-- WebSocket disconnect immediately zeros the target.
-- E-stop latches a zero target until the next drive command clears it.
-- Joystick values are normalized [-1, 1] and scaled to MAX_LINEAR /
+- The /ws handler zeros the target on every exit path (disconnect, error,
+  shutdown) via finally; per-message errors are dropped without killing
+  the socket.
+- E-stop is a sticky latch: all drive commands are ignored until an
+  explicit estop_clear message releases it (R1).
+- Drive values are validated server-side in MotorTarget.set_drive —
+  non-finite rejected, clamped to [-1, 1] — then scaled to MAX_LINEAR /
   MAX_ANGULAR before kinematics; the rover never gets "full speed" by
-  accident.
+  accident, even from a non-browser client.
 
 Launch:
     uvicorn app.main:app --host 0.0.0.0 --port 8080
@@ -43,6 +47,7 @@ import asyncio
 import glob
 import io
 import logging
+import math
 import os
 import socket
 import subprocess
@@ -123,7 +128,19 @@ class MotorTarget:
         """Store the target velocity. `source` is "manual" (joystick/UI) or
         "follow" (the BoxFollower control loop). Manual has precedence: a non-zero
         manual command opens a MANUAL_HOLD window during which follow writes are
-        dropped, so the operator can steer without first toggling follow off."""
+        dropped, so the operator can steer without first toggling follow off.
+
+        Values are validated here — not in the /ws handler — so every writer is
+        covered. The socket is unauthenticated and json.loads accepts Infinity/
+        NaN literals; an unchecked non-finite value survives to int() inside
+        cartesian_to_wheels, raises there every motor tick (swallowed by the
+        loop's I²C-hiccup except), and freezes the wheels at their last speed
+        while the fresh _last_update keeps the stale-target watchdog fed."""
+        vx, vy, omega = float(vx), float(vy), float(omega)
+        if not (math.isfinite(vx) and math.isfinite(vy) and math.isfinite(omega)):
+            return
+        clamp = lambda v: max(-1.0, min(1.0, v))
+        vx, vy, omega = clamp(vx), clamp(vy), clamp(omega)
         with self._lock:
             # E-STOP is a sticky latch: while set, ignore every drive command —
             # the manual joystick stream *and* the follow loop — so nothing can
@@ -619,69 +636,91 @@ async def ws(websocket: WebSocket) -> None:
     await websocket.accept()
     target: MotorTarget = state["target"]
     loop = asyncio.get_event_loop()
+
+    async def dispatch(msg: dict) -> None:
+        t = msg.get("type")
+        if t == "drive":
+            # No I²C, no kinematics — just store the normalized target.
+            # The motor thread picks it up on its next 50 Hz tick.
+            # (Range/finiteness validation lives in MotorTarget.set_drive.)
+            vx = float(msg.get("vx", 0.0))
+            vy = float(msg.get("vy", 0.0))
+            omega = float(msg.get("omega", 0.0))
+            # While follow mode is on, ignore idle joystick heartbeats so
+            # they don't count as manual input. A non-zero command instead
+            # opens the MANUAL_HOLD window (see MotorTarget.set_drive), which
+            # makes the follow loop yield — instant manual override (R2).
+            follower: Optional[BoxFollower] = state["follower"]
+            if (follower is not None and follower.enabled
+                    and vx == 0.0 and vy == 0.0 and omega == 0.0):
+                return
+            target.set_drive(vx, vy, omega, source="manual")
+        elif t == "set_follow_mode":
+            # Wire format: {"type":"set_follow_mode", "mode": "dog"|"person"|null}
+            # null (or missing) disables. dog/person sets the target class
+            # and enables — they're mutually exclusive by construction.
+            mode = msg.get("mode")
+            follower = state["follower"]
+            if follower is None:
+                return
+            if mode in TARGET_CLASSES:
+                follower.set_target_class(TARGET_CLASSES[mode], mode)
+                # Hailo init can take ~3 s on first enable — off-thread it
+                # so the WS loop stays responsive.
+                if not follower.enabled:
+                    await loop.run_in_executor(None, follower.set_enabled, True)
+            else:
+                # Any other value (None, "off", garbage) = stop following.
+                if follower.enabled:
+                    await loop.run_in_executor(None, follower.set_enabled, False)
+        elif t == "set_power":
+            target.set_power(float(msg.get("value", 1.0)))
+        elif t == "set_display":
+            # wlr-randr is a quick subprocess — off-thread it so the WS
+            # loop stays responsive for the next drive command.
+            on = bool(msg.get("on", True))
+            ok = await loop.run_in_executor(None, _set_display, on)
+            if ok and on:
+                # Signal the kiosk to reconnect its dead MJPEG stream.
+                state["display_on_count"] += 1
+        elif t == "shutdown":
+            # Acknowledged power actions from the UI. systemctl --no-block
+            # returns immediately so the response goes back before the box dies.
+            action = str(msg.get("action", ""))
+            if action in ("poweroff", "reboot"):
+                await loop.run_in_executor(None, _shutdown, action)
+        elif t == "estop":
+            target.trigger_estop()
+            # Disable the follower too. The sticky latch already blocks its
+            # set_drive writes, but leaving it enabled means it would resume
+            # the instant the operator clears the stop. Off-thread because
+            # set_enabled(False) stops AND joins the control-loop thread.
+            follower = state["follower"]
+            if follower is not None and follower.enabled:
+                await loop.run_in_executor(None, follower.set_enabled, False)
+        elif t == "estop_clear":
+            target.clear_estop()
+
     try:
         while True:
-            msg = await websocket.receive_json()
-            t = msg.get("type")
-            if t == "drive":
-                # No I²C, no kinematics — just store the normalized target.
-                # The motor thread picks it up on its next 50 Hz tick.
-                vx = float(msg.get("vx", 0.0))
-                vy = float(msg.get("vy", 0.0))
-                omega = float(msg.get("omega", 0.0))
-                # While follow mode is on, ignore idle joystick heartbeats so
-                # they don't count as manual input. A non-zero command instead
-                # opens the MANUAL_HOLD window (see MotorTarget.set_drive), which
-                # makes the follow loop yield — instant manual override (R2).
-                follower: Optional[BoxFollower] = state["follower"]
-                if (follower is not None and follower.enabled
-                        and vx == 0.0 and vy == 0.0 and omega == 0.0):
-                    continue
-                target.set_drive(vx, vy, omega, source="manual")
-            elif t == "set_follow_mode":
-                # Wire format: {"type":"set_follow_mode", "mode": "dog"|"person"|null}
-                # null (or missing) disables. dog/person sets the target class
-                # and enables — they're mutually exclusive by construction.
-                mode = msg.get("mode")
-                follower = state["follower"]
-                if follower is None:
-                    continue
-                if mode in TARGET_CLASSES:
-                    follower.set_target_class(TARGET_CLASSES[mode], mode)
-                    # Hailo init can take ~3 s on first enable — off-thread it
-                    # so the WS loop stays responsive.
-                    if not follower.enabled:
-                        await loop.run_in_executor(None, follower.set_enabled, True)
-                else:
-                    # Any other value (None, "off", garbage) = stop following.
-                    if follower.enabled:
-                        await loop.run_in_executor(None, follower.set_enabled, False)
-            elif t == "set_power":
-                target.set_power(float(msg.get("value", 1.0)))
-            elif t == "set_display":
-                # wlr-randr is a quick subprocess — off-thread it so the WS
-                # loop stays responsive for the next drive command.
-                on = bool(msg.get("on", True))
-                ok = await loop.run_in_executor(None, _set_display, on)
-                if ok and on:
-                    # Signal the kiosk to reconnect its dead MJPEG stream.
-                    state["display_on_count"] += 1
-            elif t == "shutdown":
-                # Acknowledged power actions from the UI. systemctl --no-block
-                # returns immediately so the response goes back before the box dies.
-                action = str(msg.get("action", ""))
-                if action in ("poweroff", "reboot"):
-                    await loop.run_in_executor(None, _shutdown, action)
-            elif t == "estop":
-                target.trigger_estop()
-                # Disable the follower too. The sticky latch already blocks its
-                # set_drive writes, but leaving it enabled means it would resume
-                # the instant the operator clears the stop. Off-thread because
-                # set_enabled(False) joins the control-loop thread.
-                follower = state["follower"]
-                if follower is not None and follower.enabled:
-                    await loop.run_in_executor(None, follower.set_enabled, False)
-            elif t == "estop_clear":
-                target.clear_estop()
+            try:
+                msg = await websocket.receive_json()
+            except ValueError:
+                # Non-JSON frame from a flaky client — drop the frame, keep
+                # the control socket alive.
+                logger.warning("ws: ignoring non-JSON frame")
+                continue
+            try:
+                await dispatch(msg)
+            except (AttributeError, KeyError, TypeError, ValueError) as e:
+                # One garbled message (non-dict payload, non-numeric field —
+                # note JS serializes Infinity to null, so float(None) lands
+                # here) must not tear down the whole drive channel.
+                logger.warning("ws: ignoring malformed message %r: %s", msg, e)
     except WebSocketDisconnect:
+        pass
+    finally:
+        # Zero the target on EVERY exit path — clean disconnect, an unexpected
+        # fault, or server shutdown — not just WebSocketDisconnect. This is the
+        # first layer; the 150 ms stale-target watchdog is the backstop.
         target.set_drive(0.0, 0.0, 0.0)

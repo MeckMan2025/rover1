@@ -4,11 +4,12 @@ Hailo-8 YOLOv8s inference (COCO 80-class), filtered to a single chosen class
 (dog or person), feeding a forward-only P-control loop that writes to the same
 MotorTarget the joystick uses. The control law is class-agnostic: pick the
 largest box of the target class, yaw to center it, and walk forward when it's
-beyond the framing goal. No strafe. The one reverse case is edge-safety: if
-the bbox top or bottom is clipped against the frame edge, the subject is too
-tall to fit at the current distance and we back off gently until the full
-body is in view. Bidirectional + strafe-aware (added briefly in May) overshot
-in field test and was reverted to this simpler tune.
+beyond the framing goal. No strafe. If the bbox top or bottom clips the frame
+edge (subject too close/tall), the default is stop-and-track; an optional,
+bounded edge-safety reverse exists behind EDGE_REVERSE_ENABLED — see the R4
+safety block by those constants for the full rules. Bidirectional +
+strafe-aware (added briefly in May) overshot in field test and was reverted
+to this simpler tune.
 
 Architecture
 ------------
@@ -61,14 +62,16 @@ TARGET_CLASSES: dict[str, int] = {
     "person": PERSON_CLASS_ID,
 }
 
-# Control law constants. Forward-only P-control — no strafe, no reverse,
-# no edge-safety. Yaw centers the target horizontally; forward speed scales
-# with how far the target is from the framing goal (area). At or past
-# TOO_CLOSE_RATIO, forward stops; the rover keeps tracking via yaw but
-# doesn't approach. The more aggressive strafe + reverse + edge-safety
-# extensions overshot and felt twitchy in field test, so we reverted to
-# this responsiveness profile from rover1_vision/config/dog_follower.yaml —
-# the first dog-follower tune that worked well.
+# Control law constants. Forward-biased P-control — no strafe. Yaw centers
+# the target horizontally; forward speed scales with how far the target is
+# from the framing goal (area). At or past TOO_CLOSE_RATIO, forward stops;
+# the rover keeps tracking via yaw but doesn't approach. On an edge-clip the
+# default is stop-and-track; reverse is opt-in and bounded (see the R4
+# EDGE_REVERSE block below — that block is the authoritative description).
+# The more aggressive strafe + always-on-reverse extensions overshot and felt
+# twitchy in field test, so we reverted to this responsiveness profile from
+# rover1_vision/config/dog_follower.yaml — the first dog-follower tune that
+# worked well.
 CONFIDENCE_THRESHOLD = 0.5
 TARGET_AREA_RATIO    = 0.15    # target fills ~15 % of frame at follow distance
 TOO_CLOSE_RATIO      = 0.40    # target filling 40 %+ → stop forward, just track
@@ -173,7 +176,9 @@ class HailoYolo:
         detections: list[tuple] = []
         output_name = list(outputs.keys())[0]
         output = outputs[output_name]
-        batch_output = output[0] if isinstance(output, list) else output[0]
+        # First (only) batch — output is outputs[name][batch][class_id] per the
+        # docstring above, whether the runtime hands us a list or an ndarray.
+        batch_output = output[0]
 
         for class_id, class_detections in enumerate(batch_output):
             if class_detections is None or len(class_detections) == 0:
@@ -314,6 +319,17 @@ class BoxFollower:
             if enabled:
                 self._start()
             else:
+                # Stop the loop thread deterministically: signal it and join
+                # before returning. The lifecycle lock serializes toggles, but
+                # it can't serialize against the loop thread's *asynchronous*
+                # exit — without the join, a fast off→on could hit _start()
+                # while the old thread was still alive, its is_alive() check
+                # would return early, and the old thread's exit would leave
+                # _enabled=True with no control loop running.
+                self._stop_event.set()
+                if self._thread is not None:
+                    self._thread.join(timeout=2.0)
+                    self._thread = None
                 self._stop_drive()
                 with self._lock:
                     self._status = "idle"
