@@ -175,12 +175,20 @@ backs up blind). The streamer (app/streamer.py) is otherwise solid — good proc
 isolation, slow-client detach, and init-segment handling; its only issues are the
 unbounded config input (R5). All 11 pass-1 ROS-stack findings remain open.
 
-UNVERIFIED / NEEDS FOLLOW-UP:
-(a) Which stack actually runs at boot. rover-uvicorn.service (app/) exists in
-    systemd/ but was not in the installed-unit list; brain_launcher launches
-    brains by brain.yaml start_command. R1-R6 assume the app/ stack is live (it
-    is what rover-uvicorn + the docstrings target). Confirm with:
-    `systemctl is-enabled rover-uvicorn` and `pgrep -af uvicorn`.
+VERIFIED ON HARDWARE (2026-07-02, on rover1):
+(a) RESOLVED — the FastAPI app/ stack IS the live drive stack. Confirmed with:
+      systemctl is-enabled rover-uvicorn  -> not-found
+      pgrep -af uvicorn   -> PID 2213: rover1-venv/bin/uvicorn app.main:app
+                             --host 0.0.0.0 --port 8080  (RUNNING)
+      pgrep -af brain_launcher -> not running
+    So R1-R6 target code that is actually running right now, NOT a dormant path.
+    R1 (E-STOP defeated during follow) is live. Note: uvicorn is running but NOT
+    under an installed `rover-uvicorn` systemd unit (that unit is not-found), so
+    what supervises PID 2213 — and whether it auto-restarts on crash — is still
+    open. Worth confirming (check the process parent / cgroup), because a driver
+    that dies and stays dead vs. one that respawns are different safety stories.
+
+STILL UNVERIFIED / NEEDS FOLLOW-UP:
 (b) R1/R2/R3 verified by code reading; not exercised on hardware (review is
     read-only). A bench test — enable follow, press E-STOP, confirm the rover
     keeps moving — would confirm R1 directly. Do it with wheels off the ground.
