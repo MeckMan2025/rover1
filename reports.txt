@@ -307,3 +307,32 @@ STATUS: R5 and R6 fixes are LOADED and running (PID 7418). This closes out all
 six original FastAPI findings in code (R1/R2/R4/R5/R6 fixed, R3 subsumed by R1).
 The only item left is the wheels-off-ground bench test to confirm R1/R2 behavior
 on hardware.
+
+=====================================================================
+=== DEPLOY 2026-07-02: ws-input-validation cluster ===
+=====================================================================
+Deployed commit 9fff41b "fix: validate drive input server-side; harden /ws error
+paths; join follower thread on disable" onto the live rover by pulling simplify
+and restarting the drive stack (systemctl --user restart rover-uvicorn). No
+reboot. Changed files: app/detector.py, app/main.py.
+
+SUPERVISOR: unchanged — user-level systemd unit rover-uvicorn.service,
+  enabled, Restart=on-failure.
+
+RESTART:
+  Old PID: 7418  (the R5+R6-deploy process)  -> stopped
+  New PID: 7743  (started 17:01:09 CDT)       -> active (running), MainPID=7743
+  :8080 responds: YES — HTTP 200 on http://127.0.0.1:8080/ after restart.
+
+WEBSOCKET INPUT-VALIDATION TEST (live, post-deploy, python websockets 10.4):
+  Connected to ws://127.0.0.1:8080/ws and sent, in order:
+    1. {"type":"drive","vx":Infinity,"vy":0,"omega":0}   (raw non-finite token)
+    2. {"type":"drive","vx":0,"vy":0,"omega":0}          (immediate zero)
+  RESULT: PASS — the socket survived both frames (no disconnect); a ws ping
+  got a pong after both sends; server log shows a clean accept/open/close with
+  no error; unit stayed active (running) on MainPID 7743 throughout.
+
+STATUS: ws-input-validation cluster is LOADED, running (PID 7743), and its
+headline behavior (non-finite drive input does not kill or wedge the /ws
+handler) is verified live. Remaining item unchanged: the wheels-off-ground
+bench test for R1/R2 behavior on hardware.
