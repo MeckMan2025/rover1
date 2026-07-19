@@ -1,6 +1,10 @@
 [Unit]
 Description=Rover FastAPI dashboard (drive + camera)
 After=default.target
+# Camera init can take a moment after USB power-up; allow a few retries.
+# (These are [Unit] options — in [Service] systemd ignores them with a warning.)
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -10,12 +14,13 @@ Environment=ROVER_CAM_TARGET_MEAN=100
 # itself (wayland-0, wayland-1, …) is auto-detected at runtime by main.py
 # since cage's number isn't deterministic.
 Environment=XDG_RUNTIME_DIR=/run/user/%U
-ExecStart=%h/code/rover1-venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8080
+# --timeout-graceful-shutdown: without it uvicorn waits FOREVER for open
+# connections on shutdown, and the MJPEG/WS streams (kiosk + phone) never
+# close on their own — every restart hung 90 s until systemd SIGKILLed it
+# (observed 2026-07-19). 3 s is plenty for in-flight requests to finish.
+ExecStart=%h/code/rover1-venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8080 --timeout-graceful-shutdown 3
 Restart=on-failure
 RestartSec=3
-# Camera init can take a moment after USB power-up; allow a few retries.
-StartLimitIntervalSec=60
-StartLimitBurst=5
 
 [Install]
 WantedBy=default.target
