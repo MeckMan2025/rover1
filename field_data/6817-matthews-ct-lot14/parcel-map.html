@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>6817 Matthews Ct — Parcel Boundary</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  :root { --panel-bg: rgba(20,24,28,0.88); --accent: #ffd24a; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  #map { position: absolute; inset: 0; }
+  .panel {
+    position: absolute; top: 12px; left: 12px; z-index: 1000;
+    background: var(--panel-bg); color: #f2f4f6; padding: 14px 16px;
+    border-radius: 10px; max-width: 300px; box-shadow: 0 4px 18px rgba(0,0,0,.4);
+    backdrop-filter: blur(6px); font-size: 13px; line-height: 1.45;
+  }
+  .panel h1 { font-size: 15px; margin: 0 0 6px; }
+  .panel .sub { color: #b9c0c7; font-size: 12px; margin: 0 0 10px; }
+  .panel .row { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
+  .panel .row span:first-child { color: #9aa2aa; }
+  .controls { margin-top: 10px; border-top: 1px solid rgba(255,255,255,.12); padding-top: 10px; }
+  .controls label { display: flex; align-items: center; gap: 7px; cursor: pointer; padding: 3px 0; }
+  .note { margin-top: 10px; font-size: 11px; color: #8f979f; line-height: 1.4; }
+  .vertex-label {
+    background: var(--accent); color: #1a1a1a; font-weight: 700; font-size: 11px;
+    border-radius: 50%; width: 20px; height: 20px; line-height: 20px; text-align: center;
+    box-shadow: 0 1px 4px rgba(0,0,0,.5); border: 1.5px solid #1a1a1a;
+  }
+  .leaflet-popup-content { font-size: 12px; }
+  .leaflet-popup-content b { font-family: ui-monospace, Menlo, monospace; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div class="panel">
+  <h1>6817 Matthews Ct</h1>
+  <p class="sub">Bettendorf, IA 52722 · Parcel 840317414</p>
+  <div class="row"><span>Subdivision</span><span>Forest Grove Crossing 4th</span></div>
+  <div class="row"><span>Lot</span><span>14</span></div>
+  <div class="row"><span>Area</span><span>0.296 ac (~12,894 SF)</span></div>
+  <div class="row"><span>Vertices</span><span id="vcount">—</span></div>
+  <div class="controls">
+    <label><input type="checkbox" id="tglLabels" checked> Corner numbers</label>
+    <label><input type="checkbox" id="tglLine" checked> Boundary line</label>
+    <label><input type="checkbox" id="tglFill" checked> Fill</label>
+  </div>
+  <p class="note">County assessor GIS polygon. Good for locating the boundary, but not a legal survey.</p>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// Boundary vertices [lat, lng] — walked in order, from Scott County GIS (NAD83 IA-S State Plane -> WGS84)
+const RING = [
+  [41.5906282, -90.4896307],
+  [41.5904091, -90.4896308],
+  [41.5907239, -90.4900914],
+  [41.5907427, -90.4900719],
+  [41.5907635, -90.4900564],
+  [41.5907859, -90.4900456],
+  [41.5908093, -90.4900394],
+  [41.5908331, -90.4900383],
+  [41.5908567, -90.4900421],
+  [41.5908619, -90.4896305],
+  [41.5908478, -90.4896305]
+];
+
+const map = L.map('map', { zoomControl: true });
+
+// Esri World Imagery (satellite)
+const sat = L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  { maxZoom: 21, maxNativeZoom: 19, attribution: 'Imagery © Esri, Maxar, Earthstar Geographics' }
+).addTo(map);
+
+// Labels/roads overlay (semi-transparent reference)
+const ref = L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+  { maxZoom: 21, maxNativeZoom: 19, opacity: 0.9 }
+);
+
+const fill = L.polygon(RING, {
+  color: '#ffd24a', weight: 3, opacity: 1,
+  fillColor: '#ffd24a', fillOpacity: 0.18
+}).addTo(map);
+
+map.fitBounds(fill.getBounds(), { padding: [70, 70] });
+
+// Numbered corner markers
+const labelLayer = L.layerGroup().addTo(map);
+RING.forEach((pt, i) => {
+  const m = L.marker(pt, {
+    icon: L.divIcon({ className: '', html: `<div class="vertex-label">${i + 1}</div>`, iconSize: [20, 20], iconAnchor: [10, 10] })
+  });
+  m.bindPopup(`<b>Corner ${i + 1}</b><br><b>${pt[0].toFixed(7)}, ${pt[1].toFixed(7)}</b>`);
+  labelLayer.addLayer(m);
+});
+document.getElementById('vcount').textContent = RING.length;
+
+// Layer control (satellite / with labels)
+L.control.layers(
+  { 'Satellite': sat, 'Satellite + labels': L.layerGroup([sat, ref]) },
+  null, { collapsed: true, position: 'bottomright' }
+).addTo(map);
+
+// Toggles
+document.getElementById('tglLabels').addEventListener('change', e =>
+  e.target.checked ? map.addLayer(labelLayer) : map.removeLayer(labelLayer));
+document.getElementById('tglLine').addEventListener('change', e =>
+  fill.setStyle({ opacity: e.target.checked ? 1 : 0 }));
+document.getElementById('tglFill').addEventListener('change', e =>
+  fill.setStyle({ fillOpacity: e.target.checked ? 0.18 : 0 }));
+</script>
+</body>
+</html>

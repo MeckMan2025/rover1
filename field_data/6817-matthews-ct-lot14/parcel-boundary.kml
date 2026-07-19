@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>6817 Matthews Ct - Parcel Boundary</name>
+    <Style id="bnd"><LineStyle><color>ff4ad2ff</color><width>3</width></LineStyle>
+      <PolyStyle><color>334ad2ff</color></PolyStyle></Style>
+    <Placemark><name>Lot 14 boundary</name><styleUrl>#bnd</styleUrl>
+      <Polygon><outerBoundaryIs><LinearRing>
+        <coordinates>-90.4896307,41.5906282,0 -90.4896308,41.5904091,0 -90.4900914,41.5907239,0 -90.4900719,41.5907427,0 -90.4900564,41.5907635,0 -90.4900456,41.5907859,0 -90.4900394,41.5908093,0 -90.4900383,41.5908331,0 -90.4900421,41.5908567,0 -90.4896305,41.5908619,0 -90.4896305,41.5908478,0 -90.4896307,41.5906282,0</coordinates>
+      </LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+  </Document>
+</kml>
