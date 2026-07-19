@@ -566,6 +566,26 @@
 
   startVideoStream();
 
+  // --- Stream self-healing --------------------------------------------------
+  // The MJPEG <img> shows the last frame forever if its multipart connection
+  // dies (server restart, network blip) — retry with a fresh cache-busted src.
+  let mjpegRetryTimer = null;
+  videoMjpeg.addEventListener("error", () => {
+    if (videoMode !== "mjpeg" || mjpegRetryTimer) return;
+    mjpegRetryTimer = setTimeout(() => {
+      mjpegRetryTimer = null;
+      if (videoMode === "mjpeg" && !document.hidden) showMjpeg();
+    }, 1000);
+  });
+  // Mobile Safari/Chrome sever the stream connection when the page is
+  // backgrounded (phone locked, app switched) and silently show the stale
+  // frame on return. Rebuild the stream every time we come back.
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) return;
+    if (videoMode === "mjpeg") showMjpeg();
+    else if (videoMode === "h264") startH264();
+  });
+
   // --- Ticks ---------------------------------------------------------------
   connect();
   setInterval(sendDriveNow, 50);

@@ -457,6 +457,9 @@ async def telemetry() -> JSONResponse:
         "camera_fps": cam.fps() if cam else 0.0,
         "camera_gain": cam.gain() if cam else None,
         "camera_target_mean": cam.target_mean() if cam else None,
+        # Stall-watchdog recoveries since boot — nonzero means the camera
+        # dropped off USB at some point and was reopened automatically.
+        "camera_reopens": cam.reopens() if cam else 0,
         "power": target.power,
         # Increments each time the kiosk screen comes back on. The qr.html
         # poller watches this and forces an MJPEG reconnect on change.
