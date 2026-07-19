@@ -52,9 +52,15 @@ Review focus, if you're picking spots:
 - The NOMINAL_YAW_RATE constant mirrors MAX_ANGULAR * ROTATION_SCALE from
   kinematics; if you ever retune those, nav's dead reckoning should follow.
 
-Possible follow-up for your side: a "Drive path" button + nav status strip
-in web/index.html (start/stop hit the endpoints; nav_* is already in
-/telemetry). Not needed for the first field test — curl works.
+UPDATE (same evening, commit c7831f1): the "Drive path" UI suggestion below
+is DONE, differently — there's now a /map page ("page 2"): offline satellite
+mosaic of the property (web/map-sat.jpg, regenerate with
+scripts/fetch_map_imagery.py), surveyed path + spots + parcel outline
+overlays, live rover marker from /telemetry (which now carries
+gps_lat/lon/cog_deg/speed_mps), pan/zoom, and START/STOP PATH buttons.
+MAP button added to index.html's util row. Headless-chromium verified with
+a simulated mid-path fix. Review focus: map.html's Web-Mercator pixel math
+and the pointer-event pan/pinch handling on your browsers.
 
 FYI unchanged: two untracked local experiments remain on the Pi
 (Camera_Specs/COLCON_IGNORE, tests/probe_i2c_block_write.py). Also of note:
