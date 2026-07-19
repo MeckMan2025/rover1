@@ -112,6 +112,21 @@
     .follow-btn.searching    { background: rgba(120,90,30,0.7);   color: #ffd; border-color: #ffc107; }
     .follow-btn.too-close    { background: rgba(150,60,60,0.75);  color: #fff; border-color: #f66; }
     .follow-btn.initializing { background: rgba(60,80,140,0.7);   color: #cdf; border-color: #abf; }
+    .follow-btn.error        { background: rgba(150,50,50,0.8);   color: #fff; border-color: #f66; }
+
+    /* Error toast — bottom center, shown when the server reports a failure
+       the operator would otherwise never see (e.g. follow init_failed). */
+    #toast {
+      position: absolute; left: 50%; transform: translateX(-50%);
+      bottom: calc(24px + var(--safe-bottom));
+      max-width: 86vw;
+      background: rgba(120,30,30,0.92); color: #fff;
+      border: 1px solid #f66; border-radius: 8px;
+      padding: 10px 14px; font-size: 13px; line-height: 1.35;
+      opacity: 0; pointer-events: none; transition: opacity 0.25s;
+      z-index: 10;
+    }
+    #toast.show { opacity: 1; }
 
     /* Right-side safety column */
     .right-btn {
@@ -251,6 +266,7 @@
     </div>
 
     <div id="ws-state" class="bad">disconnected</div>
+    <div id="toast"></div>
   </div>
 
 <script>
@@ -426,8 +442,21 @@
   for (const { btn, mode } of followButtons) {
     btn.addEventListener("click", () => {
       const next = (followMode === mode) ? null : mode;
+      // Re-arm the error toast: the server's init_failed status persists in
+      // telemetry, and a fresh attempt deserves a fresh (visible) verdict.
+      lastFollowError = null;
       send({ type: "set_follow_mode", mode: next });
     });
+  }
+
+  // --- Error toast ----------------------------------------------------------
+  const toastEl = document.getElementById("toast");
+  let toastTimer = null;
+  function showToast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove("show"), 6000);
   }
 
   // --- E-stop --------------------------------------------------------------
@@ -624,11 +653,23 @@
   const bbox = document.getElementById("bbox-overlay");
   const bboxLabel = document.getElementById("bbox-label");
 
+  let lastFollowError = null;
   function reflectFollowStatus(j) {
     // Color the button matching the server-truth follow_target; clear
     // any state classes on the inactive button so it returns to neutral.
     followMode = j.follow_target || null;
     const status = j.follow_status;
+    // Hailo init failure: follow_target stays null so no button would light —
+    // without this the press looks like it simply did nothing (seen 2026-07-19
+    // when a kernel update unloaded the Hailo driver). Toast once per attempt.
+    if (status && status.startsWith("init_failed") && status !== lastFollowError) {
+      lastFollowError = status;
+      showToast("Follow unavailable — " + status.replace(/^init_failed:\s*/, ""));
+      for (const { btn } of followButtons) {
+        btn.classList.add("error");
+        setTimeout(() => btn.classList.remove("error"), 3000);
+      }
+    }
     for (const { btn, mode } of followButtons) {
       btn.classList.remove("tracking", "searching", "too-close", "initializing");
       if (followMode !== mode) continue;

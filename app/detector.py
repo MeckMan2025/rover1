@@ -35,6 +35,7 @@ set_enabled(True) call, not at app startup, so the rover boots fast.
 
 from __future__ import annotations
 
+import logging
 import os
 import threading
 import time
@@ -42,6 +43,8 @@ from typing import Optional
 
 import cv2
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 # Default model path on the rover. Override with ROVER_HEF_PATH if you want
@@ -358,8 +361,17 @@ class BoxFollower:
             try:
                 self._yolo = HailoYolo()
             except Exception as e:
+                # Full traceback to the journal; a short single-line reason to
+                # /telemetry so the UI can tell the operator why nothing is
+                # following. Seen in the wild 2026-07-19: a kernel update ate
+                # the non-DKMS hailo_pci driver, /dev/hailo0 vanished, and the
+                # UI gave no hint anything was wrong.
+                logger.error("follow: Hailo init failed", exc_info=True)
+                reason = str(e).splitlines()[0][:120] if str(e) else type(e).__name__
+                if not os.path.exists("/dev/hailo0"):
+                    reason = "/dev/hailo0 missing — Hailo driver not loaded (kernel update?)"
                 with self._lock:
-                    self._status = f"init_failed: {e}"
+                    self._status = f"init_failed: {reason}"
                 self._enabled = False
                 return
         self._stop_event.clear()
