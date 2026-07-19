@@ -318,24 +318,50 @@
     sendDriveNow();
   }
 
+  // pointerId → {btn, action} for every in-flight press. Actions are ended
+  // from window-level handlers keyed by pointer id — never only from events
+  // on the button element. Mobile browsers sometimes drop the button-level
+  // pointerup (touch ending in a system-gesture zone, failed capture, ...);
+  // with a 20 Hz command stream, a stranded entry in activeActions means the
+  // rover drives itself until the page is killed. Observed 2026-07-19:
+  // stuck-forward on first drive, only force-closing the site stopped it.
+  const pointerActions = new Map();
+
   document.querySelectorAll(".action-btn").forEach(btn => {
     const action = btn.dataset.action;
     btn.addEventListener("pointerdown", e => {
       try { btn.setPointerCapture(e.pointerId); } catch (_) {}
+      pointerActions.set(e.pointerId, { btn, action });
       startAction(btn, action);
     });
-    btn.addEventListener("pointerup",     () => stopAction(btn, action));
-    btn.addEventListener("pointercancel", () => stopAction(btn, action));
   });
 
+  function endPointer(e) {
+    const held = pointerActions.get(e.pointerId);
+    if (!held) return;
+    pointerActions.delete(e.pointerId);
+    stopAction(held.btn, held.action);
+  }
+  // Capture phase so pointer-capture retargeting can't route around us.
+  window.addEventListener("pointerup",     endPointer, true);
+  window.addEventListener("pointercancel", endPointer, true);
+
   function clearAllActions() {
+    pointerActions.clear();
     if (activeActions.size === 0) return;
     activeActions.clear();
     document.querySelectorAll(".action-btn.active").forEach(b => b.classList.remove("active"));
     sendDriveNow();
   }
+  // Backstop beneath the pointer-event layer: zero fingers on the glass means
+  // nothing may drive, regardless of which per-pointer events got dropped.
+  function touchBackstop(e) { if (e.touches.length === 0) clearAllActions(); }
+  window.addEventListener("touchend",    touchBackstop, true);
+  window.addEventListener("touchcancel", touchBackstop, true);
+
   document.addEventListener("visibilitychange", () => { if (document.hidden) clearAllActions(); });
   window.addEventListener("blur", clearAllActions);
+  window.addEventListener("pagehide", clearAllActions);
 
   // --- Power slider --------------------------------------------------------
   const slider = document.getElementById("power-slider");
