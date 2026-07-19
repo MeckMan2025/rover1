@@ -100,6 +100,11 @@
       background: rgba(40,40,40,0.6); color: #aaa;
     }
     #poweroff-btn:active { background: rgba(80,80,80,0.7); color: #fff; }
+    #map-btn {
+      border: 1.5px solid rgba(74,210,255,0.4);
+      background: rgba(30,60,80,0.6); color: #ade;
+    }
+    #map-btn:active { background: rgba(50,110,150,0.7); color: #fff; }
     /* DOG / PERSON FOLLOW buttons get bigger color treatment — they're the
        magic buttons. Only one runs at a time; the active class is applied
        to whichever button matches the server's follow_target. */
@@ -247,6 +252,7 @@
       <button id="poweroff-btn"      class="util-btn">POWER<br>OFF</button>
       <button id="dog-follow-btn"    class="util-btn follow-btn">DOG<br>FOLLOW</button>
       <button id="person-follow-btn" class="util-btn follow-btn">PERSON<br>FOLLOW</button>
+      <button id="map-btn"           class="util-btn" onclick="location.href='/map'">MAP</button>
     </div>
 
     <button id="estop"          class="right-btn">E-STOP</button>

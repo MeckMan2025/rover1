@@ -44,6 +44,7 @@ Launch:
 from __future__ import annotations
 
 import asyncio
+import csv
 import glob
 import io
 import json
@@ -68,7 +69,7 @@ from app.camera import Camera
 from app.detector import BoxFollower, TARGET_CLASSES
 from app.kinematics import cartesian_to_wheels
 from app.motors import HiwonderHardware
-from app.nav import GpsWaypointNav
+from app.nav import FIELD_DATA_DIR, GpsWaypointNav
 from app.streamer import H264Streamer
 
 # Default mission for /api/nav/start when the caller names no path.
@@ -115,20 +116,28 @@ GPS_STATUS_PATH = Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp")) / "rover-gps-s
 GPS_STATUS_MAX_AGE = 10.0
 
 
+_GPS_OFFLINE = {"gps_fix": "offline", "gps_sats": 0, "gps_hacc_m": None,
+                "gps_caster": False, "gps_lat": None, "gps_lon": None,
+                "gps_cog_deg": None, "gps_speed_mps": None}
+
+
 def _gps_status() -> dict:
-    """GPS/RTK state for /telemetry: fix label, sat count, accuracy, caster."""
+    """GPS/RTK state for /telemetry: fix label, sat count, accuracy, caster,
+    plus position/course for the /map page's live rover marker."""
     try:
         if time.time() - GPS_STATUS_PATH.stat().st_mtime > GPS_STATUS_MAX_AGE:
-            return {"gps_fix": "offline", "gps_sats": 0,
-                    "gps_hacc_m": None, "gps_caster": False}
+            return dict(_GPS_OFFLINE)
         s = json.loads(GPS_STATUS_PATH.read_text())
         return {"gps_fix": s.get("fix", "offline"),
                 "gps_sats": s.get("sats", 0),
                 "gps_hacc_m": s.get("hacc_m"),
-                "gps_caster": bool(s.get("caster"))}
+                "gps_caster": bool(s.get("caster")),
+                "gps_lat": s.get("lat"),
+                "gps_lon": s.get("lon"),
+                "gps_cog_deg": s.get("cog_deg"),
+                "gps_speed_mps": s.get("speed_mps")}
     except (OSError, ValueError):
-        return {"gps_fix": "offline", "gps_sats": 0,
-                "gps_hacc_m": None, "gps_caster": False}
+        return dict(_GPS_OFFLINE)
 
 
 class MotorTarget:
@@ -507,6 +516,40 @@ async def telemetry() -> JSONResponse:
         **follow_fields,
         **(state["nav"].status() if state["nav"] else {"nav_state": "idle"}),
     })
+
+
+@app.get("/map")
+async def map_page() -> FileResponse:
+    """Page 2: satellite map with the surveyed path and the live rover dot."""
+    return FileResponse(WEB_DIR / "map.html")
+
+
+@app.get("/map-sat.jpg")
+async def map_sat_image() -> FileResponse:
+    # Pre-stitched Esri World Imagery mosaic of the property, cached in the
+    # repo so the field map needs no internet and no API keys.
+    return FileResponse(WEB_DIR / "map-sat.jpg")
+
+
+@app.get("/map-sat.json")
+async def map_sat_meta() -> FileResponse:
+    return FileResponse(WEB_DIR / "map-sat.json")
+
+
+@app.get("/api/nav/path")
+async def nav_path(path: str = DEFAULT_NAV_PATH) -> JSONResponse:
+    """Points of a surveyed field_data path CSV, for drawing on the map."""
+    csv_path = (FIELD_DATA_DIR / path).resolve()
+    if (not str(csv_path).startswith(str(FIELD_DATA_DIR.resolve()) + os.sep)
+            or not csv_path.is_file()):
+        return JSONResponse({"error": "unknown path"}, status_code=404)
+    try:
+        with open(csv_path, newline="") as f:
+            pts = [{"lat": float(r["lat"]), "lon": float(r["lon"]),
+                    "label": r.get("label", "")} for r in csv.DictReader(f)]
+    except (OSError, ValueError, KeyError) as e:
+        return JSONResponse({"error": f"bad path file: {e}"}, status_code=500)
+    return JSONResponse({"name": csv_path.name, "points": pts})
 
 
 @app.post("/api/nav/start")
