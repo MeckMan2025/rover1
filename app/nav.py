@@ -130,6 +130,8 @@ class GpsWaypointNav:
         # lifecycle lock) so rapid API calls can't leave two loops running.
         self._lifecycle = threading.Lock()
 
+        self._hacc_gate_m = HACC_GATE_M  # per-run override via start()
+
         self._lock = threading.Lock()
         self._state = "idle"      # idle|acquiring|aligning|tracking|paused|done|fault
         self._msg = ""
@@ -163,12 +165,20 @@ class GpsWaypointNav:
                                     if self._heading_deg is not None else None),
             }
 
-    def start(self, rel_path: str) -> tuple[bool, str]:
+    def start(self, rel_path: str,
+              hacc_gate_m: float = HACC_GATE_M) -> tuple[bool, str]:
         """Begin following `rel_path` (relative to field_data/). Returns
         (ok, message); refusals are messages, not exceptions, so the API
-        layer can hand them straight to the operator."""
+        layer can hand them straight to the operator.
+
+        hacc_gate_m loosens/tightens the required accuracy for THIS run
+        only (clamped 0.2–1.5 m). Field escape hatch for marginal-sky days:
+        a loose gate means the rover may weave off the line by roughly the
+        gate value, and pause/resume more — the cross-track abort still
+        backstops at XTRACK_ABORT_M."""
         with self._lifecycle:
             self._halt_locked()
+            self._hacc_gate_m = max(0.2, min(1.5, float(hacc_gate_m)))
             try:
                 csv_path = (FIELD_DATA_DIR / rel_path).resolve()
                 if not str(csv_path).startswith(str(FIELD_DATA_DIR.resolve()) + os.sep):
@@ -228,7 +238,7 @@ class GpsWaypointNav:
         if s.get("lat") is None or s.get("lon") is None:
             return None
         hacc = s.get("hacc_m")
-        if hacc is None or hacc > HACC_GATE_M:
+        if hacc is None or hacc > self._hacc_gate_m:
             return None
         s["_mtime"] = st.st_mtime
         return s

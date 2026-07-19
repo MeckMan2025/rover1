@@ -566,9 +566,14 @@ async def nav_start(payload: Optional[dict] = None) -> JSONResponse:
             {"error": "camera follow mode is active — turn it off first"},
             status_code=409)
     rel = str((payload or {}).get("path", DEFAULT_NAV_PATH))
+    try:
+        gate = float((payload or {}).get("hacc_gate_m", 0.5))
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "hacc_gate_m must be a number"},
+                            status_code=400)
     loop = asyncio.get_event_loop()
     # start() joins any previous run thread and reads the CSV — off-thread.
-    ok, msg = await loop.run_in_executor(None, nav.start, rel)
+    ok, msg = await loop.run_in_executor(None, nav.start, rel, gate)
     if not ok:
         return JSONResponse({"error": msg}, status_code=400)
     return JSONResponse({"ok": True, "msg": msg, **nav.status()})
