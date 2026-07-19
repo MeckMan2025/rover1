@@ -1,0 +1,5 @@
+ublox_dgnss:
+  ros__parameters:
+    CFG_USBINPROT_RTCM3X: true
+    CFG_USBOUTPROT_NMEA: true
+    CFG_MSGOUT_NMEA_ID_GNGGA_USB: 1
