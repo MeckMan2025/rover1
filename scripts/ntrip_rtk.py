@@ -50,7 +50,10 @@ import time
 from pathlib import Path
 
 GGA_INTERVAL = 10.0       # seconds between GGA uploads (caster etiquette)
-POLL_INTERVAL = 2.0       # seconds between local NAV-PVT/NAV-DOP polls
+POLL_INTERVAL = 0.5       # seconds between local NAV-PVT/NAV-DOP polls.
+                          # Purely local serial traffic — the caster only ever
+                          # sees the 10 s GGA cadence. 2 Hz position updates
+                          # are what the GPS waypoint follower steers by.
 BACKOFF_START = 5.0
 BACKOFF_MAX = 80.0
 
@@ -75,7 +78,7 @@ def log(msg: str) -> None:
 
 
 def write_status(fix: str, sats: int = 0, hacc_m: float | None = None,
-                 caster: bool = False) -> None:
+                 caster: bool = False, pvt: dict | None = None) -> None:
     """Atomically publish GPS/RTK state for the dashboard. Best-effort —
     a status hiccup must never disturb the correction stream."""
     import json
@@ -85,6 +88,17 @@ def write_status(fix: str, sats: int = 0, hacc_m: float | None = None,
             "fix": fix, "sats": sats,
             "hacc_m": round(hacc_m, 2) if hacc_m is not None else None,
             "caster": caster,
+            # Full-precision position for waypoint recording / stakeout —
+            # 1e-7 deg is ~1 cm, matching the receiver's native resolution.
+            "lat": pvt["lat"] if pvt and pvt["valid"] else None,
+            "lon": pvt["lon"] if pvt and pvt["valid"] else None,
+            "alt_msl_m": round(pvt["alt_msl"], 3) if pvt and pvt["valid"] else None,
+            # Motion state for the waypoint follower: course over ground is the
+            # rover's heading while it drives forward-only (no compass aboard).
+            # cog_acc_deg is the receiver's own confidence — huge when parked.
+            "speed_mps": round(pvt["gspeed_mps"], 3) if pvt and pvt["valid"] else None,
+            "cog_deg": round(pvt["head_mot_deg"], 2) if pvt and pvt["valid"] else None,
+            "cog_acc_deg": round(pvt["head_acc_deg"], 1) if pvt and pvt["valid"] else None,
         }))
         tmp.replace(STATUS_PATH)
     except Exception:
@@ -177,6 +191,8 @@ class Receiver:
         lon, lat = struct.unpack_from("<ii", p, 24)
         h_ellips, h_msl = struct.unpack_from("<ii", p, 32)
         hacc = struct.unpack_from("<I", p, 40)[0]
+        gspeed, head_mot = struct.unpack_from("<ii", p, 60)
+        head_acc = struct.unpack_from("<I", p, 72)[0]
         self.pvt = {
             "utc": (hour, mn, sec),
             "valid": bool(flags & 1) and fix_type in (2, 3, 4),
@@ -188,6 +204,9 @@ class Receiver:
             "alt_msl": h_msl / 1000.0,
             "geoid_sep": (h_ellips - h_msl) / 1000.0,
             "hacc_m": hacc / 1000.0,
+            "gspeed_mps": gspeed / 1000.0,
+            "head_mot_deg": head_mot * 1e-5,
+            "head_acc_deg": head_acc * 1e-5,
         }
 
     def gga(self) -> str | None:
@@ -298,7 +317,7 @@ def main() -> int:
         rx.pump()
         p = rx.pvt
         write_status(pvt_fix_label(p), p["num_sv"] if p else 0,
-                     p["hacc_m"] if p else None, caster=False)
+                     p["hacc_m"] if p else None, caster=False, pvt=p)
         if not rx.gga():
             log("waiting for local GNSS fix before connecting…")
             for _ in range(5):
@@ -341,7 +360,7 @@ def main() -> int:
                         last_poll = now
                         p = rx.pvt
                         write_status(pvt_fix_label(p), p["num_sv"] if p else 0,
-                                     p["hacc_m"] if p else None, caster=True)
+                                     p["hacc_m"] if p else None, caster=True, pvt=p)
                     rx.pump()
                 if now - last_gga >= GGA_INTERVAL:
                     gga = rx.gga()

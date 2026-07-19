@@ -68,7 +68,11 @@ from app.camera import Camera
 from app.detector import BoxFollower, TARGET_CLASSES
 from app.kinematics import cartesian_to_wheels
 from app.motors import HiwonderHardware
+from app.nav import GpsWaypointNav
 from app.streamer import H264Streamer
+
+# Default mission for /api/nav/start when the caller names no path.
+DEFAULT_NAV_PATH = "sidewalk-test-2026-07-19/path-spot1-to-spot4.csv"
 
 
 def _primary_ip() -> str:
@@ -353,6 +357,9 @@ state: dict = {
     # /ws/video connection and stops after a grace period when the last
     # viewer leaves. None means the stream has never been requested.
     "streamer": None,
+    # GpsWaypointNav — created in lifespan (cheap; the control thread only
+    # exists while a run is active). Drives surveyed field_data/ paths.
+    "nav": None,
 }
 
 # Seconds to wait after the last /ws/video viewer disconnects before stopping
@@ -405,6 +412,7 @@ async def lifespan(app: FastAPI):
     # Streamer is constructed but its ffmpeg subprocess is NOT started — the
     # encoder spins up on the first /ws/video connect.
     state["streamer"] = H264Streamer(camera=state["camera"])
+    state["nav"] = GpsWaypointNav(motor_target=state["target"])
     try:
         yield
     finally:
@@ -413,8 +421,12 @@ async def lifespan(app: FastAPI):
                 await state["streamer"].stop()
         finally:
             try:
-                if state["follower"] is not None:
-                    state["follower"].close()
+                try:
+                    if state["nav"] is not None:
+                        state["nav"].close()
+                finally:
+                    if state["follower"] is not None:
+                        state["follower"].close()
             finally:
                 state["motor_stop"].set()
                 state["motor_thread"].join(timeout=1.0)
@@ -493,7 +505,48 @@ async def telemetry() -> JSONResponse:
         "cpu_temp_c": _cpu_temp_c(),
         **_gps_status(),
         **follow_fields,
+        **(state["nav"].status() if state["nav"] else {"nav_state": "idle"}),
     })
+
+
+@app.post("/api/nav/start")
+async def nav_start(payload: Optional[dict] = None) -> JSONResponse:
+    """Begin following a surveyed field_data/ path (default: the sidewalk
+    test, spot 1 → spot 4). Refusals come back as 4xx with a human-readable
+    reason — no fix yet, too far from the start, bad path file."""
+    nav: Optional[GpsWaypointNav] = state["nav"]
+    follower: Optional[BoxFollower] = state["follower"]
+    if nav is None:
+        return JSONResponse({"error": "nav not initialized"}, status_code=503)
+    if follower is not None and follower.enabled:
+        return JSONResponse(
+            {"error": "camera follow mode is active — turn it off first"},
+            status_code=409)
+    rel = str((payload or {}).get("path", DEFAULT_NAV_PATH))
+    loop = asyncio.get_event_loop()
+    # start() joins any previous run thread and reads the CSV — off-thread.
+    ok, msg = await loop.run_in_executor(None, nav.start, rel)
+    if not ok:
+        return JSONResponse({"error": msg}, status_code=400)
+    return JSONResponse({"ok": True, "msg": msg, **nav.status()})
+
+
+@app.post("/api/nav/stop")
+async def nav_stop() -> JSONResponse:
+    nav: Optional[GpsWaypointNav] = state["nav"]
+    if nav is None:
+        return JSONResponse({"error": "nav not initialized"}, status_code=503)
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, nav.stop)  # joins the run thread
+    return JSONResponse({"ok": True, **nav.status()})
+
+
+@app.get("/api/nav/status")
+async def nav_status() -> JSONResponse:
+    nav: Optional[GpsWaypointNav] = state["nav"]
+    if nav is None:
+        return JSONResponse({"error": "nav not initialized"}, status_code=503)
+    return JSONResponse(nav.status())
 
 
 @app.get("/video.mjpg")
@@ -690,6 +743,11 @@ async def ws(websocket: WebSocket) -> None:
             if follower is None:
                 return
             if mode in TARGET_CLASSES:
+                # Camera follow and GPS nav both write with source="follow" —
+                # never let them fight over the target.
+                nav = state["nav"]
+                if nav is not None and nav.enabled:
+                    await loop.run_in_executor(None, nav.stop)
                 follower.set_target_class(TARGET_CLASSES[mode], mode)
                 # Hailo init can take ~3 s on first enable — off-thread it
                 # so the WS loop stays responsive.
@@ -724,6 +782,11 @@ async def ws(websocket: WebSocket) -> None:
             follower = state["follower"]
             if follower is not None and follower.enabled:
                 await loop.run_in_executor(None, follower.set_enabled, False)
+            # Same reasoning for GPS nav: the latch already blocks its writes,
+            # but a still-running mission would resume on estop_clear.
+            nav = state["nav"]
+            if nav is not None and nav.enabled:
+                await loop.run_in_executor(None, nav.stop)
         elif t == "estop_clear":
             target.clear_estop()
 

@@ -1,44 +1,63 @@
-Sync request from Claude Rover (the Pi), 2026-07-19.
+Sync request from Claude Rover (the Pi), 2026-07-19 (second note today —
+the camera-watchdog note below still stands, commit 65aba82).
 
-Please pull origin/simplify — I pushed commit 65aba82 "fix(camera): auto-reopen
-SDK handle when USB drop stalls the frame stream", rebased cleanly on top of
-your safety-fix series (through 691753b).
+Please pull origin/simplify — I pushed the GPS waypoint follower. Review as
+you would an incoming PR; nothing here has driven real wheels yet (bench +
+simulation only, first field run planned at the sidewalk).
 
-Context: the live feed froze because the HP60C camera dropped off the USB bus
-and re-enumerated (dmesg 14:54:26 on 2026-07-19). The vendor SDK kept its dead
-handle and never delivered another frame — camera_fps hit 0.0 and every viewer
-(phone MJPEG, kiosk H.264, follower) showed a stale frame until service restart.
+What's new:
 
-What the commit changes — review as you would any incoming PR:
+1. field_data/sidewalk-test-2026-07-19/ — 4 RTK-surveyed spots along the
+   sidewalk (waypoints.csv) and a drivable densified path, spot 1 -> spot 4,
+   19.31 m (path-spot1-to-spot4.csv). README.md in the dir documents columns,
+   geometry, accuracy. Note: the shape is NOT a sharp L — two ~70 deg
+   right-hand bends (sidewalk curves around the court).
 
-1. app/camera.py — stall watchdog on the existing fps-sampling thread: if
-   frame_id() doesn't advance for 4s (STALL_REOPEN_SECONDS), it closes and
-   reopens the underlying ascam Camera, retrying every 5s while the device is
-   absent. Notes for you:
-   - read() now swallows exceptions and returns None during the handle swap.
-   - gain() and target_mean() now return Optional[float] (None if the handle is
-     mid-swap) — the /telemetry consumers already tolerate null, but check any
-     new call sites you've added.
-   - After reopen, frame ids restart from 0; the fps loop handles the negative
-     delta. AE target_mean is carried over to the new handle.
+2. scripts/ntrip_rtk.py — status JSON now carries speed_mps, cog_deg
+   (NAV-PVT headMot), cog_acc_deg alongside the full-precision lat/lon;
+   NAV-PVT poll went 2 s -> 0.5 s. Purely local serial traffic — GGA cadence
+   to the caster is untouched (still 10 s; politeness preserved).
 
-2. app/main.py — /telemetry now includes "camera_reopens" (watchdog recovery
-   count since boot; nonzero = the camera dropped USB at some point).
+3. app/nav.py (new) — GpsWaypointNav: 10 Hz pure-pursuit follower over a
+   field_data path CSV. Heading comes from GPS course-over-ground (rover
+   drives forward-only, vy=0 always, so course == body heading), dead-
+   reckoned between 2 Hz fixes from commanded yaw. Phases: acquiring ->
+   aligning (straight creep until the receiver reports confident course) ->
+   tracking -> done. Gates: hAcc <= 0.5 m required (RTK-grade), start must
+   be within 3 m of the path start, pause-on-RTK-loss (motors zeroed,
+   resumes; faults after 30 s mid-run / 180 s initial), cross-track abort
+   at 2 m, no-progress abort at 20 s, mission cap 300 s. All drive writes
+   go through MotorTarget.set_drive(source="follow") so the E-stop latch
+   and manual-hold override behave exactly like camera follow.
 
-3. web/index.html — "Stream self-healing" block after startVideoStream():
-   MJPEG <img> retries on error (1s debounce), and on visibilitychange→visible
-   the stream rebuilds (showMjpeg() or startH264()) because mobile browsers
-   sever the connection when backgrounded and show a frozen frame on return.
-   Check this doesn't collide with anything you added to the video code in your
-   recent index.html changes.
+4. app/main.py — POST /api/nav/start {"path": rel} (default = the sidewalk
+   path), POST /api/nav/stop, GET /api/nav/status; nav_* merged into
+   /telemetry. Mutual exclusion both ways with BoxFollower (both write
+   source="follow"); WS estop also stops a running mission.
 
-Deployed state on the rover: the merged tree (your safety series + my commit)
-is live under rover-uvicorn.service as of 2026-07-19 ~15:15 CDT and verified —
-camera ~13 fps, and I proved the watchdog end-to-end by unbinding/rebinding the
-camera's USB port via sysfs: it reopened and resumed frames in ~10s without a
-restart.
+Testing done:
+- Software-in-the-loop sim (scratchpad, 3 scenarios): nominal run arrives
+  0.35 m from spot 4; far-start refuses with the move-to-spot-1 message;
+  6 s GPS blackout mid-run pauses with motors zeroed then resumes and
+  completes. Sim modeled 2 Hz GPS with 3 cm noise, 3 deg course noise,
+  25 deg initial heading error.
+- Bench (indoors, no fix): endpoints live, start -> "acquiring", stop clean,
+  new status-JSON fields present. Services restarted and running the new
+  code (rover-ntrip + rover-uvicorn).
 
-Also FYI: two untracked files remain on the Pi, intentionally uncommitted
-(Camera_Specs/COLCON_IGNORE, tests/probe_i2c_block_write.py — local
-experiments). And the USB drop itself is likely hardware (cable/hub/power) —
-if telemetry's camera_reopens starts climbing, that's the signal.
+Review focus, if you're picking spots:
+- nav.py heading/dead-reckoning sign conventions (compass bearing vs CCW
+  omega) — sim validates them end-to-end but a second pair of eyes is
+  cheap insurance before wheels turn.
+- The NOMINAL_YAW_RATE constant mirrors MAX_ANGULAR * ROTATION_SCALE from
+  kinematics; if you ever retune those, nav's dead reckoning should follow.
+
+Possible follow-up for your side: a "Drive path" button + nav status strip
+in web/index.html (start/stop hit the endpoints; nav_* is already in
+/telemetry). Not needed for the first field test — curl works.
+
+FYI unchanged: two untracked local experiments remain on the Pi
+(Camera_Specs/COLCON_IGNORE, tests/probe_i2c_block_write.py). Also of note:
+this evening's logs showed the F9R repeatedly reaching carrSoln=FIXED at
+hAcc 0.02-0.04 m, contradicting the "FLOAT is the ceiling" note — spot 4
+was surveyed during a FIXED window.
