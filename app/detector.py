@@ -80,7 +80,28 @@ TARGET_AREA_RATIO    = 0.15    # target fills ~15 % of frame at follow distance
 TOO_CLOSE_RATIO      = 0.40    # target filling 40 %+ → stop forward, just track
 AREA_DEADZONE        = 0.03    # don't twitch on small area changes
 CENTER_TOLERANCE     = 0.05    # don't yaw inside ±5 % of center
-YAW_GAIN             = 4.0     # multiplies normalized horizontal error
+# Yaw is PD, not pure P. Field test 2026-07-19: P-only at gain 4.0 overshot
+# the target left/right and hunted back and forth. The ~10 Hz vision loop
+# plus camera→inference→motor latency (~250 ms) means the rover is still
+# swinging when the error hits zero; the derivative term watches the error's
+# rate of change and brakes the yaw as the target approaches center, before
+# the overshoot. It also acts on target-induced motion (person walking
+# across the frame), where it adds feed-forward in the direction of travel.
+#
+# Tune chosen by closed-loop simulation (plant: omega × MAX_ANGULAR ×
+# ROTATION_SCALE through a 0.15 s actuator lag, 10 Hz sampling, 0.25 s
+# pipeline delay): a 31° correction settles in ~0.6 s with < 3° overshoot,
+# vs 37° overshoot and a permanent limit cycle for the old P-only law.
+# Stable in sim for pipeline latency up to ~0.35 s. Halving the P gain is
+# load-bearing: 4.0 is simply too hot for this loop latency.
+YAW_GAIN             = 2.0     # P: multiplies normalized horizontal error
+YAW_DAMPING          = 0.5     # D: multiplies d(center_err)/dt (1/s)
+YAW_DERIV_ALPHA      = 0.4     # EMA on the raw derivative — bbox centers
+                               # jitter frame to frame; unfiltered d/dt is noise
+YAW_MAX              = 0.5     # yaw authority cap (≈1 rad/s actual). P-only
+                               # saturated at ±1.0 from 25 % off-center — the
+                               # momentum from a full-rate swing is what the
+                               # damping term then has to fight.
 LINEAR_GAIN          = 10.0    # multiplies normalized distance error
 
 # Edge-safety reverse — the one exception to "forward only". If the bbox
@@ -251,6 +272,11 @@ class BoxFollower:
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
         self._reverse_since: Optional[float] = None  # start of current edge-reverse (R4 cap)
+        # PD yaw state: (center_err, monotonic time) of the previous detection
+        # and the EMA-filtered error derivative. Reset whenever tracking breaks
+        # so a stale sample can't produce a derivative kick on reacquire.
+        self._yaw_prev: Optional[tuple[float, float]] = None
+        self._yaw_derr = 0.0
         # Serializes enable/disable/close so rapid follow-button toggles (each
         # dispatched to a thread-pool worker by main.py) can't race on
         # _enabled/_thread/_yolo and start a second loop or tear down mid-init (R6).
@@ -310,6 +336,8 @@ class BoxFollower:
             self._last_detection_time = None
             if self._enabled:
                 self._status = "searching"
+        self._yaw_prev = None
+        self._yaw_derr = 0.0
 
     def set_enabled(self, enabled: bool) -> None:
         # Serialize with close() and any other in-flight toggle. Blocking (not
@@ -413,6 +441,8 @@ class BoxFollower:
                 # stays fed (vs. going silent and triggering its 150 ms
                 # zero-on-stale path mid-tick).
                 self._reverse_since = None
+                self._yaw_prev = None
+                self._yaw_derr = 0.0
                 self.motor_target.set_drive(0.0, 0.0, 0.0, source="follow")
 
             next_tick += period
@@ -453,13 +483,16 @@ class BoxFollower:
         # Largest box = closest subject.
         return max(candidates, key=lambda d: d["area"])
 
-    @staticmethod
-    def _compute_drive(target: dict, frame_shape: tuple) -> tuple[float, float]:
+    def _compute_drive(self, target: dict, frame_shape: tuple) -> tuple[float, float]:
         """Returns normalized (vx, omega) in [-1, 1]. No strafe.
 
-        Yaw is P-control on horizontal centering with a deadzone. Negative
-        because +center_err means the target is on the right and we need to
-        yaw right (negative omega in ROS convention).
+        Yaw is PD-control on horizontal centering (see the YAW_* constants
+        for why D exists). Negative because +center_err means the target is
+        on the right and we need to yaw right (negative omega in ROS
+        convention). The deadzone is continuous: the P term ramps from zero
+        at the tolerance edge instead of jumping — the old hard edge made
+        the command step 0 → ±0.2 across one pixel of target motion, which
+        chattered right around center.
 
         Forward / stop / reverse:
           - bbox top or bottom clipped at frame edge → reverse ONLY if opt-in
@@ -472,9 +505,26 @@ class BoxFollower:
         center_err = (target["center_x"] - w / 2) / w   # -0.5 .. +0.5
         area_ratio = target["area_ratio"]
 
+        # Error derivative from consecutive detections, EMA-filtered. A gap
+        # longer than ~3 inference periods means tracking broke; restart the
+        # estimate rather than derive across the discontinuity.
+        now = time.monotonic()
+        if self._yaw_prev is not None:
+            prev_err, prev_t = self._yaw_prev
+            dt = now - prev_t
+            if 0.0 < dt < 3.0 / INFERENCE_HZ:
+                raw = (center_err - prev_err) / dt
+                self._yaw_derr += YAW_DERIV_ALPHA * (raw - self._yaw_derr)
+            else:
+                self._yaw_derr = 0.0
+        self._yaw_prev = (center_err, now)
+
         omega = 0.0
-        if abs(center_err) > CENTER_TOLERANCE:
-            omega = max(-1.0, min(1.0, -center_err * YAW_GAIN))
+        err_mag = abs(center_err) - CENTER_TOLERANCE
+        if err_mag > 0.0:
+            p = YAW_GAIN * err_mag * (1.0 if center_err > 0 else -1.0)
+            omega = -(p + YAW_DAMPING * self._yaw_derr)
+            omega = max(-YAW_MAX, min(YAW_MAX, omega))
 
         vx = 0.0
         if target["edge_clipped"]:
