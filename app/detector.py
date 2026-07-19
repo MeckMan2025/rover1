@@ -4,12 +4,12 @@ Hailo-8 YOLOv8s inference (COCO 80-class), filtered to a single chosen class
 (dog or person), feeding a forward-only P-control loop that writes to the same
 MotorTarget the joystick uses. The control law is class-agnostic: pick the
 largest box of the target class, yaw to center it, and walk forward when it's
-beyond the framing goal. No strafe. If the bbox top or bottom clips the frame
-edge (subject too close/tall), the default is stop-and-track; an optional,
-bounded edge-safety reverse exists behind EDGE_REVERSE_ENABLED — see the R4
-safety block by those constants for the full rules. Bidirectional +
-strafe-aware (added briefly in May) overshot in field test and was reverted
-to this simpler tune.
+beyond the framing goal. No strafe. When the subject gets too close — by
+area (person walking toward the rover) or by clipping the frame top/bottom —
+the rover backs away, bounded by the R4 safety rules (centered-only,
+speed-capped, per-event time budget) behind REVERSE_ENABLED; see the safety
+block by those constants. Bidirectional + strafe-aware (added briefly in
+May) overshot in field test and was reverted to this simpler tune.
 
 Architecture
 ------------
@@ -104,24 +104,35 @@ YAW_MAX              = 0.5     # yaw authority cap (≈1 rad/s actual). P-only
                                # damping term then has to fight.
 LINEAR_GAIN          = 10.0    # multiplies normalized distance error
 
-# Edge-safety reverse — the one exception to "forward only". If the bbox
-# top or bottom is at the frame edge, the subject is too tall to fit at
-# this distance (head or feet would be clipped). Left/right edge clipping is
-# a centering problem, not a distance problem — yaw handles that — so we don't
-# react to it here.
+# Reverse / retreat — the exceptions to "forward only". Two triggers:
+#   1. Edge clip: bbox top or bottom at the frame edge → subject too tall to
+#      fit at this distance (head or feet clipped). Left/right clipping is a
+#      centering problem — yaw handles that — so we don't react to it here.
+#   2. Area overshoot: subject filling more than TOO_CLOSE_RATIO of the frame
+#      (person walking toward the rover) → back away proportionally to hold
+#      the distance band. Owner-requested 2026-07-19 ("back up if the person
+#      is walking towards the robot").
 #
-# SAFETY (R4): the rover has NO rear camera or proximity sensor, so backing up
-# is blind. Reverse is therefore OPT-IN (EDGE_REVERSE_ENABLED) — the default is
-# stop-and-track. When enabled it is triply bounded: only while the subject is
-# roughly centered (never while yawing toward someone off to the side), only up
-# to EDGE_REVERSE_MAX_TIME of continuous motion per clip event, and only at a
-# gentle fixed speed. Backing into a wall/curb/person behind is the failure it
-# guards against.
+# SAFETY (R4, bounds retained): the rover has NO rear camera or proximity
+# sensor, so backing up is blind. REVERSE_ENABLED is an explicit owner
+# decision (flipped on 2026-07-19 at Andrew's request; was stop-and-track).
+# Reverse remains triply bounded: only while the subject is roughly centered
+# (never while yawing toward someone off to the side), only up to
+# REVERSE_MAX_TIME of continuous motion per event, and speed-capped. Backing
+# into a wall/curb/person behind is the failure these bounds guard against.
 EDGE_MARGIN_RATIO       = 0.05    # bbox edge within 5 % of frame top/bottom → clipped
-EDGE_REVERSE_SPEED      = 0.20    # gentle constant reverse while clipped
-EDGE_REVERSE_ENABLED    = False   # opt-in; default is stop-and-track (no rear sensing)
-EDGE_REVERSE_CENTER_TOL = 0.10    # only reverse within ±10 % of center
-EDGE_REVERSE_MAX_TIME   = 1.5     # max seconds of continuous reverse per clip event
+EDGE_REVERSE_SPEED      = 0.20    # gentle constant reverse while clipped (no
+                                  # magnitude signal exists for the clip case)
+REVERSE_ENABLED         = True    # owner opt-in 2026-07-19; False = stop-and-track
+REVERSE_CENTER_TOL      = 0.10    # only reverse within ±10 % of center
+REVERSE_MAX_TIME        = 3.0     # max seconds of continuous blind reverse per
+                                  # event (~30 cm at retreat speeds). Resets when
+                                  # the subject backs off; if they keep pressing
+                                  # in, the rover stops and holds after this.
+RETREAT_GAIN            = 3.0     # reverse speed per unit of area over threshold —
+                                  # continuous ramp from 0 at TOO_CLOSE_RATIO, so
+                                  # there's no 0→reverse step to chatter across
+RETREAT_MAX_SPEED       = 0.40    # normalized cap (~0.2 m/s at full power slider)
 
 DETECTION_TIMEOUT    = 1.0     # seconds; after this, declare "lost"
 INFERENCE_HZ         = 10      # camera caps near this; no benefit going higher
@@ -527,15 +538,25 @@ class BoxFollower:
             omega = max(-YAW_MAX, min(YAW_MAX, omega))
 
         vx = 0.0
-        if target["edge_clipped"]:
-            # Subject is taller than the frame at this distance — head or feet
-            # are off-screen. Reverse is blind (no rear sensor), so only back up
-            # when explicitly enabled AND the subject is centered; never while
+        too_close = area_ratio > TOO_CLOSE_RATIO
+        if target["edge_clipped"] or too_close:
+            # Subject too close (area overshoot — e.g. a person walking toward
+            # the rover) or too tall to fit the frame (edge clip). Back away to
+            # hold the distance band — but reverse is blind (no rear sensor),
+            # so only when enabled AND the subject is centered; never while
             # yawing toward someone off to the side. Otherwise stop and track —
-            # do NOT drive forward into an already-clipping subject.
-            if EDGE_REVERSE_ENABLED and abs(center_err) <= EDGE_REVERSE_CENTER_TOL:
-                vx = -EDGE_REVERSE_SPEED
-        elif area_ratio <= TOO_CLOSE_RATIO:
+            # do NOT drive forward into an already-too-close subject. The
+            # per-event time budget is applied by the caller.
+            if REVERSE_ENABLED and abs(center_err) <= REVERSE_CENTER_TOL:
+                # Area overshoot gives a magnitude: ramp continuously from 0 at
+                # the threshold (no step to chatter across). Edge clip alone
+                # has no magnitude signal — use the gentle constant.
+                retreat = min(RETREAT_MAX_SPEED,
+                              max(0.0, area_ratio - TOO_CLOSE_RATIO) * RETREAT_GAIN)
+                if target["edge_clipped"]:
+                    retreat = max(retreat, EDGE_REVERSE_SPEED)
+                vx = -retreat
+        else:
             distance_err = TARGET_AREA_RATIO - area_ratio
             if distance_err > AREA_DEADZONE:
                 vx = min(1.0, distance_err * LINEAR_GAIN)
@@ -543,18 +564,18 @@ class BoxFollower:
         return vx, omega
 
     def _bounded_reverse(self, vx: float) -> float:
-        """Cap continuous edge-reverse to EDGE_REVERSE_MAX_TIME per clip event.
+        """Cap continuous reverse to REVERSE_MAX_TIME per event.
         The rover backs up blind (no rear sensing), so it must not reverse
-        indefinitely: if the subject stays clipped past the budget, stop and wait
-        for them to step back — which clears edge_clipped, zeros vx, and resets
-        the timer for the next event."""
+        indefinitely: if the subject stays too close past the budget, stop and
+        wait for them to back off — which zeros vx and resets the timer for
+        the next event."""
         if vx >= 0.0:
             self._reverse_since = None
             return vx
         now = time.monotonic()
         if self._reverse_since is None:
             self._reverse_since = now
-        if now - self._reverse_since > EDGE_REVERSE_MAX_TIME:
+        if now - self._reverse_since > REVERSE_MAX_TIME:
             return 0.0   # budget exhausted — hold position, keep tracking
         return vx
 
