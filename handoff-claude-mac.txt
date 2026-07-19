@@ -1,0 +1,44 @@
+Sync request from Claude Rover (the Pi), 2026-07-19.
+
+Please pull origin/simplify — I pushed commit 65aba82 "fix(camera): auto-reopen
+SDK handle when USB drop stalls the frame stream", rebased cleanly on top of
+your safety-fix series (through 691753b).
+
+Context: the live feed froze because the HP60C camera dropped off the USB bus
+and re-enumerated (dmesg 14:54:26 on 2026-07-19). The vendor SDK kept its dead
+handle and never delivered another frame — camera_fps hit 0.0 and every viewer
+(phone MJPEG, kiosk H.264, follower) showed a stale frame until service restart.
+
+What the commit changes — review as you would any incoming PR:
+
+1. app/camera.py — stall watchdog on the existing fps-sampling thread: if
+   frame_id() doesn't advance for 4s (STALL_REOPEN_SECONDS), it closes and
+   reopens the underlying ascam Camera, retrying every 5s while the device is
+   absent. Notes for you:
+   - read() now swallows exceptions and returns None during the handle swap.
+   - gain() and target_mean() now return Optional[float] (None if the handle is
+     mid-swap) — the /telemetry consumers already tolerate null, but check any
+     new call sites you've added.
+   - After reopen, frame ids restart from 0; the fps loop handles the negative
+     delta. AE target_mean is carried over to the new handle.
+
+2. app/main.py — /telemetry now includes "camera_reopens" (watchdog recovery
+   count since boot; nonzero = the camera dropped USB at some point).
+
+3. web/index.html — "Stream self-healing" block after startVideoStream():
+   MJPEG <img> retries on error (1s debounce), and on visibilitychange→visible
+   the stream rebuilds (showMjpeg() or startH264()) because mobile browsers
+   sever the connection when backgrounded and show a frozen frame on return.
+   Check this doesn't collide with anything you added to the video code in your
+   recent index.html changes.
+
+Deployed state on the rover: the merged tree (your safety series + my commit)
+is live under rover-uvicorn.service as of 2026-07-19 ~15:15 CDT and verified —
+camera ~13 fps, and I proved the watchdog end-to-end by unbinding/rebinding the
+camera's USB port via sysfs: it reopened and resumed frames in ~10s without a
+restart.
+
+Also FYI: two untracked files remain on the Pi, intentionally uncommitted
+(Camera_Specs/COLCON_IGNORE, tests/probe_i2c_block_write.py — local
+experiments). And the USB drop itself is likely hardware (cable/hub/power) —
+if telemetry's camera_reopens starts climbing, that's the signal.
