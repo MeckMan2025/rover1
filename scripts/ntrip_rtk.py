@@ -59,6 +59,11 @@ DEFAULT_SERIAL = (
     "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com_u-blox_GNSS_receiver-if00"
 )
 
+# Status file for the dashboard: the FastAPI app reads this in /telemetry so
+# the web UI can show a GPS/RTK chip. tmpfs, atomic replace, ~2 s cadence.
+# Consumers treat a stale mtime (> 10 s) as "GPS offline".
+STATUS_PATH = Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp")) / "rover-gps-status.json"
+
 FIX_QUALITY = {  # (fixType, carrSoln) -> NMEA GGA quality
     "none": 0, "3d": 1, "dgnss": 2, "float": 5, "fixed": 4,
 }
@@ -67,6 +72,33 @@ CARR = {0: "NONE", 1: "FLOAT", 2: "FIXED"}
 
 def log(msg: str) -> None:
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
+
+
+def write_status(fix: str, sats: int = 0, hacc_m: float | None = None,
+                 caster: bool = False) -> None:
+    """Atomically publish GPS/RTK state for the dashboard. Best-effort —
+    a status hiccup must never disturb the correction stream."""
+    import json
+    try:
+        tmp = STATUS_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps({
+            "fix": fix, "sats": sats,
+            "hacc_m": round(hacc_m, 2) if hacc_m is not None else None,
+            "caster": caster,
+        }))
+        tmp.replace(STATUS_PATH)
+    except Exception:
+        pass
+
+
+def pvt_fix_label(p: dict | None) -> str:
+    if not p or not p["valid"]:
+        return "none"
+    if p["carr"] == 2:
+        return "rtk_fixed"
+    if p["carr"] == 1:
+        return "rtk_float"
+    return {2: "2d", 3: "3d", 4: "3d"}.get(p["fix_type"], "none")
 
 
 def load_env(path: Path) -> dict:
@@ -250,6 +282,7 @@ def main() -> int:
         if not announced:
             log(f"waiting for GPS device {args.serial} …")
             announced = True
+        write_status("offline")
         time.sleep(2.0)
     if not running:
         return 0
@@ -263,6 +296,9 @@ def main() -> int:
         rx.poll_nav()
         time.sleep(1.0)
         rx.pump()
+        p = rx.pvt
+        write_status(pvt_fix_label(p), p["num_sv"] if p else 0,
+                     p["hacc_m"] if p else None, caster=False)
         if not rx.gga():
             log("waiting for local GNSS fix before connecting…")
             for _ in range(5):
@@ -303,6 +339,9 @@ def main() -> int:
                     if now - last_poll >= POLL_INTERVAL:
                         rx.poll_nav()
                         last_poll = now
+                        p = rx.pvt
+                        write_status(pvt_fix_label(p), p["num_sv"] if p else 0,
+                                     p["hacc_m"] if p else None, caster=True)
                     rx.pump()
                 if now - last_gga >= GGA_INTERVAL:
                     gga = rx.gga()

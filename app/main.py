@@ -46,6 +46,7 @@ from __future__ import annotations
 import asyncio
 import glob
 import io
+import json
 import logging
 import math
 import os
@@ -103,6 +104,27 @@ MANUAL_HOLD = 0.5    # seconds a non-zero manual command holds priority over the
                      # follower resumes ~0.5 s later. (R2 manual override.)
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+
+# Written by scripts/ntrip_rtk.py (rover-ntrip.service) every ~2 s. A stale
+# mtime means the NTRIP client (and therefore GPS reporting) is down.
+GPS_STATUS_PATH = Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp")) / "rover-gps-status.json"
+GPS_STATUS_MAX_AGE = 10.0
+
+
+def _gps_status() -> dict:
+    """GPS/RTK state for /telemetry: fix label, sat count, accuracy, caster."""
+    try:
+        if time.time() - GPS_STATUS_PATH.stat().st_mtime > GPS_STATUS_MAX_AGE:
+            return {"gps_fix": "offline", "gps_sats": 0,
+                    "gps_hacc_m": None, "gps_caster": False}
+        s = json.loads(GPS_STATUS_PATH.read_text())
+        return {"gps_fix": s.get("fix", "offline"),
+                "gps_sats": s.get("sats", 0),
+                "gps_hacc_m": s.get("hacc_m"),
+                "gps_caster": bool(s.get("caster"))}
+    except (OSError, ValueError):
+        return {"gps_fix": "offline", "gps_sats": 0,
+                "gps_hacc_m": None, "gps_caster": False}
 
 
 class MotorTarget:
@@ -469,6 +491,7 @@ async def telemetry() -> JSONResponse:
         "mjpeg_viewers": state["mjpeg_viewers"],
         # SoC temperature — surfaces thermal headroom (or lack of it) in the UI.
         "cpu_temp_c": _cpu_temp_c(),
+        **_gps_status(),
         **follow_fields,
     })
 

@@ -233,6 +233,7 @@
       <span class="sep">·</span><span id="fps">— fps</span>
       <span class="sep">·</span>gain <span id="gain">—</span>
       <span class="sep">·</span><span class="v" id="temp">— °C</span>
+      <span class="sep">·</span><span class="v" id="gps" title="GPS / RTK status">no gps</span>
     </div>
 
     <div id="power-box">
@@ -650,6 +651,18 @@
   const fps  = document.getElementById("fps");
   const gain = document.getElementById("gain");
   const temp = document.getElementById("temp");
+  const gps  = document.getElementById("gps");
+  // gps_fix → chip text + color class. Green = RTK fixed (cm), amber = any
+  // working fix (RTK float / plain GNSS), red = acquiring or no receiver.
+  const GPS_CHIP = {
+    rtk_fixed: ["RTK FIX", "v"],
+    rtk_float: ["RTK FLT", "v mid"],
+    "3d":      ["3D",      "v mid"],
+    "2d":      ["2D",      "v mid"],
+    dgnss:     ["DGPS",    "v mid"],
+    none:      ["GPS …",   "v low"],
+    offline:   ["no GPS",  "v low"],
+  };
   const bbox = document.getElementById("bbox-overlay");
   const bboxLabel = document.getElementById("bbox-label");
 
@@ -732,6 +745,14 @@
           temp.classList.remove("mid", "low");
           if      (j.cpu_temp_c >= 78) temp.classList.add("low");
           else if (j.cpu_temp_c >= 70) temp.classList.add("mid");
+        }
+        if (j.gps_fix !== undefined) {
+          const [label, cls] = GPS_CHIP[j.gps_fix] || [j.gps_fix, "v low"];
+          gps.textContent = label;
+          gps.className = cls;
+          gps.title = "sats " + (j.gps_sats ?? 0)
+                    + (j.gps_hacc_m != null ? " · ±" + j.gps_hacc_m + " m" : "")
+                    + (j.gps_caster ? " · caster connected" : "");
         }
         reflectFollowStatus(j);
         reflectBbox(j);
