@@ -24,6 +24,15 @@ Usage:
 
 Watch the log: "carrier solution" transitions NONE -> FLOAT -> FIXED as RTK
 converges. hAcc should drop from meters to centimeters.
+
+Boot sequence (systemd/rover-ntrip.service runs this at power-on):
+  1. Wait for the GPS to enumerate (device node may appear seconds after
+     the service starts on a cold boot) — patient loop, no crash.
+  2. Wait for a valid local GNSS fix — the caster is never contacted
+     before we have a real position to report.
+  3. Connect and stream; network-down at boot is handled by the normal
+     connect backoff. If the GPS drops off USB entirely, exit nonzero and
+     let systemd restart us into the wait-for-device loop.
 """
 
 from __future__ import annotations
@@ -44,6 +53,11 @@ GGA_INTERVAL = 10.0       # seconds between GGA uploads (caster etiquette)
 POLL_INTERVAL = 2.0       # seconds between local NAV-PVT/NAV-DOP polls
 BACKOFF_START = 5.0
 BACKOFF_MAX = 80.0
+
+# Stable udev path — ttyACMn numbering can shift across boots/replugs.
+DEFAULT_SERIAL = (
+    "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com_u-blox_GNSS_receiver-if00"
+)
 
 FIX_QUALITY = {  # (fixType, carrSoln) -> NMEA GGA quality
     "none": 0, "3d": 1, "dgnss": 2, "float": 5, "fixed": 4,
@@ -212,7 +226,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     repo_root = Path(__file__).resolve().parent.parent
     ap.add_argument("--env", type=Path, default=repo_root / ".env")
-    ap.add_argument("--serial", default="/dev/ttyACM0")
+    ap.add_argument("--serial", default=DEFAULT_SERIAL)
     args = ap.parse_args()
 
     env = load_env(args.env)
@@ -221,7 +235,6 @@ def main() -> int:
             log(f"missing {key} in {args.env}")
             return 1
 
-    rx = Receiver(args.serial)
     running = True
 
     def stop(*_a):
@@ -229,6 +242,19 @@ def main() -> int:
         running = False
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
+
+    # Boot step 1: wait for the GPS to enumerate. On a cold power-on this
+    # service can start seconds before the USB device node exists.
+    announced = False
+    while running and not os.path.exists(args.serial):
+        if not announced:
+            log(f"waiting for GPS device {args.serial} …")
+            announced = True
+        time.sleep(2.0)
+    if not running:
+        return 0
+    rx = Receiver(args.serial)
+    log(f"opened {args.serial}")
 
     backoff = BACKOFF_START
     last_carr = None
@@ -294,6 +320,12 @@ def main() -> int:
                             f"hAcc {p['hacc_m']:.2f} m | rtcm {rtcm_bytes/1024:.0f} KiB")
                     last_report = now
         except (ConnectionError, OSError) as e:
+            # If the GPS itself vanished from USB, restart from scratch —
+            # systemd brings us back into the wait-for-device loop with a
+            # fresh file descriptor.
+            if not os.path.exists(args.serial):
+                log(f"GPS device gone ({args.serial}) — exiting for restart")
+                return 2
             log(f"stream dropped: {e} — reconnecting in {backoff:.0f}s")
             for _ in range(int(backoff)):
                 if not running:

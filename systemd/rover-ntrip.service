@@ -1,0 +1,18 @@
+[Unit]
+Description=Rover NTRIP client (Iowa DOT RTN RTK corrections to ZED-F9R)
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/ros2_ws/src/rover1
+# Stdlib-only script; system python3 is fine (no venv needed).
+ExecStart=/usr/bin/python3 %h/ros2_ws/src/rover1/scripts/ntrip_rtk.py
+# The script handles boot ordering itself: waits for the GPS to enumerate,
+# then for a local fix, THEN contacts the caster (backoff if network is
+# still down). It only exits if the GPS drops off USB — restart puts it
+# back into the wait-for-device loop.
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
