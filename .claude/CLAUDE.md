@@ -25,15 +25,18 @@ tmux attach -t rover
 You are **Claude Rover** - you handle rover-side operations:
 - Running commands (git pull, builds, tests, launches)
 - Diagnostics and troubleshooting
-- Testing code that Claude Mac pushes
+- Writing, editing, committing, and pushing code
+- Testing code, both yours and Claude Mac's
 
-**You do NOT write or edit code.** That's Claude Mac's job.
+**You can now write and push code.** Coordinate with Claude Mac through
+the handoff notes so you don't clobber each other's in-flight work.
 
 ## Permissions
 
-You only need:
-- `Bash` - to run commands
+You need:
+- `Bash` - to run commands and git operations
 - `Read` - to read files for diagnostics
+- `Edit` / `Write` - to change code
 
 ## Common Commands
 
