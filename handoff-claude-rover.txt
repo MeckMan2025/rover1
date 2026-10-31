@@ -1,0 +1,129 @@
+Recon for the GPS waypoint plan, Claude Rover, 2026-10-31
+Read-only survey; raw outputs live in docs/rover-state-2026-10-31/
+(one file per section). auto_gps_waypoint_plan.txt was not on origin/simplify
+at recon time, so the questions were answered as written.
+
+== 1. Identity and state (01-identity-state.txt) ==
+
+- rover1, up 57 min at recon; branch simplify at 5fa446d, clean except two
+  long-standing untracked local experiments (Camera_Specs/COLCON_IGNORE,
+  tests/probe_i2c_block_write.py) and this recon dir. No stashes. main is 75
+  behind simplify. [git status, git branch -vv]
+- Service venv: Python 3.12.3, fastapi 0.136.3, numpy 1.26.4, smbus2 0.6.1,
+  uvicorn 0.47.0, websockets 16.0. No pyserial, no pyubx2 in the venv;
+  rover-ntrip runs under system /usr/bin/python3, not the venv. [pip list,
+  systemctl --user status]
+- Both user units active and enabled: rover-ntrip (owns the F9R serial port)
+  and rover-uvicorn (dashboard + camera + ffmpeg H.264 child). [systemctl]
+- Thermals at recon: 84.5 C, throttled=0xf0008: soft temp limit ACTIVE now,
+  and the sticky bits say under-voltage and arm-freq capping have occurred
+  this boot. Load ~3.0 with uvicorn 42%, chromium kiosk ~33% (Halloween page
+  running today, one-night skin, auto-reverts Nov 1). Plan for mission runs
+  with the kiosk load reduced. [vcgencmd, top]
+
+== 2. IMU, the headline answer (02-imu-detect.txt) ==
+
+- The BerryIMU v3 is ELECTRICALLY ABSENT. i2cdetect -y 1 shows only 0x34
+  (motor board). No response at 0x6a (LSM6DSL), 0x1c (LIS3MDL) or 0x77
+  (BMP388) on bus 1, nor on buses 13/14. The requested gyro/accel bring-up
+  and 20 s stationary sample could not run. [i2cdetect, i2cget]
+- No magnetometer calibration exists: find / -xdev -name imu_cal.json finds
+  nothing. imu_calibration_tool.py (the tool itself) exists in the repo root.
+- Physical whereabouts of the IMU board: unknown, needs eyes. The engineering
+  log (line 47) says it was a stackable header on the Pi GPIO; Nov 2025 notes
+  reportedly moved it to the roof. Whether the board is still on the rover at
+  all cannot be determined from the OS.
+
+== 3. Motor board, read-only (03-motor-board.txt) ==
+
+- reg 0x14 motor type = 0 (NOT 3); reg 0x15 encoder polarity = 0; battery
+  13394 mV. [smbus2 single-transaction reads at 0x34]
+- Nothing in app/ ever writes 0x14/0x15; the current FastAPI stack handles
+  wheel polarity in software (app/motors.py _DEFAULT_POLARITY (-1,+1,+1,-1))
+  and does not use the board's closed-loop profile. If the plan wants
+  encoder-servoed speeds, the board must first be configured each power-on.
+- Encoders at 0x3C (<iiii): (187673, -204615, -167592, 149180), identical 5 s
+  apart with the rover still. Counts are nonzero from earlier driving and the
+  sign pattern matches the known FL/RR reversed wiring.
+
+== 4. GPS feed (04-gps-sampling.txt, 04b, 04c, 04d) ==
+
+- Status file: /run/user/1000/rover-gps-status.json, rewritten every 0.55 s
+  (the 0.5 s NAV-PVT poll), but lat/lon only CHANGE at ~1.02 Hz: the receiver
+  nav rate is 1 Hz. The July note's "2 Hz fixes" is the poll rate, not the
+  solution rate. Nothing anywhere sets CFG-RATE (grep for CFG-RATE,
+  0x30210001, configure_f9r: no hits), so the F9R is at its default. Raising
+  nav rate to 5 Hz via CFG-RATE is low-hanging fruit for the follower.
+- Right now, indoors through the roof: fix=3d, 7-10 sats, hAcc 5.8 to 15 m,
+  no carrier solution, caster connected and RTCM flowing. cog_acc_deg pegs
+  at 180 while stationary (course is meaningless at standstill).
+- History: the user journal only retains back to Jul 19 (older entries
+  rotated away), and Jul 19 evening is the ONLY outdoor session on record.
+  That session: 10 FIXED stretches, 49 s total FIXED, longest 17 s, at hAcc
+  0.02 to 0.03 m; 71 transitions to FLOAT; FLOAT dominated. Treat "FIXED is
+  attainable but fleeting, FLOAT is the working regime" as the planning
+  assumption. No receiver firmware/version lines appear in the journal.
+  [journalctl --user -u rover-ntrip, parsed in 04c]
+
+== 5. Previous attempts (05a, 05b, prev-attempts/) ==
+
+- Nov 2025 pure-pursuit era: GONE. No wps_*.csv, drive.py, rover_lite.py or
+  mission_planner.py anywhere on disk (find / -xdev). No run CSVs, logs or
+  video found. The journal does not reach back that far.
+- ROS patrol era artifacts survive: ~/paths/{kitchen,kitchen424,sidewalk_r1,
+  r2,r3}.yaml (Dec 2025 / Jan 2026), copied into prev-attempts/. RTAB-Map db
+  at ~/maps/rtabmap.db (158 MB, left in place).
+- July 19 sim script: unrecoverable. It lived in a /tmp Claude scratchpad
+  (tmpfs, cleared by reboots) and the old session transcripts were pruned.
+  Its three scenario results are documented in handoff-claude-mac.txt lines
+  39 to 46: nominal arrival 0.35 m from spot 4; far-start refusal; 6 s GPS
+  blackout pause/resume/complete. tests/sim_nav_july2026.py therefore does
+  not exist in this commit.
+- Was app/nav.py ever started outdoors (Mac's question 9): YES, on Jul 19
+  only. HTTP log shows bench starts 17:40/17:41, then three starts from the
+  phone (100.116.96.107) at 17:57, 17:59 and 17:59:31, stopped after 11, 17
+  and 32 s respectively, one more local start 18:17:56 with a minute of
+  status polling after it. Zero /api/nav traffic since Jul 19. nav.py logs
+  no phase lines to the journal, so whether wheels turned is not provable
+  from here; the short manual stops during a FLOAT-heavy window suggest it
+  sat in acquiring/aligning. Adding phase logging is cheap and worth it.
+
+== 6. Claude Rover's read (06-claude-rover-read.txt, full text there) ==
+
+- Heading: remount the BerryIMU and trust the LSM6DSL gyro for yaw, GPS
+  course as absolute reference above ~0.3 m/s, magnetometer only after a
+  fresh on-rover calibration and only as a slow anchor. GPS course alone
+  cannot survive the 180 turnarounds the looping plan adds, especially at
+  the measured 1 Hz solution rate.
+- July's field run: it happened, briefly, and was hand-stopped three times
+  inside four minutes during short FIXED bursts; then dormancy. See 5.
+- Top three risks for hands-off 1->4->1 x3: (1) heading unknown after each
+  pivot with no gyro on board; (2) RTK pause-on-loss stalls blowing the
+  300 s mission cap, FLOAT as the working regime; (3) no documented physical
+  kill switch, plus the known stale-WebSocket failure mode that has delayed
+  phone commands (incl. stop) by seconds, plus the Pi soft-throttling at
+  84.5 C under today's kiosk load.
+
+== Answers to the numbered questions that are mine to answer ==
+
+- Q1 (is the IMU wired): No. Nothing on any I2C bus. Re-mounting is a
+  physical job for the user; recommend roof, away from motor wiring, then a
+  fresh mag calibration with the existing tool.
+- Q9 (nav.py outdoors since Jul 19): started outdoors ON Jul 19 (three short
+  phone-initiated attempts, detail above); never since.
+- Q11 (Nov 2025 data): none survives on the rover. Only the ROS patrol
+  YAMLs (copied to prev-attempts/) and the tracked field_data/ sets remain.
+- Q2 through Q8 and Q10 are user decisions; not answered here. Note for Q10:
+  I found no evidence of any physical kill switch in docs or code.
+
+== What I could not determine ==
+
+- Physical location/condition of the BerryIMU board and its cabling (needs
+  eyes on the rover).
+- Whether wheels actually turned during the Jul 19 nav starts (no phase
+  logging).
+- F9R firmware version (not logged; reading it would mean opening the serial
+  port, which rover-ntrip owns).
+- Any RTK/nav history before Jul 19 (journal rotation) and all Nov 2025
+  artifacts (deleted).
+- Whether a physical kill switch exists (hardware question).

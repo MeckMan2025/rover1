@@ -1,0 +1,28 @@
+=== rover-ntrip journal, 120 days: status line counts ===
+      1 status: FIXED
+     76 status: FLOAT
+    516 status: NONE
+
+=== carrier solution / transition lines ===
+147
+Jul 19 16:26:29 rover1 python3[18835]: [16:26:29] carrier solution: — -> NONE (hAcc 5.32 m)
+Jul 19 16:27:04 rover1 python3[18959]: [16:27:04] carrier solution: — -> NONE (hAcc 7.31 m)
+Jul 19 16:27:18 rover1 python3[18959]: [16:27:18] carrier solution: NONE -> FLOAT (hAcc 6.95 m)
+Jul 19 16:27:22 rover1 python3[18959]: [16:27:22] carrier solution: FLOAT -> NONE (hAcc 5.85 m)
+Jul 19 16:27:36 rover1 python3[18959]: [16:27:36] carrier solution: NONE -> FLOAT (hAcc 7.43 m)
+
+=== firmware / version lines ===
+Jul 19 16:26:28 rover1 systemd[1954]: Started rover-ntrip.service - Rover NTRIP client (Iowa DOT RTN RTK corrections to ZED-F9R).
+Jul 19 16:27:03 rover1 systemd[1954]: Started rover-ntrip.service - Rover NTRIP client (Iowa DOT RTN RTK corrections to ZED-F9R).
+Jul 19 16:44:08 rover1 systemd[1954]: Started rover-ntrip.service - Rover NTRIP client (Iowa DOT RTN RTK corrections to ZED-F9R).
+Jul 19 16:44:08 rover1 systemd[1954]: Stopped rover-ntrip.service - Rover NTRIP client (Iowa DOT RTN RTK corrections to ZED-F9R).
+Jul 19 16:44:08 rover1 systemd[1954]: Stopping rover-ntrip.service - Rover NTRIP client (Iowa DOT RTN RTK corrections to ZED-F9R)...
+Jul 19 16:55:06 rover1 systemd[1954]: Started rover-ntrip.service - Rover NTRIP client (Iowa DOT RTN RTK corrections to ZED-F9R).
+Jul 19 16:55:06 rover1 systemd[1954]: Stopped rover-ntrip.service - Rover NTRIP client (Iowa DOT RTN RTK corrections to ZED-F9R).
+Jul 19 16:55:06 rover1 systemd[1954]: Stopping rover-ntrip.service - Rover NTRIP client (Iowa DOT RTN RTK corrections to ZED-F9R)...
+Jul 19 17:02:33 rover1 systemd[1954]: Started rover-ntrip.service - Rover NTRIP client (Iowa DOT RTN RTK corrections to ZED-F9R).
+Jul 19 17:02:33 rover1 systemd[1954]: Stopped rover-ntrip.service - Rover NTRIP client (Iowa DOT RTN RTK corrections to ZED-F9R).
+
+=== journal span ===
+Jul 19 16:26:28 rover1 systemd[1954]: Started rover-ntrip.service - Rover NTRIP client (Iowa DOT RTN RTK corrections to ZED-F9R).
+Oct 31 16:07:54 rover1 python3[2010]: [16:07:54] status: NONE | sats 7 | hAcc 8.23 m | rtcm 833 KiB

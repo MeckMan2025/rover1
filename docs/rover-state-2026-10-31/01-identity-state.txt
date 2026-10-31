@@ -1,0 +1,97 @@
+=== hostname / uptime ===
+rover1
+ 16:05:19 up 57 min,  2 users,  load average: 2.99, 3.42, 2.91
+
+=== git ===
+simplify
+5fa446d feat(ui): make the Halloween eyes dominate the video panel
+f2af8cc docs(handoff): note the one-night Halloween qr.html skin
+e9ff05d feat(ui): Halloween skin for the /qr kiosk page
+?? Camera_Specs/COLCON_IGNORE
+?? docs/rover-state-2026-10-31/
+?? tests/probe_i2c_block_write.py
+stash:
+  claude-rover/lte-failover-docs e5f40c7 [origin/claude-rover/lte-failover-docs: gone] docs: add LTE failover setup notes
+  feat/h264-streaming            6d392c4 [origin/feat/h264-streaming: gone] feat(streaming): H.264/fMP4 over WebSocket, MJPEG retained as fallback
+  feature/cellular-mode          c7e86c3 [origin/feature/cellular-mode: gone] fix(ui): screen-toggle button names the screen it controls
+  main                           af268a6 [origin/main: behind 75] config(gps): preserve ublox config before simplification
+* simplify                       5fa446d [origin/simplify] feat(ui): make the Halloween eyes dominate the video panel
+  wip/display-monitor-mode       bae0afa [origin/wip/display-monitor-mode] feat: add monitor mode for 7" display (htop instead of dashboard) (recovered from stash)
+  wip/kiosk-cage-shell-profile   889d128 [origin/wip/kiosk-cage-shell-profile] fix(kiosk): launch cage from shell profile instead of systemd (recovered from stash)
+  wip/ntrip-auth-fix             3dfdb5d [origin/wip/ntrip-auth-fix] Fix NTRIP Auth by enabling authenticate parameter (recovered from stash)
+  wip/touchscreen-kiosk-docs     413be6d [origin/wip/touchscreen-kiosk-docs] docs: add 7" touchscreen kiosk mode to engineering log (recovered from stash)
+  wip/wifi-roaming-service       387d656 [origin/wip/wifi-roaming-service] feat(network): add WiFi roaming service for automatic network switching (recovered from stash)
+
+=== venv python ===
+Python 3.12.3
+
+=== key pip packages ===
+fastapi                              0.136.3
+numpy                                1.26.4
+segno                                1.6.6
+smbus2                               0.6.1
+uvicorn                              0.47.0
+websockets                           16.0
+
+=== services ===
+● rover-ntrip.service - Rover NTRIP client (Iowa DOT RTN RTK corrections to ZED-F9R)
+     Loaded: loaded (/home/andrewmeckley/.config/systemd/user/rover-ntrip.service; enabled; preset: enabled)
+     Active: active (running) since Sat 2026-10-31 15:08:55 CDT; 56min ago
+   Main PID: 2010 (python3)
+      Tasks: 1 (limit: 18702)
+     Memory: 8.1M (peak: 8.6M)
+        CPU: 13.280s
+     CGroup: /user.slice/user-1000.slice/user@1000.service/app.slice/rover-ntrip.service
+             └─2010 /usr/bin/python3 /home/andrewmeckley/ros2_ws/src/rover1/scripts/ntrip_rtk.py
+
+Oct 31 16:00:24 rover1 python3[2010]: [16:00:24] status: NONE | sats 7 | hAcc 13.24 m | rtcm 720 KiB
+Oct 31 16:00:54 rover1 python3[2010]: [16:00:54] status: NONE | sats 7 | hAcc 13.23 m | rtcm 727 KiB
+Oct 31 16:01:24 rover1 python3[2010]: [16:01:24] status: NONE | sats 8 | hAcc 11.73 m | rtcm 735 KiB
+Oct 31 16:01:54 rover1 python3[2010]: [16:01:54] status: NONE | sats 7 | hAcc 11.51 m | rtcm 742 KiB
+Oct 31 16:02:24 rover1 python3[2010]: [16:02:24] status: NONE | sats 0 | hAcc 15.38 m | rtcm 749 KiB
+Oct 31 16:02:54 rover1 python3[2010]: [16:02:54] status: NONE | sats 9 | hAcc 10.51 m | rtcm 757 KiB
+Oct 31 16:03:24 rover1 python3[2010]: [16:03:24] status: NONE | sats 7 | hAcc 7.65 m | rtcm 764 KiB
+Oct 31 16:03:54 rover1 python3[2010]: [16:03:54] status: NONE | sats 8 | hAcc 7.63 m | rtcm 772 KiB
+Oct 31 16:04:24 rover1 python3[2010]: [16:04:24] status: NONE | sats 10 | hAcc 6.58 m | rtcm 779 KiB
+Oct 31 16:04:54 rover1 python3[2010]: [16:04:54] status: NONE | sats 7 | hAcc 5.82 m | rtcm 786 KiB
+
+● rover-uvicorn.service - Rover FastAPI dashboard (drive + camera)
+     Loaded: loaded (/home/andrewmeckley/.config/systemd/user/rover-uvicorn.service; enabled; preset: enabled)
+     Active: active (running) since Sat 2026-10-31 15:08:55 CDT; 56min ago
+   Main PID: 2011 (uvicorn)
+      Tasks: 41 (limit: 18702)
+     Memory: 233.1M (peak: 233.8M)
+        CPU: 34min 39.619s
+     CGroup: /user.slice/user-1000.slice/user@1000.service/app.slice/rover-uvicorn.service
+             ├─2011 /home/andrewmeckley/code/rover1-venv/bin/python3 /home/andrewmeckley/code/rover1-venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8080 --timeout-graceful-shutdown 3
+             └─2536 ffmpeg -hide_banner -loglevel warning -f rawvideo -pix_fmt bgr24 -video_size 640x480 -framerate 15 -i pipe:0 -c:v libx264 -preset ultrafast -tune zerolatency -profile:v baseline -pix_fmt yuv420p -b:v 1500k -maxrate 1500k -bufsize 3000k -g 30 -keyint_min 30 -x264-params scenecut=0:rc-lookahead=0 -f mp4 -movflags +frag_keyframe+empty_moov+default_base_moof+omit_tfhd_offset -frag_duration 100000 pipe:1
+
+Oct 31 16:05:11 rover1 uvicorn[2011]: INFO:     127.0.0.1:47858 - "GET /telemetry HTTP/1.1" 200 OK
+Oct 31 16:05:12 rover1 uvicorn[2011]: INFO:     127.0.0.1:47858 - "GET /telemetry HTTP/1.1" 200 OK
+Oct 31 16:05:13 rover1 uvicorn[2011]: INFO:     127.0.0.1:47858 - "GET /telemetry HTTP/1.1" 200 OK
+Oct 31 16:05:14 rover1 uvicorn[2011]: INFO:     127.0.0.1:47858 - "GET /telemetry HTTP/1.1" 200 OK
+Oct 31 16:05:15 rover1 uvicorn[2011]: INFO:     127.0.0.1:47858 - "GET /telemetry HTTP/1.1" 200 OK
+Oct 31 16:05:16 rover1 uvicorn[2011]: INFO:     127.0.0.1:47858 - "GET /telemetry HTTP/1.1" 200 OK
+Oct 31 16:05:17 rover1 uvicorn[2011]: INFO:     127.0.0.1:47858 - "GET /telemetry HTTP/1.1" 200 OK
+Oct 31 16:05:18 rover1 uvicorn[2011]: INFO:     127.0.0.1:47858 - "GET /telemetry HTTP/1.1" 200 OK
+
+=== thermals ===
+temp=84.5'C
+throttled=0xf0008
+
+=== top ===
+top - 16:05:21 up 57 min,  2 users,  load average: 3.08, 3.43, 2.91
+Tasks: 159 total,   2 running, 157 sleeping,   0 stopped,   0 zombie
+%Cpu(s): 30.0 us, 10.0 sy,  0.0 ni, 60.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st 
+MiB Mem :  15969.2 total,  12280.7 free,   1479.2 used,   2493.8 buff/cache     
+MiB Swap:      0.0 total,      0.0 free,      0.0 used.  14489.9 avail Mem 
+
+    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+   2011 andrewm+  20   0 1294556 182560  36412 S  41.7   1.1  25:59.29 uvicorn
+   6811 andrewm+  20   0   52.7g 171964 125544 S  16.7   1.1   7:33.91 chrome
+   6849 andrewm+  20   0 1447.9g 330084 118524 S  16.7   2.0   5:38.37 chrome
+   2536 andrewm+  20   0  625384  57260  35452 S   8.3   0.4   8:40.50 ffmpeg
+   6551 andrewm+  20   0  412464  83048  57856 S   8.3   0.5   2:09.49 cage
+   9324 andrewm+  20   0    9208   4984   2912 R   8.3   0.0   0:00.03 top
+      1 root      20   0   24052  14388   8680 S   0.0   0.1   0:03.50 systemd
+      2 root      20   0       0      0      0 S   0.0   0.0   0:00.01 kthreadd

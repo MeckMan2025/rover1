@@ -1,0 +1,12 @@
+reg 0x14 motor type: 0 (3 = JGB37-520)
+reg 0x15 encoder polarity: 0
+reg 0x00 battery: 13394 mV
+encoders t=0s  (0x3C, <iiii): (187673, -204615, -167592, 149180)
+encoders t=5s  (0x3C, <iiii): (187673, -204615, -167592, 149180)
+unchanged: True
+
+Note (grep evidence): no code in app/ writes reg 0x14 (motor type) or 0x15
+(encoder polarity); both read 0. The current FastAPI stack handles wheel
+polarity in software (app/motors.py _DEFAULT_POLARITY = (-1,+1,+1,-1)) and
+does not use the board's closed-loop motor-type profile. Encoder counts are
+nonzero (board has been driven since power-on) and frozen while still.

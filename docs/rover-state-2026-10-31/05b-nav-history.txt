@@ -1,0 +1,57 @@
+=== /api/nav hits since Jul 19 ===
+-- Boot 817214855a2f4413ab3a49fba67421bf --
+Jul 19 17:40:37 rover1 uvicorn[4774]: INFO:     127.0.0.1:48432 - "GET /api/nav/status HTTP/1.1" 200 OK
+Jul 19 17:40:37 rover1 uvicorn[4774]: INFO:     127.0.0.1:48434 - "POST /api/nav/start HTTP/1.1" 200 OK
+Jul 19 17:40:40 rover1 uvicorn[4774]: INFO:     127.0.0.1:48796 - "GET /api/nav/status HTTP/1.1" 200 OK
+Jul 19 17:41:16 rover1 uvicorn[5286]: INFO:     127.0.0.1:43522 - "POST /api/nav/start HTTP/1.1" 200 OK
+Jul 19 17:42:01 rover1 uvicorn[5286]: INFO:     127.0.0.1:43886 - "GET /api/nav/status HTTP/1.1" 200 OK
+Jul 19 17:42:01 rover1 uvicorn[5286]: INFO:     127.0.0.1:43890 - "POST /api/nav/stop HTTP/1.1" 200 OK
+Jul 19 17:53:29 rover1 uvicorn[6594]: INFO:     127.0.0.1:35892 - "GET /api/nav/path HTTP/1.1" 200 OK
+Jul 19 17:53:55 rover1 uvicorn[6594]: INFO:     127.0.0.1:42580 - "GET /api/nav/path HTTP/1.1" 200 OK
+Jul 19 17:54:09 rover1 uvicorn[6594]: INFO:     127.0.0.1:47116 - "GET /api/nav/path HTTP/1.1" 200 OK
+Jul 19 17:56:00 rover1 uvicorn[6594]: INFO:     100.116.96.107:62059 - "GET /api/nav/path HTTP/1.1" 200 OK
+Jul 19 17:57:44 rover1 uvicorn[6594]: INFO:     100.116.96.107:62059 - "POST /api/nav/start HTTP/1.1" 200 OK
+Jul 19 17:57:55 rover1 uvicorn[6594]: INFO:     100.116.96.107:62057 - "POST /api/nav/stop HTTP/1.1" 200 OK
+Jul 19 17:59:07 rover1 uvicorn[6594]: INFO:     100.116.96.107:62059 - "POST /api/nav/start HTTP/1.1" 200 OK
+Jul 19 17:59:24 rover1 uvicorn[6594]: INFO:     100.116.96.107:62057 - "POST /api/nav/stop HTTP/1.1" 200 OK
+Jul 19 17:59:31 rover1 uvicorn[6594]: INFO:     100.116.96.107:62057 - "POST /api/nav/start HTTP/1.1" 200 OK
+Jul 19 18:00:03 rover1 uvicorn[6594]: INFO:     100.116.96.107:62057 - "POST /api/nav/stop HTTP/1.1" 200 OK
+Jul 19 18:00:04 rover1 uvicorn[6594]: INFO:     127.0.0.1:43084 - "GET /api/nav/status HTTP/1.1" 200 OK
+Jul 19 18:03:05 rover1 uvicorn[6594]: INFO:     100.116.96.107:62062 - "GET /api/nav/path HTTP/1.1" 200 OK
+Jul 19 18:09:12 rover1 uvicorn[6594]: INFO:     100.116.96.107:62082 - "GET /api/nav/path HTTP/1.1" 200 OK
+Jul 19 18:16:28 rover1 uvicorn[6594]: INFO:     100.116.96.107:62095 - "GET /api/nav/path HTTP/1.1" 200 OK
+Jul 19 18:16:54 rover1 uvicorn[8910]: INFO:     127.0.0.1:42986 - "GET /api/nav/status HTTP/1.1" 200 OK
+Jul 19 18:17:56 rover1 uvicorn[8910]: INFO:     127.0.0.1:33652 - "POST /api/nav/start HTTP/1.1" 200 OK
+Jul 19 18:18:03 rover1 uvicorn[8910]: INFO:     127.0.0.1:32818 - "GET /api/nav/status HTTP/1.1" 200 OK
+Jul 19 18:18:08 rover1 uvicorn[8910]: INFO:     127.0.0.1:32834 - "GET /api/nav/status HTTP/1.1" 200 OK
+Jul 19 18:18:14 rover1 uvicorn[8910]: INFO:     127.0.0.1:45110 - "GET /api/nav/status HTTP/1.1" 200 OK
+Jul 19 18:18:19 rover1 uvicorn[8910]: INFO:     127.0.0.1:45122 - "GET /api/nav/status HTTP/1.1" 200 OK
+Jul 19 18:18:24 rover1 uvicorn[8910]: INFO:     127.0.0.1:35148 - "GET /api/nav/status HTTP/1.1" 200 OK
+Jul 19 18:18:30 rover1 uvicorn[8910]: INFO:     127.0.0.1:59162 - "GET /api/nav/status HTTP/1.1" 200 OK
+Jul 19 18:18:35 rover1 uvicorn[8910]: INFO:     127.0.0.1:59178 - "GET /api/nav/status HTTP/1.1" 200 OK
+Jul 19 18:18:41 rover1 uvicorn[8910]: INFO:     127.0.0.1:48912 - "GET /api/nav/status HTTP/1.1" 200 OK
+Jul 19 18:18:46 rover1 uvicorn[8910]: INFO:     127.0.0.1:48918 - "GET /api/nav/status HTTP/1.1" 200 OK
+Jul 19 18:18:51 rover1 uvicorn[8910]: INFO:     127.0.0.1:54564 - "GET /api/nav/status HTTP/1.1" 200 OK
+Jul 19 18:18:57 rover1 uvicorn[8910]: INFO:     127.0.0.1:54576 - "GET /api/nav/status HTTP/1.1" 200 OK
+Jul 19 18:19:02 rover1 uvicorn[8910]: INFO:     127.0.0.1:43394 - "GET /api/nav/status HTTP/1.1" 200 OK
+Jul 19 18:19:08 rover1 uvicorn[8910]: INFO:     127.0.0.1:43406 - "GET /api/nav/status HTTP/1.1" 200 OK
+Jul 19 18:19:13 rover1 uvicorn[8910]: INFO:     127.0.0.1:33162 - "GET /api/nav/status HTTP/1.1" 200 OK
+Jul 19 18:19:15 rover1 uvicorn[8910]: INFO:     100.116.96.107:62103 - "GET /api/nav/path HTTP/1.1" 200 OK
+Jul 19 18:19:19 rover1 uvicorn[8910]: INFO:     127.0.0.1:33172 - "GET /api/nav/status HTTP/1.1" 200 OK
+Jul 19 18:19:24 rover1 uvicorn[8910]: INFO:     127.0.0.1:36192 - "GET /api/nav/status HTTP/1.1" 200 OK
+Jul 19 18:19:29 rover1 uvicorn[8910]: INFO:     127.0.0.1:36198 - "GET /api/nav/status HTTP/1.1" 200 OK
+Jul 19 18:19:35 rover1 uvicorn[8910]: INFO:     127.0.0.1:35380 - "GET /api/nav/status HTTP/1.1" 200 OK
+Jul 19 18:19:40 rover1 uvicorn[8910]: INFO:     127.0.0.1:35804 - "GET /api/nav/status HTTP/1.1" 200 OK
+Jul 19 18:19:46 rover1 uvicorn[8910]: INFO:     127.0.0.1:35808 - "GET /api/nav/status HTTP/1.1" 200 OK
+Jul 19 18:19:51 rover1 uvicorn[8910]: INFO:     127.0.0.1:48076 - "GET /api/nav/status HTTP/1.1" 200 OK
+Jul 19 18:19:57 rover1 uvicorn[8910]: INFO:     127.0.0.1:48078 - "GET /api/nav/status HTTP/1.1" 200 OK
+Jul 19 18:20:02 rover1 uvicorn[8910]: INFO:     127.0.0.1:41500 - "GET /api/nav/status HTTP/1.1" 200 OK
+Jul 19 18:20:07 rover1 uvicorn[8910]: INFO:     127.0.0.1:41512 - "GET /api/nav/status HTTP/1.1" 200 OK
+Jul 19 18:20:13 rover1 uvicorn[8910]: INFO:     127.0.0.1:35916 - "GET /api/nav/status HTTP/1.1" 200 OK
+Jul 19 18:20:18 rover1 uvicorn[8910]: INFO:     127.0.0.1:35924 - "GET /api/nav/status HTTP/1.1" 200 OK
+
+=== nav phase lines since Jul 19 ===
+-- Boot 817214855a2f4413ab3a49fba67421bf --
+-- Boot b43e7084bb2546e2b3a7c7459b8f0e65 --
+-- No entries --
+(end)

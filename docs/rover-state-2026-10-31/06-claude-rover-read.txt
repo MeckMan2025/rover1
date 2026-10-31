@@ -1,0 +1,45 @@
+Section 6, Claude Rover's own read (opinions, evidence cited inline)
+
+Heading source I would trust:
+ A remounted LSM6DSL gyro (BerryIMU v3) integrated for yaw, with GPS course
+ over ground as the absolute reference while moving >0.3 m/s, and the
+ magnetometer at most as a slow drift anchor after a fresh on-rover figure-8
+ calibration (imu_calibration_tool.py exists in the repo root for this).
+ Reasons: (a) the IMU is currently absent so today the only heading is GPS
+ course, which is undefined at standstill (cog_acc_deg pegs at 180 indoors)
+ and useless during a pivot turn, exactly the maneuver the looping plan adds;
+ (b) the effective GNSS solution rate is 1 Hz (measured, section 4), so
+ course-only heading reacts slowly at 0.25 m/s; (c) the magnetometer sits
+ near four brushed motors and their wiring, and no calibration was ever saved.
+
+Why the July follower never got its real field run:
+ It was started outdoors, briefly. HTTP logs (05b) show three starts from the
+ phone on Jul 19 17:57 to 18:00, each stopped manually within 11 to 32 s, and
+ one more bench start at 18:17. The RTK log that evening (04c) shows FIXED
+ arriving only in 1 to 17 s bursts. My read: the hAcc<=0.5 m entry gate plus
+ the aligning phase needing a confident course meant the mission likely sat
+ in acquiring or aligning during those short windows and the operator stopped
+ it; then the project went dormant (zero /api/nav traffic since Jul 19).
+ Nothing in the journal proves wheels ever turned; nav.py phase transitions
+ are not logged to stdout, which itself is worth fixing before the next try.
+
+Top three risks for a hands-off sidewalk 1->4->1 x3 run:
+ 1. Heading loss at the turnarounds. With no gyro, every 180 pivot ends with
+    unknown heading until the rover has crept forward far enough for GPS
+    course to settle (1 Hz updates). A 70 deg initial error at 0.25 m/s can
+    eat the 2 m cross-track abort budget before the controller sees it.
+    Remounting the IMU is the single highest-leverage fix.
+ 2. RTK dropouts and the pause behavior. The only outdoor dataset we have
+    (Jul 19) shows 10 FIXED stretches totaling 49 s over ~45 min, FLOAT the
+    rest. Expect frequent pause-on-loss stalls mid-sidewalk; a 3-loop
+    mission will probably exceed the 300 s mission cap while paused unless
+    the plan retunes caps for FLOAT-grade accuracy or gates on hAcc not
+    carrier status.
+ 3. Operator-out-of-loop safety. No physical kill switch is documented
+    anywhere I can find; the known stale-WebSocket backlog failure mode has
+    previously delayed phone commands (including stop) by 5+ s; and the Pi
+    was soft-throttling at 84.5 C today under camera + H.264 + kiosk load
+    (vcgencmd throttled=0xf0008, and the 0xf0000 bits say under-voltage and
+    throttling have occurred this boot). Mitigations before the run: inline
+    12 V motor-supply switch, kill the Halloween kiosk load, and have the
+    mission watchdog fail safe on telemetry silence.

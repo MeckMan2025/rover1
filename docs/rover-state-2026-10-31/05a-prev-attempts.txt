@@ -1,0 +1,41 @@
+=== ~/paths (ROS patrol era, copied to prev-attempts/) ===
+total 28
+drwxrwxr-x  2 andrewmeckley andrewmeckley 4096 Jan  4  2026 .
+drwxr-x--- 21 andrewmeckley andrewmeckley 4096 Oct 31 16:15 ..
+-rw-r--r--  1 andrewmeckley andrewmeckley 1639 Dec 31  2025 kitchen.yaml
+-rw-r--r--  1 andrewmeckley andrewmeckley 1610 Jan  4  2026 kitchen424.yaml
+-rw-r--r--  1 andrewmeckley andrewmeckley 1031 Jan  4  2026 sidewalk_r1.yaml
+-rw-r--r--  1 andrewmeckley andrewmeckley 1008 Jan  4  2026 sidewalk_r2.yaml
+-rw-r--r--  1 andrewmeckley andrewmeckley 1234 Jan  4  2026 sidewalk_r3.yaml
+
+=== CSVs under /home (small, non-venv) ===
+
+=== repo field_data (already tracked) ===
+field_data/:
+6817-matthews-ct-lot14
+sidewalk-test-2026-07-19
+
+field_data/6817-matthews-ct-lot14:
+README.md
+parcel-boundary-densified-2ft-PNEZD.csv
+parcel-boundary-loop-PNEZD.csv
+parcel-boundary.kml
+parcel-corners.txt
+parcel-map.html
+parcel-stakeout-PNEZD.csv
+
+field_data/sidewalk-test-2026-07-19:
+README.md
+path-spot1-to-spot4.csv
+path-spot4-to-spot1.csv
+waypoints.csv
+
+=== gstshark dir (May 2026, streaming traces, not nav) ===
+datastream
+metadata
+
+=== maps dir ===
+total 154828
+drwxrwxr-x  2 andrewmeckley andrewmeckley      4096 Dec 30  2025 .
+drwxr-x--- 21 andrewmeckley andrewmeckley      4096 Oct 31 16:15 ..
+-rw-r--r--  1 andrewmeckley andrewmeckley 158531584 Dec 30  2025 rtabmap.db
