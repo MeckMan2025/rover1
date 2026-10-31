@@ -48,6 +48,95 @@
     #status .v.mid { color: #ffc107; }
     #status .v.low { color: #f66; }
     #status .sep { opacity: 0.4; margin: 0 6px; }
+
+    /* --- Halloween skin (body.spooky, auto-on Oct 31 or ?spooky=1) --------
+       Compositor-cheap only: transform/opacity animations, no filters on the
+       video element, no full-screen repaint loops. */
+    body.spooky { background: #0b0014; }
+    body.spooky #right { background: #030008; }
+    body.spooky .qr-frame {
+      box-shadow: 0 0 34px rgba(255, 115, 0, 0.5), 0 4px 22px rgba(0,0,0,0.6);
+    }
+    body.spooky .label {
+      color: #ff9d2e;
+      text-shadow: 0 0 12px rgba(255, 90, 0, 0.8);
+      animation: spookyFlicker 7s infinite;
+    }
+    body.spooky .sublabel {
+      margin-top: 10px; font-size: 16px; color: #b96bff;
+      text-shadow: 0 0 10px rgba(150, 60, 255, 0.7);
+      letter-spacing: 0.08em;
+    }
+    @keyframes spookyFlicker {
+      0%, 100% { opacity: 1; }
+      7%  { opacity: 0.35; }
+      9%  { opacity: 1; }
+      54% { opacity: 1; }
+      56% { opacity: 0.2; }
+      57% { opacity: 1; }
+      58% { opacity: 0.5; }
+      60% { opacity: 1; }
+    }
+    #vignette {
+      position: fixed; inset: 0; pointer-events: none; z-index: 5;
+      background: radial-gradient(ellipse at center, transparent 52%, rgba(25, 0, 45, 0.6) 100%);
+    }
+    #eyes {
+      position: fixed; top: 7%; right: 6%; z-index: 6; pointer-events: none;
+      display: flex; gap: 26px;
+      animation: eyeBlink 4.7s infinite;
+      transform-origin: center;
+    }
+    .eye {
+      width: 42px; height: 52px; border-radius: 50%;
+      background: radial-gradient(circle at 50% 45%, #ffb300 0 26%, #c43000 55%, rgba(120, 10, 0, 0.35) 72%, transparent 78%);
+      box-shadow: 0 0 26px 6px rgba(255, 90, 0, 0.35);
+      position: relative;
+    }
+    .eye .pupil {
+      position: absolute; left: 50%; top: 45%;
+      width: 10px; height: 20px; margin: -10px 0 0 -5px;
+      border-radius: 50%; background: #1a0000;
+      transition: transform 0.9s ease;
+    }
+    @keyframes eyeBlink {
+      0%, 92%, 100% { transform: scaleY(1); }
+      94%, 96% { transform: scaleY(0.06); }
+      98% { transform: scaleY(1); }
+    }
+    #flash {
+      position: fixed; inset: 0; z-index: 8; pointer-events: none;
+      background: rgba(255, 240, 215, 0.9); opacity: 0;
+      transition: opacity 70ms linear;
+    }
+    #apparition {
+      position: fixed; inset: 0; z-index: 9; pointer-events: none;
+      display: flex; align-items: center; justify-content: center;
+      font-size: clamp(40px, 8vw, 90px); font-weight: 800; letter-spacing: 0.12em;
+      color: #ff1a1a; text-shadow: 0 0 30px rgba(255, 0, 0, 0.9);
+      opacity: 0; transition: opacity 180ms linear;
+      font-family: Georgia, "Times New Roman", serif;
+    }
+    #drifter {
+      position: fixed; left: -90px; z-index: 6; pointer-events: none;
+      font-size: 58px; opacity: 0;
+    }
+    #drifter.go {
+      opacity: 0.9;
+      transition: transform 14s linear;
+      transform: translateX(118vw) rotate(8deg);
+    }
+    #spider {
+      position: fixed; top: 0; left: 58%; z-index: 6; pointer-events: none;
+      display: flex; flex-direction: column; align-items: center;
+      animation: spiderBob 9s ease-in-out infinite;
+    }
+    #spider .thread { width: 1px; height: 90px; background: rgba(255,255,255,0.35); }
+    #spider .bug { font-size: 30px; margin-top: -4px; }
+    @keyframes spiderBob {
+      0%, 100% { transform: translateY(-12px); }
+      50% { transform: translateY(34px); }
+    }
   </style>
 </head>
 <body>
@@ -155,6 +244,79 @@
 
   if (pickMode() === "h264") startH264();
   else { videoMode = "mjpeg"; showMjpeg(); }
+
+  // --- Halloween skin ------------------------------------------------------
+  // Auto-on only on Oct 31 (device-local time); force with ?spooky=1,
+  // suppress with ?nospooky=1. Self-reverting: Nov 1 the page is normal again.
+  (() => {
+    const q = new URLSearchParams(location.search);
+    const today = new Date();
+    const isHalloween = today.getMonth() === 9 && today.getDate() === 31;
+    if (q.has("nospooky") || (!q.has("spooky") && !isHalloween)) return;
+
+    document.body.classList.add("spooky");
+    document.title = "Thing · scan if you dare";
+    document.querySelector(".label").textContent = "scan… if you dare";
+    const sub = document.createElement("div");
+    sub.className = "sublabel";
+    sub.textContent = "🖐️ THING is watching";
+    document.querySelector(".url").before(sub);
+
+    const el = (id, html) => {
+      const d = document.createElement("div");
+      d.id = id; d.innerHTML = html;
+      document.body.appendChild(d);
+      return d;
+    };
+    el("vignette", "");
+    const eyes = el("eyes",
+      '<div class="eye"><div class="pupil"></div></div>' +
+      '<div class="eye"><div class="pupil"></div></div>');
+    el("spider", '<div class="thread"></div><div class="bug">🕷️</div>');
+    const flash = el("flash", "");
+    const apparition = el("apparition", "THING SEES YOU");
+    const drifter = el("drifter", "👻");
+
+    const rand = (lo, hi) => lo + Math.random() * (hi - lo);
+
+    // Pupils wander every few seconds.
+    (function wander() {
+      const x = rand(-9, 9).toFixed(1), y = rand(-7, 7).toFixed(1);
+      for (const p of eyes.querySelectorAll(".pupil"))
+        p.style.transform = `translate(${x}px, ${y}px)`;
+      setTimeout(wander, rand(1800, 4500));
+    })();
+
+    // Double lightning flash every 25-50 s; 1-in-4 flashes reveal the message.
+    (function lightning() {
+      const reveal = Math.random() < 0.25;
+      flash.style.opacity = "0.85";
+      setTimeout(() => { flash.style.opacity = "0"; }, 90);
+      setTimeout(() => { flash.style.opacity = "0.6"; }, 220);
+      setTimeout(() => { flash.style.opacity = "0"; }, 310);
+      if (reveal) {
+        apparition.style.opacity = "1";
+        setTimeout(() => { apparition.style.opacity = "0"; }, 1100);
+      }
+      setTimeout(lightning, rand(25000, 50000));
+    })();
+
+    // A ghost or bat drifts across every 40-80 s.
+    (function drift() {
+      drifter.textContent = Math.random() < 0.5 ? "👻" : "🦇";
+      drifter.style.top = rand(8, 65).toFixed(0) + "%";
+      drifter.classList.add("go");
+      setTimeout(() => {
+        drifter.classList.remove("go");
+        drifter.style.transition = "none";
+        drifter.style.transform = "none";
+        // force reflow so the next .go transition starts from the left again
+        void drifter.offsetWidth;
+        drifter.style.transition = "";
+      }, 15000);
+      setTimeout(drift, rand(40000, 80000));
+    })();
+  })();
 
   // --- Telemetry poll -----------------------------------------------------
   (async function pollTelemetry() {
