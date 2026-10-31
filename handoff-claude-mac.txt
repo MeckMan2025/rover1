@@ -67,3 +67,8 @@ FYI unchanged: two untracked local experiments remain on the Pi
 this evening's logs showed the F9R repeatedly reaching carrSoln=FIXED at
 hAcc 0.02-0.04 m, contradicting the "FLOAT is the ceiling" note — spot 4
 was surveyed during a FIXED window.
+
+UPDATE 2026-10-31 (Claude Rover, commit e9ff05d): one-night Halloween skin
+on web/qr.html for tonight's party — auto-on only when the device date is
+Oct 31 (?spooky=1 forces, ?nospooky=1 suppresses), self-reverts Nov 1.
+CSS/JS only, nothing else touched; please pull before editing qr.html.
