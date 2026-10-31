@@ -1,0 +1,846 @@
+AUTO GPS WAYPOINT PLAN
+rover1: autonomous RTK waypoint following with back-and-forth looping
+
+Author:   Claude (Fable 5.1, max effort), Mac session
+Date:     2026-10-31
+Repo:     github.com/MeckMan2025/rover1, branch simplify @ 99b3e1a
+Status:   PLAN v2. v1 was written from the code, the docs and the Nov 2025
+          attempt. v2 folds in Claude Rover's read-only recon of the live
+          rover (commit 99b3e1a: handoff-claude-rover.txt and
+          docs/rover-state-2026-10-31/). Remaining [VERIFY] tags need a
+          bench session on the rover, not more reading.
+
+What the recon changed (details in the sections named):
+  * The BerryIMU is electrically absent (1.2b). The gyro now comes from
+    the ZED-F9R's own internal IMU over the existing USB link; no new
+    hardware is needed to start (sections 4 and 5 WP1).
+  * The RTK solution runs at 1 Hz, not 2 Hz; the status file is merely
+    rewritten at 2 Hz (1.2). On the one logged sidewalk evening, FLOAT sat
+    at 1.3 to 2.2 m during the nav attempts, so the 0.5 m gate never
+    opened and the July follower never moved (1.3). An RTK soak step and
+    quality logging are now mandatory before any nav run (6, T1b).
+  * The motor board's type register reads 0 (no encoder), so "closed-loop
+    wheel speed all along" is downgraded to "unconfirmed" (1.1, WP0b).
+  * The Pi was soft-throttling at 84.5 C under the kiosk and video load,
+    with under-voltage flagged since boot (1.7, R6).
+  * Nov 2025 run data is gone from the Pi; only ROS-era local-frame paths
+    survive (1.4). Questions D1, Q9 and Q11 are answered (section 8).
+
+======================================================================
+0. BOTTOM LINE
+======================================================================
+
+The rover already has about 70 percent of a real waypoint follower:
+
+  * RTK position (ZED-F9R + Iowa DOT RTN) written to a status file by
+    scripts/ntrip_rtk.py; the receiver solves at 1 Hz today (measured),
+    which v2 raises to 2 to 4 Hz with one configuration message
+  * a safe motor layer (E-stop latch, 150 ms watchdog, manual override)
+    on a Hiwonder board with working encoders (closed-loop speed mode is
+    unconfirmed, see 1.1)
+  * a pure-pursuit follower (app/nav.py) with sensible gates and phases,
+    which has only ever run in simulation
+  * surveyed paths (sidewalk spots 1 to 4, densified at 0.5 m) and a map
+    page with START/STOP PATH and a live rover marker
+
+The missing 30 percent is the same thing that made the year-ago run
+painful: HEADING. The July follower takes heading from GPS course over
+ground while moving and dead-reckons turns from the commanded yaw rate
+(open loop, never calibrated, and about 20 to 40 percent optimistic by
+my arithmetic in section 9). That cannot pivot 180 degrees accurately,
+cannot hold a line when course-over-ground is noisy at 0.25 m/s, and
+knows nothing while the rover is parked. The year-ago attempt used the
+magnetometer on a steel chassis next to four brushed motors, which is
+why it wandered. Neither approach anchors heading to a gyro.
+
+The fix: a gyro-anchored heading estimator corrected continuously by RTK
+(receiver course over ground plus track angle from position deltas). The
+gyro is the ZED-F9R's own internal IMU: the recon found the BerryIMU
+electrically absent, but the F9R is a sensor-fusion receiver with a
+6-axis IMU inside, and its raw samples can be enabled on the USB link we
+already use (UBX-ESF-RAW; integration manual UBX-20039643 section
+3.2.7.6; the PDF is in the repo as "ZED-F9R ublox.pdf"). The receiver's
+own fusion engine is NOT used: its automotive model never initializes
+below 30 km/h, and the low-speed "robotic lawn mower" model needs wheel
+ticks and RTK FIXED to calibrate (section 1.2). Everything else is
+engineering on top of
+code that already exists: a mission layer (once / ping-pong / loop with
+turnarounds), waypoint-creation tooling on the rover, calibration of
+speed and yaw rate, run logging, and a field protocol.
+
+Six work packages (section 5). Realistic path to "sidewalk 1 -> 4 -> 1,
+three times, hands off" is three to four field outings after the code is
+on the rover, with the first outing being calibration only. One bench
+session comes first and is decisive: enable UBX-ESF-RAW and read the
+F9R's gyro for 60 s (WP0b, T1). If that works, the hardware is done. If
+it does not, the fallback is remounting the BerryIMU (R1).
+
+======================================================================
+1. WHAT EXISTS TODAY (inventory, with file references)
+======================================================================
+
+1.1 Live stack (what actually turns the wheels)
+
+  systemd/rover-uvicorn.service runs FastAPI app/main.py on :8080 from
+  ~/code/rover1-venv, working directory ~/ros2_ws/src/rover1 on the Pi.
+  The ROS 2 packages (rover1_*, rover2_*, Nav2, EKF, patrol) are legacy
+  reference code; they are not what drives today.
+
+  app/main.py MotorTarget
+    normalized (vx, vy, omega) in [-1, 1]; power slider scale 0.05..1.0;
+    E-stop sticky latch; 0.5 s manual-hold priority over source="follow";
+    150 ms stale-target watchdog. Motor thread at 50 Hz.
+  app/kinematics.py
+    cartesian_to_wheels: lx=0.10, ly=0.08, r=0.04, MAX_RPM=200,
+    ROTATION_SCALE=2.0. Geometry constants are legacy guesses, not
+    measurements (see 9.1).
+  app/motors.py
+    one 4-byte I2C block write to registers 0x33..0x36 (51..54), polarity
+    (-1, +1, +1, -1) for (FL, FR, RL, RR).
+
+  Finding: per the Hiwonder manual (iCloud "Rover PurePursuit/Encoder
+  Motor Driver Module User Manual.pdf", register table, decimal values
+  printed with an 0x prefix) register 51 is MOTOR_FIXED_SPEED_ADDR, which
+  the manual labels closed-loop; register 31 is the open-loop PWM
+  register. The unit is not stated; the old ROS driver's comment says
+  "pulses per 10 ms". The manual's sample code writes the motor type
+  (register 20 = 0x14, value 3 for JGB37-520) and encoder polarity
+  (register 21 = 0x15) before using fixed-speed mode; nothing in this
+  repo ever writes them.
+  Recon 2026-10-31: register 0x14 reads 0 and 0x15 reads 0. In the
+  manual's defines, 0 is MOTOR_TYPE_WITHOUT_ENCODER. So the board does
+  not know the pulses per revolution of these motors, and whether it is
+  actually closing a speed loop on register 51 in that state is
+  undetermined (the encoders do count: the 0x3C totals are nonzero and
+  frozen while still). v1's claim "closed-loop all along" is withdrawn
+  until WP0b's bench test settles it. Teleop works either way; autonomy
+  cares because a true speed loop gives repeatable straight lines and
+  pivots regardless of battery voltage and grass.
+
+  Encoders: register 0x3C returns 4 x int32 totals (mapping and polarity
+  in engineering_log.md section 1.2). Dec 2025 calibration: 12,618.75
+  ticks per meter (3,845 ticks per wheel rev with the 97 mm wheel). Not
+  used by the live stack. They are free odometry and stall detection.
+
+1.2 GPS
+
+  scripts/ntrip_rtk.py (rover-ntrip.service, user unit, system python3,
+  no pyserial: raw os.read/termios on
+  /dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com_u-blox_GNSS_receiver-if00)
+    NTRIP client to Iowa DOT RTN, mountpoint MSM_IMAX (4 constellations),
+    RTCM to the F9R over USB, honest GGA every 10 s, polls NAV-PVT and
+    NAV-DOP every 0.5 s, writes $XDG_RUNTIME_DIR/rover-gps-status.json
+    atomically: fix, sats, hacc_m, caster, lat, lon (1e-7 deg), alt,
+    speed_mps, cog_deg (headMot), cog_acc_deg (headAcc). It already has a
+    UBX frame parser (Receiver.pump), which v2 extends.
+
+  Measured by the recon (docs/rover-state-2026-10-31/04*):
+    * The file is rewritten every 0.55 s but lat/lon change at 1.02 Hz:
+      the receiver's navigation rate is the 1 Hz default (integration
+      manual 3.2.6.2). Nothing in the repo or the home dir sets CFG-RATE.
+      Position latency today is therefore up to 1 s plus the poll, about
+      25 cm of travel at 0.25 m/s. WP1 sets CFG-RATE-MEAS to 500 ms (2 Hz)
+      and tries 250 ms (4 Hz) after checking CPU load; the manual gives no
+      hard GNSS-only maximum, only "check the enabled output messages at
+      higher rates". The 30 Hz figure applies to priority navigation
+      mode, which needs calibrated fusion and does not apply here.
+    * Only ONE outdoor session exists in the journal (2026-07-19; older
+      entries rotated away). That evening: 10 FIXED stretches, 49 s in
+      total, longest 17 s, at hAcc 0.02 to 0.03 m, all between 17:07 and
+      17:11 while the spots were surveyed; FLOAT at 0.08 to 0.40 m in that
+      window. From 17:38 (service restart, hAcc 64 m, so the receiver had
+      been restarted or power cycled) through 18:20 the solution flapped
+      FLOAT/NONE at hAcc 0.8 to 2.2 m and never reconverged. Four
+      rover-ntrip starts and four rover-uvicorn starts fall in 17:38 to
+      17:54. Lesson: a converged solution is fragile; do not restart
+      services or power during an outing, and soak before driving.
+    * v1's planning numbers ("FLOAT 0.12 to 0.20 m typical") came from
+      the survey window only. Plan on FLOAT between 0.1 and 0.4 m on a
+      good stretch, and on 1 to 2 m being possible for tens of minutes.
+    * Not logged anywhere today: age of RTCM corrections, receiver
+      variant and firmware (MON-VER), fusion status (ESF-STATUS). WP1
+      adds all three.
+
+  The receiver is more than a GPS. The integration manual in the repo
+  ("ZED-F9R ublox.pdf" = UBX-20039643 R10) states:
+    * 3.2.7.6: UBX-ESF-RAW outputs the internal IMU's raw accelerometer,
+      gyroscope and temperature samples at the sensor's fixed sampling
+      rate, enabled with the CFG-MSGOUT-UBX_ESF_RAW-* keys; enabling it
+      does not disable fusion. Data types: 5 = z gyro, 13 = y gyro,
+      14 = x gyro, in deg/s x 2^-12 as 24-bit signed; 16/17/18 = x/y/z
+      specific force in m/s^2 x 2^-10; 12 = gyro temperature in 0.01 C.
+    * 3.2.6.1: CFG-SFCORE-USE_SF turns fusion off; the receiver then
+      outputs a GNSS-only solution and ESF-RAW keeps working.
+    * 3.2.7.1.1 and the calibration tables: the default automotive fusion
+      model needs 30 km/h to align the IMU mount, so on this rover the
+      fusion engine stays in INITIALIZING and NAV-PVT is already
+      GNSS-only. Good: no hidden dead-reckoning model is shaping the
+      positions we steer by.
+    * 3.2.2.2: the "robotic lawn mower" model (CFG-NAVSPG-DYNMODEL = 11,
+      firmware HPS 1.21 or newer, so not on a -01B module) is a true
+      low-speed differential-drive fusion with heading output, but it
+      requires wheel ticks with polarity fed to the receiver, user-defined
+      mount alignment, and RTK FIXED during calibration. Given 49 s of
+      FIXED in the only logged evening, that is a stretch goal (R10), not
+      the plan.
+  Variant and firmware are unknown until MON-VER is read (WP0b).
+
+1.2b IMU
+
+  BerryIMU v3: ELECTRICALLY ABSENT. i2cdetect on buses 1, 13 and 14 shows
+  only 0x34 (motor board); no device at 0x6a, 0x1c or 0x77; no
+  imu_cal.json anywhere on the filesystem. engineering_log line 47 says it
+  was a stackable header on the Pi GPIO; whether the board is still on the
+  rover at all needs eyes. imu_calibration_tool.py exists in the repo root
+  if a magnetometer is ever wanted again (this plan does not need one).
+  Gyro source for the plan: the F9R internal IMU via ESF-RAW (above).
+  Fallback: remount the BerryIMU (R1). The code treats both as backends
+  of one GyroSource interface (section 4), so the choice can change later
+  without touching the estimator.
+
+1.3 Follower, app/nav.py (commits 3b766ea and f3b898f, 2026-07-19)
+
+  10 Hz loop. Phases acquiring -> aligning -> tracking -> done | fault |
+  paused. Gates: hAcc <= 0.5 m (per-run override 0.2..1.5 m), start
+  within 3 m of path start, pause on RTK loss (fault after 30 s mid-run,
+  180 s initial), cross-track abort 2 m, no-progress abort 20 s, mission
+  cap 300 s. Forward-only, vy = 0. Writes set_drive(source="follow").
+  Heading: receiver course over ground when speed >= 0.12 m/s and
+  headAcc <= 30 deg; between samples integrates commanded omega x
+  2.0 rad/s (NOMINAL_YAW_RATE). Nearest path point searched forward
+  only; carrot 1.2 m ahead; P steering saturating at 45 deg error; pivot
+  in place beyond 60 deg; stop radius 0.5 m to the final point.
+  Status: software-in-the-loop sim on the bench, then started outdoors on
+  2026-07-19 only (uvicorn journal, docs/rover-state-2026-10-31/05b):
+  three starts from the phone at 17:57, 17:59 and 17:59:31, stopped by
+  hand after 11, 17 and 32 s, plus one local start at 18:17:56. hAcc at
+  those moments was 1.3 to 2.2 m, so the 0.5 m gate cannot have opened:
+  the mission sat in acquiring and the wheels almost certainly never
+  turned under nav. nav.py logs no phase transitions, so this cannot be
+  proven from the journal; WP2 adds phase logging first. Zero /api/nav
+  traffic since July 19. The July sim script is unrecoverable (tmpfs
+  scratchpad); its three scenario results survive in handoff-claude-mac.txt.
+
+1.4 Paths and survey data (field_data/)
+
+  sidewalk-test-2026-07-19/: waypoints.csv (4 RTK spots, FLOAT except
+  spot 4 FIXED), path-spot1-to-spot4.csv and path-spot4-to-spot1.csv
+  (40 points, 19.31 m, columns seq, label, lat, lon, x_east_m,
+  y_north_m, dist_along_m). Geometry: 1->2 bearing 222 deg 4.71 m,
+  2->3 bearing 284 deg 7.79 m, 3->4 bearing 001 deg 6.81 m; two bends
+  of roughly 62 and 77 degrees, both right-hand.
+  6817-matthews-ct-lot14/: parcel boundary, GIS grade (+-1..3 ft), in
+  NAD83 Iowa South State Plane ftUS, plus a WGS84 KML. Usable as a
+  geofence and as a long test loop (about 500 ft perimeter) once the
+  datum offset versus the receiver's WGS84 output is checked on site.
+  No tool in the repo creates waypoints or paths; the July CSVs were
+  produced ad hoc from the status file.
+  docs/rover-state-2026-10-31/prev-attempts/: five ROS-era patrol paths
+  (kitchen, kitchen424, sidewalk_r1..r3, Dec 2025 / Jan 2026), recorded
+  at 0.3 m spacing in the RTAB-Map odometry frame (x, y, theta) with
+  gps_waypoints empty. Not usable as GPS paths; they do show that a
+  teach-and-repeat recorder existed once (WP3's later item). Nothing from
+  the Nov 2025 pure-pursuit runs survives on the Pi (no CSVs, logs or
+  video; the journal does not reach back that far).
+
+1.5 UI
+
+  web/map.html: offline Esri mosaic (zoom 19, about 0.22 m/px, 768 px
+  square), surveyed path, spots, parcel outline, live rover dot with
+  heading wedge and hAcc ring, breadcrumb trail, START/STOP PATH (default
+  path only, no path picker, no mission options), nav status strip.
+  web/index.html: D-pad drive, strafe, speed slider (default 100 percent),
+  DOG/PERSON follow, MAP button, E-STOP latch with 750 ms resume guard.
+  Sign convention verified on real wheels through teleop: rotate-left
+  sends omega = +1, so +omega is CCW (compass bearing decreases).
+  nav.py's steering sign matches this.
+
+1.6 Safety plumbing that nav must keep using
+
+  E-stop latch blocks every writer; the WS estop handler also stops a
+  running mission; nav and the camera follower are mutually exclusive;
+  manual-hold gives the operator instant override; the motor watchdog
+  zeroes the wheels 150 ms after the last write if the nav thread dies.
+
+1.7 Platform health (recon 2026-10-31, indoors, kiosk running)
+
+  vcgencmd: 84.5 C, throttled = 0xf0008: soft temperature limit active
+  at that moment, and since boot under-voltage, ARM frequency capping and
+  throttling have all occurred. Load about 3.0: uvicorn 42 percent (MJPEG
+  plus the ffmpeg H.264 child), chromium kiosk about 33 percent (the
+  one-night Halloween page), cage compositor. Battery 13.39 V (the log's
+  reference for the 4S pack is about 14.5 V full). Memory fine.
+  Consequences: run missions in lean mode (scripts/lean-rover.sh exists;
+  kiosk off, camera at the minimum the operator needs) and treat a
+  nonzero live throttle flag as a pre-flight fail. The under-voltage flag
+  matters most: a sagging 5 V rail under motor load can drop the USB GPS
+  mid-mission, which the stack sees as "GPS offline" and nav as a pause,
+  then a fault. Check the 5 V supply's rating against Pi 5 + Hailo +
+  camera + GPS before T3.
+
+======================================================================
+2. WHY THE YEAR-AGO RUN WAS PAINFUL, AND WHAT IS DIFFERENT
+======================================================================
+
+Source: iCloud Drive "Rover PurePursuit" (single commit 2025-11-16;
+drive.py 1,615 lines, pure_pursuit.py, mission_planner.py,
+imu_fusion.py, rover_lite.py, ROOF_MOUNT_UPGRADE.md).
+
+Root causes, in order of damage:
+
+  1. Heading from the magnetometer (LIS3MDL) with a hand-made 4-point
+     compass correction, later a 98/2 gyro/mag complementary filter.
+     The notes record a 133 deg/s gyro offset and 28.6 deg heading
+     standard deviation before the IMU was moved to the roof. A steel
+     chassis, four brushed motors and their wiring make a magnetometer
+     a poor heading reference at any mounting distance this rover can
+     offer. The filter still trusted the magnetometer for the long term,
+     so the long-term heading was wrong whenever the mag was wrong.
+  2. Waypoint-to-waypoint control (not path-relative): sparse waypoints
+     (2.5 m minimum spacing), capture radius 0.2..1.0 m, stop-and-turn
+     above 45 deg error, constant 0.3 m/s with no slowdown. The rover
+     cut corners, overshot captures and re-aimed, which reads as
+     wandering.
+  3. Position from NMEA GGA (lower precision formatting, about 1 Hz)
+     rather than UBX NAV-PVT, with no latency compensation. (The current
+     stack reads NAV-PVT at full precision but, per the recon, still at
+     the receiver's 1 Hz default until WP1 raises it.)
+  4. No calibration of motor units versus m/s or rad/s, commands clamped
+     to +-50, and no run logs to diagnose any of the above.
+
+What the old code got right and this plan keeps:
+
+  * a mission state machine with endpoint detection, 180 deg pivot,
+    direction flip, loop counting and estimated loop time
+  * GPS and RTK quality gating with explicit stop reasons
+  * manual waypoint marking with a GPS-quality check
+  * a motion profiler (acceleration limiter)
+
+What is different now: RTK at 2 to 40 cm when converged (and a logged
+warning that it can sit at 1 to 2 m for half an hour), densified paths
+with path-relative control (nearest point + carrot), a safe motor layer,
+encoders that count, and a status-file interface that any process can
+consume. Still missing, then and now: a trustworthy heading source and
+measured calibration constants. Those are WP1 and WP4. The heading
+source is now identified and already on the rover (the F9R's IMU).
+
+======================================================================
+3. TARGET BEHAVIOR AND DEFINITION OF DONE
+======================================================================
+
+Operator story: open /map on the phone, pick a saved path, choose a mode
+(once, pingpong, loop) and a count, set cruise speed, press START. The
+rover waits for RTK-grade accuracy, establishes heading, tracks the path
+at cruise, slows into bends and the endpoint, stops within 0.3 m of the
+end, then either finishes (once), pivots 180 deg and tracks the path
+back (pingpong), or continues from the last point to the first (loop).
+Repeats until the count is reached or STOP, E-stop, or a fault. The
+operator can grab the D-pad at any time; the mission resumes about half
+a second after release. Every run leaves a CSV log that can be replayed
+offline and plotted on the satellite mosaic.
+
+Acceptance tests (sidewalk path, RTK FLOAT or better):
+
+  A1  Straight 10 m at 0.25 m/s: mean cross-track <= 0.15 m,
+      max <= 0.30 m, stop error <= 0.30 m.
+  A2  Pivot 180 deg on the gyro: final error <= 5 deg, done in <= 6 s,
+      repeatable in both directions.
+  A3  Sidewalk spot 1 -> 4 (19.3 m, two ~70 deg bends): max cross-track
+      <= 0.40 m, arrival <= 0.30 m, no control-induced pauses (pauses
+      caused by RTK loss are allowed and logged).
+  A4  Pingpong 1 -> 4 -> 1, three times, hands off: all six legs
+      complete, total time under 8 minutes, zero faults.
+  A5  (stretch) Parcel boundary loop inside a 1 m geofence margin.
+
+======================================================================
+4. TARGET ARCHITECTURE
+======================================================================
+
+Processes on the rover (both user systemd units, as today):
+
+  rover-ntrip.service   scripts/ntrip_rtk.py v2
+      RTK corrections and caster etiquette unchanged. At startup, one
+      UBX-CFG-VALSET to the RAM layer only (a power cycle reverts it):
+      CFG-RATE-MEAS 500 ms (2 Hz, 250 ms later), CFG-RATE-NAV 1,
+      CFG-MSGOUT-UBX_NAV_PVT_USB 1 (periodic instead of polled, poll kept
+      as a fallback), CFG-MSGOUT-UBX_ESF_RAW_USB 1 (raw IMU stream),
+      CFG-MSGOUT-UBX_ESF_STATUS_USB at 0.1 Hz (fusion mode, for the log).
+      MON-VER polled once at startup and logged (variant, firmware).
+      Status file written per NAV-PVT with seq and iTOW so consumers can
+      tell a new sample from a re-read, plus rtcm_age_s, imu_rate_hz and
+      imu_seq. Each ESF-RAW sample (host monotonic time, receiver sTtag,
+      gx, gy, gz in deg/s, ax, ay, az in m/s^2, temp) is sent as one UDP
+      datagram to 127.0.0.1:47101; loopback UDP is effectively lossless
+      and keeps a 100 Hz-class stream out of the file system. USB CDC has
+      bandwidth to spare (about 7 KB/s for ESF-RAW).
+      Optional, decided on the bench: CFG-SFCORE-USE_SF 0 so the fusion
+      engine can never engage; the manual says it stays in INITIALIZING
+      on this rover anyway, so this is belt and braces [VERIFY whether it
+      applies without a receiver restart; if not, leave it out].
+
+  rover-uvicorn.service  app/
+      app/gps.py       GpsSource: parses the status file, detects new
+                       samples by seq, exposes sample + age + quality.
+      app/imu.py       GyroSource with two backends behind one interface
+                       (samples of t, gx, gy, gz, ax, ay, az, temp):
+                       F9rEsfRaw (UDP listener on 127.0.0.1:47101, the
+                       plan's default) and Lsm6dsl (smbus2, only if a
+                       BerryIMU is remounted). Bias estimation while
+                       stationary; yaw axis and sign from nav_params.
+      app/heading.py   HeadingEstimator: gyro-integrated yaw (compass
+                       sense) corrected by RTK observations: receiver
+                       course over ground weighted by headAcc, and track
+                       angle from position deltas over a minimum
+                       baseline. Online gyro-bias estimate. Publishes
+                       heading_deg, heading_valid, sigma, gyro_rate.
+      app/paths.py     Path/waypoint model: load CSV, densify, reverse,
+                       close, ENU projection, nearest/carrot/progress,
+                       local curvature. Replaces the _Path class.
+      app/mission.py   Mission state machine: legs, modes, counts,
+                       turnaround, per-leg timeouts, run log file.
+      app/nav.py v2    Tracking controller + the v1 safety gates.
+      app/main.py      API additions (section 5 WP2/WP3), /telemetry
+                       gains heading and mission fields.
+      web/map.html     mission panel, MARK SPOT, tap-to-add waypoint,
+                       BUILD PATH, path picker, leg/loop counters.
+
+  scripts/             calib_gyro.py, imu_axes.py, calib_yaw.py,
+                       calib_speed.py (field calibration, section 5 WP4)
+  tools/               replay_nav.py (offline replay of a run log through
+                       the controller), plot_run.py (Mac: track and
+                       cross-track on the mosaic)
+  tests/               sim_nav.py (kinematic sim: slip, GPS noise, rate,
+                       latency, gyro bias) and unit tests for wrap math,
+                       ENU, path ops, mission transitions.
+
+Data flow:
+
+  F9R (USB) -> ntrip_rtk.py -> status.json at 2 to 4 Hz -> GpsSource
+  ntrip_rtk.py -> UDP 127.0.0.1:47101 at the IMU rate -> imu.py
+  imu.py + GpsSource -> HeadingEstimator
+  HeadingEstimator + GpsSource + Path -> nav controller (20 Hz)
+     -> MotorTarget.set_drive(source="follow")
+     -> motor thread 50 Hz -> kinematics -> Hiwonder register 51
+
+======================================================================
+5. WORK PACKAGES
+======================================================================
+
+WP0  Ground truth on the rover: DONE 2026-10-31 by Claude Rover (read-only
+     recon, commit 99b3e1a). Results are folded into sections 1.1, 1.2,
+     1.2b, 1.3, 1.4, 1.7 and 9. Still open from WP0: where the BerryIMU
+     board physically is (needs eyes), and the receiver variant and
+     firmware (MON-VER needs the serial port, so it moves to WP0b).
+
+WP0b Bench facts that need writes (Claude Rover; rover on blocks, wheels
+     free, E-stop in hand; the only motor writes before T0)
+  * ESF-RAW go/no-go: a short standalone script, run while rover-ntrip is
+    STOPPED for the test (it owns the port; restart it afterwards), polls
+    MON-VER, enables UBX-ESF-RAW on USB in RAM, and records 60 s with the
+    rover still: message rate, gyro x/y/z mean and std in deg/s, which
+    accel axis reads about 9.8 m/s^2 (that axis is up), temperature.
+    Then hand-rotate the rover one full turn CCW on the bench and confirm
+    the integrated vertical-axis gyro reads about 360 deg, noting the
+    sign (that becomes GYRO_YAW_SIGN in nav_params). Also read
+    ESF-STATUS once (fusionMode should be 0, initializing). This decides
+    the F9R gyro path.
+  * Motor type test, with rover-uvicorn stopped for the test (its motor
+    thread would otherwise overwrite the registers) and using
+    app/motors.py from the venv so the software polarity applies: read
+    the 0x3C totals, drive vx = +0.3 for 5 s with type 0 as found, record
+    ticks/s per wheel, then gently load one wheel by hand and watch
+    whether ticks/s holds (closed loop) or drops (open loop). Repeat
+    after writing 0x14 = 3 and the 0x15 polarity that makes all four
+    totals increase for a forward command. Compare, then write 0x14 back
+    to 0 unless type 3 is clearly better and D12 is agreed.
+  * Same session: vx = +1.0 for 3 s and the resulting ticks/s per wheel,
+    to pin the register-51 unit (section 9.2).
+
+WP1  Heading estimator and GPS feed (the core of the plan)
+  * ntrip_rtk.py v2 (message set in section 4): UBX-CFG-VALSET to RAM at
+    startup; CFG-RATE-MEAS 500 ms first (2 Hz is safe on every F9R
+    variant), 250 ms once MON-VER and the Pi load are known; periodic
+    NAV-PVT with the poll kept as a fallback if no frame arrives for 2 s;
+    ESF-RAW parsing (class 0x10 id 0x03: 4 reserved bytes, then 8-byte
+    entries of a 32-bit data word with dataType in bits 24..29 and a
+    24-bit signed value in bits 0..23, followed by a 32-bit sensor time
+    tag); gyro in deg/s = value x 2^-12, accel in m/s^2 = value x 2^-10.
+    One UDP datagram per sample to 127.0.0.1:47101. MON-VER once,
+    ESF-STATUS fusionMode logged every 10 s, correction age logged
+    (parse the receiver's own GGA field 13 if NMEA output is on, else
+    enable GGA on USB at 1 Hz; UBX-RXM-COR exists only on newer
+    firmware). Caster etiquette unchanged: GGA upload every 10 s, one
+    connection, backoff. Configuration key ids are copied from the
+    interface description, not from memory, before coding.
+  * app/imu.py GyroSource: the F9rEsfRaw backend listens on the UDP port
+    in its own thread, timestamps on arrival, tracks rate and gaps; the
+    Lsm6dsl backend stays small (104 Hz ODR, +-500 dps over smbus2) for
+    the fallback. Startup bias: 10 s stationary with a variance check
+    (abort calibration if the rover moved). Re-trim bias whenever the
+    motor target has been zero for 5 s and the gyro variance is low. Yaw
+    axis (which of gx, gy, gz is vertical, from the accel reading at
+    rest) and GYRO_YAW_SIGN live in nav_params, determined once by
+    imu_axes.py. The F9R IMU's axes follow the module's own frame, so the
+    sign depends on how the board sits on the rover: measure it.
+  * app/heading.py: heading += GYRO_Z_SIGN * gz * dt (compass sense).
+    Observations accepted only when speed >= 0.15 m/s, |gyro| <= 15
+    deg/s (not turning hard), hAcc <= gate. Two observation types:
+    (a) receiver course over ground, weight from headAcc; (b) track
+    angle from the displacement over the last >= 0.4 m when hAcc <= 0.1
+    m, or >= 1.0 m when FLOAT. Correction gain per observation 0.1..0.3
+    (a 1-state Kalman gain on heading with a slow bias state is the
+    tidy version; a complementary blend is acceptable for v1). Expose
+    heading_valid (False until the first accepted observation) and a
+    sigma that grows with time since the last observation.
+  * Initial heading: keep the ALIGN creep (straight 0.6..1.0 m) and seed
+    from the displacement vector; optional magnetometer seed only if a
+    calibration exists (D2). Pingpong legs after the first inherit the
+    gyro heading, so only the very first start needs the creep.
+  * Tests: sim with 0.05 deg/s residual bias and 1 deg/s noise converges
+    within 3 deg in 20 s at FLOAT noise; bench: hand-rotate the rover
+    360 deg and the heading returns within 3 deg.
+
+WP2  Controller v2 and missions
+  * First, and worth doing today as a small change to v1: log every
+    phase transition and stop reason to stdout (the journal) with the
+    hAcc, fix and speed at that moment. July's attempts left no trace.
+  * Keep every v1 gate (hAcc, start radius, pause/fault, cross-track,
+    stall, E-stop) and the source="follow" path. Replace heading with
+    the estimator. Steering: pure pursuit in ENU with lookahead 0.8 m at
+    0.15 m/s rising to 1.5 m at 0.4 m/s, plus a small cross-track term so
+    the rover converges onto the line instead of running parallel to it.
+    Speed schedule: cruise (mission parameter, default 0.25 m/s), reduce
+    with heading error and with path curvature at the carrot, minimum
+    0.12 m/s, and ramp down over the last 1.5 m. Pivot in place when
+    |error| > 60 deg, closed loop on the gyro. Slew limiter 0.5 m/s^2
+    and 2 rad/s^2 on the commands (the old motion_profiler idea).
+    Commands in physical units (m/s, rad/s) converted with the WP4
+    calibration tables, not with kinematics.py's guessed constants.
+  * Mission modes: once | pingpong | loop; loops N or 0 = until STOP.
+    Endpoint behavior: stop, pivot to the first bearing of the next leg,
+    settle 1 s, continue. For loop mode the path is closed (first point
+    appended). Per-leg timeout = 3 x (leg length / cruise); mission cap
+    is a parameter (default 30 min) instead of the fixed 300 s.
+  * Power: nav applies its own speed and pins the follow-source scale to
+    1.0. Today MotorTarget.get() multiplies follow commands by the UI
+    slider, so a phone left at 40 percent would silently slow a mission
+    and break any speed model.
+  * Encoder stall detection: read 0x3C totals at 5 Hz; commanded speed
+    > 0 but fewer than N ticks in 2 s -> fault "stuck". This replaces the
+    20 s no-GPS-progress wait as the primary stuck detector.
+  * Logging: ~/rover-logs/nav-<timestamp>.csv at 20 Hz with t, state,
+    leg, lat, lon, hacc, fix, cog, cog_acc, speed, heading_est,
+    heading_valid, gyro_rate, bias, idx, progress, xtrack, carrot
+    bearing, err, vx_cmd, omega_cmd, ticks. /api/nav/logs lists them.
+  * Review fix: the /ws drive handler drops idle joystick zeros only
+    while the camera follower is enabled (app/main.py around line 781).
+    Extend the check to nav.enabled so a stray zero cannot momentarily
+    zero a mission's target. The UI sends on press/release only, so the
+    risk today is low, but the two autonomy sources should be symmetric.
+  * Tick rate: 20 Hz (50 ms) leaves 100 ms of margin to the 150 ms
+    watchdog; v1's 10 Hz leaves 50 ms, which a busy Pi can miss and
+    stutter the wheels. Keep file and I2C I/O off the control thread.
+
+WP3  Waypoint tooling and UI ("set waypoints via GPS")
+  * POST /api/nav/mark {set, label}: average 3 s of RTK samples (hAcc
+    gate, FIXED preferred), append to field_data/<set>/waypoints.csv
+    with utc, fix, sats, hacc, like the July file.
+  * POST /api/nav/paths/build {set, name, spacing_m, reverse, closed}:
+    waypoints -> densified path CSV with the July columns, so v1 files
+    and new files are interchangeable. GET /api/nav/paths lists them.
+  * map.html: path picker, mode/loops/speed controls, MARK SPOT, tap to
+    add a waypoint (with an imagery-offset warning; Esri imagery is
+    typically 1..3 m off, so a one-tap "calibrate imagery" that shifts
+    the mosaic by the delta between the rover's RTK position and where
+    the operator says it is on the image), BUILD PATH, leg/loop/progress
+    and heading display, STOP always one tap away.
+  * Later, optional: teach-and-repeat (record breadcrumbs at 0.5 m while
+    driving manually, simplify with Douglas-Peucker, save as a path).
+
+WP4  Calibration and field protocol (section 6 has the sequence)
+  * scripts/calib_gyro.py (either gyro backend): 60 s stationary; bias,
+    std, drift per axis, sample rate and gap count. Pass: std < 0.5 deg/s,
+    drift < 0.1 deg/s over the minute, no gap longer than 50 ms.
+  * scripts/imu_axes.py: which axis is up (accel), and the yaw sign:
+    rotate the rover CCW by hand; compass heading must decrease.
+  * scripts/calib_yaw.py: omega 0.3, 0.5, 0.7 normalized for 4 s each,
+    both directions, record gyro rate -> yaw-rate table (rad/s per
+    unit). Expect asymmetry and a dead zone; the controller uses the
+    table, not NOMINAL_YAW_RATE.
+  * scripts/calib_speed.py: vx 0.3 and 0.5 for 6 s on flat ground:
+    RTK ground speed and encoder ticks/s -> m/s per unit, ticks per
+    meter (expect about 12,600), and the saturation point.
+  * Parameters live in app/nav_params.json (loaded at start, editable
+    from the rover without a code change), not in constants.
+
+WP5  Robustness
+  * Geofence: polygon in WGS84 (parcel outline converted once from the
+    State Plane file, offset-checked on site) plus an operator margin;
+    abort outside. A rectangle around the path with a 3 m margin is the
+    default when no polygon is chosen.
+  * hAcc gate with hysteresis: pause above the gate, resume below 0.8 x
+    gate for 2 s; abort after 60 s paused mid-run (v1: 30 s).
+  * Battery floor, thermal pause and under-voltage (vcgencmd get_throttled
+    live bits) as faults; the recon saw 84.5 C and under-voltage flags
+    under the kiosk and video load.
+  * RTK soak gate before any leg: FLOAT or better with hAcc <= gate for
+    60 s continuously and correction age under 10 s. Logged with the
+    reason whenever the gate is not met; the July follower's silent
+    "acquiring" is exactly what this replaces.
+  * Link-loss policy (D3): default continue the mission onboard with the
+    mission cap and geofence as the backstops.
+  * Optional vision shield: the existing Hailo person detector raises a
+    "person ahead" flag when a person box is large and centered; nav
+    stops and waits. Costs CPU; only if the thermal budget allows.
+
+======================================================================
+6. FIELD TEST PROTOCOL
+======================================================================
+
+Rules: E-stop (phone) in hand for every run; first runs on the sidewalk
+(concrete, repeatable, the surveyed path); the log is pulled to the Mac
+after each run and plotted before changing a gain. No service restarts
+and no power cycling during an outing: the July 19 log shows the RTK
+solution never recovered after the 17:38 restarts. Pre-flight before
+every outing: lean mode (kiosk off), vcgencmd get_throttled reads 0x0
+live, battery above the floor, MON-VER and the ESF-RAW rate present in
+the rover-ntrip journal.
+
+  T0  Bench on blocks: wheels free. WP0b first (ESF-RAW go/no-go, motor
+      type test). Then start a mission with the status file simulated;
+      verify start, stop, E-stop, manual override and resume, the
+      nav.enabled guard, that the watchdog never trips at 20 Hz, and the
+      STOP latency from phone tap to motor zero (R11).
+  T1  Gyro: calib_gyro.py; imu_axes.py; hand-rotate 360 deg -> back
+      within 3 deg. If this fails nothing else is worth running.
+  T1b RTK soak at spot 1 with open sky, rover parked, 10 minutes: log
+      hAcc, carrier state and correction age at 1 Hz. Pass: FLOAT or
+      better with hAcc <= 0.4 m for the last 5 minutes. If it never
+      converges, the day is a GPS-diagnosis day (sky view, antenna,
+      caster, correction age), not a driving day.
+  T2  calib_yaw.py and calib_speed.py; fill nav_params.json.
+  T3  Straight 10 m at 0.25 m/s (A1). Watch heading convergence in the
+      log: the estimator should settle within the first 2 m.
+  T4  Pivot 180 deg x4, alternating directions (A2).
+  T5  Sidewalk 1 -> 4 and 4 -> 1 (A3). Tune lookahead and cross-track
+      gain here, nothing else.
+  T6  Pingpong x3 (A4). Then raise cruise to 0.35 m/s and repeat.
+  T7  Parcel loop with geofence, FIXED preferred (A5).
+
+======================================================================
+7. RISKS AND MITIGATIONS
+======================================================================
+
+  R1  Gyro path fails. The BerryIMU IS missing (recon), so the plan's
+      gyro is the F9R's internal IMU over ESF-RAW. Ways that can fail:
+      the message cannot be enabled on this firmware, the rate is too
+      low, or the module is not level on the rover (yaw then leaks into
+      the other axes; the estimator uses the accel-derived vertical axis
+      to pick the yaw component). Fallbacks, in order: remount the
+      BerryIMU on the roof (gyro only, magnetometer ignored); a separate
+      small IMU board; a second F9P as a moving base for dual-antenna
+      heading (about 250 USD, about 0.5 deg from a 1 m baseline, no gyro
+      needed). Without any gyro the follower is limited to COG plus
+      displacement heading, slower cruise, and reverse-drive turnarounds
+      instead of pivots.
+  R2  FLOAT-only days: at 0.2 to 0.4 m widen the stop radius to 0.5 m and
+      cruise at 0.2 m/s; A3 still holds, A1 may not. At 1 to 2 m (seen
+      for 40 minutes on July 19) nothing useful can be driven; T1b is the
+      gate, and the fix is on the GPS side (sky view, antenna placement,
+      correction age, a converged soak before moving).
+  R3  Course-over-ground noise at 0.25 m/s: handled by the displacement
+      observation over longer baselines and by the gyro carrying the
+      heading between good observations.
+  R4  Mecanum slip and lateral drift on grass: closed-loop wheel speed
+      helps, the cross-track term corrects, cruise lower on grass; the
+      rollers themselves are a reason to keep vy = 0 in autonomy.
+  R5  Motor type register reads 0 (WITHOUT_ENCODER): register 51 may be
+      open loop in practice, so wheel speed would sag with battery
+      voltage and load, and pivots would not repeat. WP0b measures it;
+      if type 3 gives a real speed loop, motors.py sets 0x14 and 0x15 at
+      startup (one write per power-on) after a polarity check with the
+      wheels off the ground.
+  R6  Pi load, heat and power: nav at 20 Hz plus a 100 Hz UDP listener is
+      light; video and the kiosk are the cost. The recon saw 84.5 C with
+      the soft temperature limit active and under-voltage flagged since
+      boot. During missions run lean (kiosk off, MJPEG at 6 Hz or the
+      H.264 path), watch cpu_temp_c and the live throttle bits in
+      telemetry, and verify the 5 V supply can carry Pi 5 + Hailo +
+      camera + GPS under motor load (a brown-out that drops the USB GPS
+      looks like an RTK loss to nav and ends the mission).
+  R7  Wi-Fi loss mid-mission: E-stop needs the link. Mitigation is the
+      policy in D3 plus the geofence and mission cap.
+  R8  Watchdog gaps: a late nav tick zeroes the wheels for an instant.
+      20 Hz tick, I/O off the control thread, and a log of tick jitter.
+  R9  Imagery offset when tapping waypoints: tap-to-add is for rough
+      planning; MARK with the rover is the accurate source.
+  R10 Receiver unknowns: variant and firmware (MON-VER never logged), the
+      ESF-RAW sample rate, and whether CFG-SFCORE-USE_SF applies without a
+      restart. All are answered by the WP0b bench script in one sitting.
+      The robotic-lawn-mower fusion model (receiver-computed heading) is
+      recorded as a stretch option only: it needs HPS 1.21 or newer, wheel
+      ticks with polarity pushed to the receiver at 10 Hz, user-defined
+      mount alignment, and RTK FIXED to calibrate.
+  R11 Operator-out-of-loop safety: no physical kill switch is documented
+      anywhere (Q10). Claude Rover also reports a past "stale WebSocket"
+      failure mode that delayed phone commands by seconds; I could not
+      find it in the repo's notes, so treat it as unverified and measure
+      STOP latency (phone tap to motor zero) in T0. Onboard backstops
+      (geofence, leg timeouts, mission cap, RTK and stall faults) are the
+      real mitigation; the phone is a convenience.
+
+======================================================================
+8. DECISIONS NEEDED AND OPEN QUESTIONS
+======================================================================
+
+  D1  Heading hardware. ANSWERED by the recon: the BerryIMU is not wired
+      (nothing on any I2C bus). New recommendation: do NOT remount it
+      now; use the F9R's internal IMU over ESF-RAW, which needs no
+      hardware work. Decision for you: agree, and let Claude Rover run
+      the WP0b bench script (it stops rover-ntrip for a few minutes and
+      enables one receiver message in RAM). If you know where the
+      BerryIMU board is, say so; it is the fallback.
+  D2  Waypoint creation for the first demo: (a) drive the rover to each
+      spot and press MARK (recommended first, most accurate), (b) tap on
+      the satellite map, (c) record while driving (teach and repeat).
+      Plan builds (a) and (b) first, (c) later.
+  D3  Link-loss policy: continue the mission onboard if the phone drops
+      off Wi-Fi (recommended, with geofence and mission cap), or stop?
+  D4  Turnaround style: pivot 180 deg on the gyro (recommended) or drive
+      the return leg backwards without turning.
+  D5  First mission and surface: sidewalk 1 -> 4 pingpong on concrete
+      (recommended) before grass or the parcel loop.
+  D6  Cruise speed: 0.25 m/s for the first runs, up to 0.4 m/s once A3
+      passes. Chassis spec max is 0.6 m/s; motors top out near 0.5 m/s.
+  D7  Access: run ssh-copy-id for the rover alias so the Mac session can
+      work on the rover directly, or coordinate only through Claude Rover
+      and git. The recon prompt in rover_prompts/ works either way.
+  D8  Commit and push this plan and the recon prompt to simplify so
+      Claude Rover can read them?
+  Q9  ANSWERED (journal): started outdoors on July 19 only, three times
+      from the phone, stopped by hand within 11 to 32 s while hAcc was
+      1.3 to 2.2 m; never since. Almost certainly never moved under nav.
+  Q10 Is there a physical kill switch or power switch reachable while the
+      rover moves? Claude Rover found none documented. If there is none,
+      add a 12 V inline switch on the motor supply before T5.
+  Q11 ANSWERED (filesystem search): nothing from Nov 2025 survives on the
+      Pi. If the Mac or iCloud has CSVs, logs or video from those runs
+      they are still worth a look; otherwise closed.
+  D12 Motor type experiment (WP0b): OK for Claude Rover to write registers
+      0x14 and 0x15 with the wheels off the ground and rover-uvicorn
+      stopped for the test? Reverted to 0 afterwards unless agreed.
+  D13 Receiver configuration from ntrip_rtk.py v2: RAM layer only (a
+      power cycle restores the receiver's stored configuration), so
+      nothing is persisted on the F9R. Agree, or do you want the 2 to
+      4 Hz rate saved to flash so other tools see the same thing?
+
+======================================================================
+9. NUMBERS (known, estimated, to verify)
+======================================================================
+
+9.1 Geometry and drivetrain
+  Chassis 30 x 24.5 x 10 cm, 1.9 kg, payload 5 kg, spec max 0.6 m/s
+  (Chassis specs.pdf). Wheels 97 mm mecanum (radius 0.0485 m).
+  Wheel centers: app/kinematics.py uses 0.20 x 0.16 m; the Nov 2025
+  rover_lite.py used 0.219 x 0.193 m. [VERIFY with a tape measure.]
+  Motor: 520 encoder gear motor, no-load 100 rpm, 11 pole pairs -> 44
+  counts per motor rev. Chassis sheet says ratio 1:131; the Hiwonder
+  JGB37-520 type says 1:90; the Dec 2025 measurement of 3,845 ticks
+  per wheel rev matches 44 x 90 = 3,960 at 97 percent, so 1:90 is the
+  likely truth. Top wheel speed about 100 rpm x 0.3047 m = 0.51 m/s.
+  Encoders: 12,618.75 ticks per meter (Dec 2025, 1.0 m drive test).
+
+9.2 Command scaling (why NOMINAL_YAW_RATE is optimistic)
+  vx = 1.0 -> 0.5 m/s requested -> kinematics (r = 0.04, MAX_RPM 200)
+  -> about 60 units. If a unit is 100 ticks/s (pulses per 10 ms), 60
+  units = 6,000 ticks/s / 3,845 = 1.56 rev/s = 0.48 m/s, near the
+  motor's limit; so "0.5 m/s" is roughly honest by coincidence and
+  CRUISE_VX 0.5 is roughly 0.23 m/s.
+  omega = 1.0 -> 2.0 rad/s requested -> about 43 units per wheel ->
+  0.34 m/s rim speed -> with real half-sums (0.206 m) about 1.65 rad/s
+  before slip, less after. nav.py assumes 2.0 rad/s. A 180 deg pivot by
+  dead reckoning would stop 20 to 40 percent early. [VERIFY in T2.]
+
+9.3 GPS
+  NAV-PVT fields used: lat/lon 1e-7 deg, hAcc mm, gSpeed mm/s, headMot
+  1e-5 deg, headAcc 1e-5 deg. Measured solution rate 1.02 Hz (status
+  file rewritten at 1.8 Hz). July 19 survey window: FLOAT hAcc 0.08 to
+  0.40 m, FIXED 0.02 to 0.03 m, FIXED total 49 s, longest 17 s. July 19
+  nav window: FLOAT/NONE at 0.8 to 2.2 m for 40 minutes. Position latency
+  today up to 1 s solution + 0.5 s poll + file, about 25 to 35 cm at
+  0.25 m/s; at 2 Hz periodic output about 12 cm; at 4 Hz about 6 cm.
+  Indoors through the roof (recon): 3D fix, 7 to 10 sats, hAcc 6 to 15 m,
+  cog_acc_deg pegged at 180 while parked (course is meaningless at rest,
+  as expected).
+
+9.4 Gyro
+  F9R internal IMU (part not documented; consumer MEMS class): ESF-RAW
+  gyro LSB = 2^-12 deg/s = 0.000244 deg/s, 24-bit signed, so the range is
+  +-2048 deg/s; accel LSB = 2^-10 m/s^2. Sample rate fixed by the sensor
+  [VERIFY in WP0b, expect of order 100 Hz]. Expect noise of order 0.05 to
+  0.1 deg/s rms and a bias of a few tenths of a deg/s before calibration,
+  drifting with temperature (the message carries the gyro temperature,
+  so a temperature term in the bias model is possible later). Uncorrected
+  that is several degrees per minute; with RTK heading corrections every
+  few seconds of driving it is irrelevant, and the stationary re-trim
+  handles long pauses.
+  LSM6DSL fallback: +-500 dps at 17.5 mdps/LSB, about 0.03 deg/s rms at
+  50 Hz bandwidth, similar bias behavior.
+
+======================================================================
+10. REVIEW NOTES ON app/nav.py v1 (keep, fix, replace)
+======================================================================
+
+Keep: phase structure, hAcc gate with per-run override, start-radius
+refusal with the "move it to spot 1" message, pause-on-loss with motors
+zeroed, cross-track abort, no-progress abort, path-under-field_data
+check, lifecycle lock, publish()/finish() pattern, E-stop integration,
+forward-only driving, forward-only nearest-point search.
+
+Fix:
+  * Heading source (section 5 WP1). The sign conventions in v1 are
+    right: desired = atan2(dE, dN) is a compass bearing; positive error
+    (carrot clockwise of the nose) -> negative omega (CW); dead reckoning
+    subtracts omega x rate x dt. Only the rate constant and the lack of
+    a sensor are wrong.
+  * Power slider scaling of follow commands (WP2).
+  * Mission cap 300 s and single-leg assumption (WP2).
+  * 10 Hz tick versus 150 ms watchdog (WP2).
+  * xtrack reported as distance to the nearest sample point (up to 0.25
+    m of quantization at 0.5 m spacing); compute the perpendicular
+    distance to the segment.
+  * Arrival uses only distance to the final point; a path that ends in a
+    bend can trigger early. Use progress along the path plus distance.
+  * No slew limiting: 0 -> cruise in one tick, pivot <-> drive switching
+    at 60 deg can chatter. Add hysteresis (pivot above 60, resume drive
+    below 35) and the slew limiter.
+  * ALIGN creep heads wherever the rover points for up to 3 m, and the
+    cross-track abort is suppressed while acquiring but not while
+    aligning; with a known initial heading (gyro + seed) the creep can
+    be shortened to 0.6 m and aimed.
+
+Replace: _Path with app/paths.py (adds reverse, close, curvature,
+perpendicular projection, progress), the single default path with a
+path picker, the status dict with mission fields.
+
+======================================================================
+11. SEQUENCE AND EFFORT
+======================================================================
+
+  Session 1  WP0 recon by Claude Rover: DONE 2026-10-31. Decisions D1
+             (now "use the F9R gyro"), D2, D3, D7, D8, D12, D13 pending.
+  Session 2  WP0b bench script and motor-type test on the rover (Claude
+             Rover); on the Mac: ntrip_rtk.py v2, GyroSource, heading
+             estimator, sim and unit tests, phase logging for v1. T1.
+  Session 3  WP2 code + sim; T0 on blocks; T2 calibration outing.
+  Session 4  WP3 tooling + map UI; T3/T4 outing.
+  Session 5  T5/T6 outings, tuning from logs; WP5 geofence and
+             hysteresis.
+  Session 6  T7 parcel loop; cleanup; engineering_log entry.
+
+Coordination: Mac session writes code and tools; Claude Rover deploys,
+bench-tests, runs calibration scripts, and appends results to a handoff
+note (the existing handoff pattern). All parameters in nav_params.json
+so field tuning never needs a commit.
+
+End of plan v2.
