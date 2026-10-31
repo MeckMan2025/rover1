@@ -82,21 +82,25 @@
       background: radial-gradient(ellipse at center, transparent 52%, rgba(25, 0, 45, 0.6) 100%);
     }
     #eyes {
-      position: fixed; top: 7%; right: 6%; z-index: 6; pointer-events: none;
-      display: flex; gap: 26px;
+      position: fixed; left: 42%; right: 0; top: 0; bottom: 0; z-index: 6;
+      pointer-events: none;
+      display: flex; gap: 8vw; align-items: center; justify-content: center;
+    }
+    .eye {
+      width: clamp(130px, 19vw, 230px);
+      height: clamp(180px, 27vw, 330px);
+      border-radius: 50%;
+      background: radial-gradient(circle at 50% 45%, #ffb300 0 26%, #c43000 55%, rgba(120, 10, 0, 0.35) 72%, transparent 78%);
+      box-shadow: 0 0 110px 30px rgba(255, 90, 0, 0.3);
+      position: relative;
       animation: eyeBlink 4.7s infinite;
       transform-origin: center;
     }
-    .eye {
-      width: 42px; height: 52px; border-radius: 50%;
-      background: radial-gradient(circle at 50% 45%, #ffb300 0 26%, #c43000 55%, rgba(120, 10, 0, 0.35) 72%, transparent 78%);
-      box-shadow: 0 0 26px 6px rgba(255, 90, 0, 0.35);
-      position: relative;
-    }
     .eye .pupil {
       position: absolute; left: 50%; top: 45%;
-      width: 10px; height: 20px; margin: -10px 0 0 -5px;
+      width: 22%; height: 36%;
       border-radius: 50%; background: #1a0000;
+      transform: translate(-50%, -50%);
       transition: transform 0.9s ease;
     }
     @keyframes eyeBlink {
@@ -281,9 +285,9 @@
 
     // Pupils wander every few seconds.
     (function wander() {
-      const x = rand(-9, 9).toFixed(1), y = rand(-7, 7).toFixed(1);
+      const x = rand(-48, 48).toFixed(1), y = rand(-34, 34).toFixed(1);
       for (const p of eyes.querySelectorAll(".pupil"))
-        p.style.transform = `translate(${x}px, ${y}px)`;
+        p.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
       setTimeout(wander, rand(1800, 4500));
     })();
 
